@@ -1143,7 +1143,7 @@ export function registerCustomCommands(
       };
       msg("§6--- TauUtils Credits ---");
       msg("§eCreator: §aRCodE777");
-      msg("§eVersion: §71.9.1-Beta");
+      msg("§eVersion: §71.9.2-test-Beta");
       msg("§7Thank you for using TauUtils!");
       return { status: 0, message: "Credits shown." };
     }

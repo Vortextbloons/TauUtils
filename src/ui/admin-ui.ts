@@ -1,7 +1,7 @@
 import { Player, world, ItemStack, EntityComponentTypes, ItemComponentTypes } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ICONS, ICON_DEV_OPTIONS, WORKING_ICON_OPTIONS, isWorkingIconPath, type CrateAnimationPreset, type TauItemConsumptionMode, type TauItemTriggerType, type TauItemAction, type TauItemDefinition, type FormDefinition, type CrateItemReward } from "../types";
-import { getInventoryContainer, getPlayerId, isFeatureEnabled, isOperator, normalizeKey, saveBinds, saveChat, saveConfig, saveCrates, saveForms, saveGenerators, saveModeration, savePrune, saveTauItems, state, tell } from "../storage";
+import { getInventoryContainer, isFeatureEnabled, isOperator, normalizeKey, saveBinds, saveChat, saveConfig, saveCrates, saveForms, saveGenerators, saveModeration, savePrune, saveTauItems, state, tell } from "../storage";
 import { pruneData, tellPruneResult } from "../prune";
 import { addGeneratorTier, createGeneratorDefinition, deleteGeneratorDefinition, getGeneratorAutoBreakerCost, getGeneratorDefinition, getGeneratorInfoLines, getGeneratorTierSummary, getNextUpgradeCost, getPlacedGeneratorAtLocation, getPlacedGeneratorDefinition, getPlacedGeneratorInfoLines, giveGenerator, listGeneratorDefinitions, pickupGenerator, removeGeneratorTier, toggleGeneratorAutoBreaker, updateGeneratorConfig, updateGeneratorDefinition, updateGeneratorTier, upgradeGenerator } from "../generators";
 import { giveCrateKey, listCrateIds, removeCrateAtBlock, setCrateAtBlock, setCrateAtCoordinates } from "../crates";
@@ -11,6 +11,14 @@ import { getHeldItemSnapshot, heldItemToCrateReward, applyHeldItemSnapshotToGene
 function normalizeItemId(value: string): string {
   return String(value ?? "").trim().toLowerCase();
 }
+
+type ModerationItemSnapshot = {
+  slot: number;
+  itemId: string;
+  amount: number;
+  nameTag?: string;
+  lore?: string[];
+};
 
 function isBannedItemId(itemId: string): boolean {
   const normalized = normalizeItemId(itemId);
@@ -42,7 +50,7 @@ function clearBannedInventoryItems(player: Player): number {
 
 function getContainerItems(container: { size: number; getItem(slot: number): ItemStack | undefined }, slotCount?: number): Array<{ slot: number; stack: ItemStack }> {
   const items: Array<{ slot: number; stack: ItemStack }> = [];
-  const totalSlots = Math.max(0, Math.floor(slotCount ?? container.size ?? 0));
+  const totalSlots = Math.max(0, Math.floor(Math.min(slotCount ?? container.size ?? 0, container.size ?? 0)));
   for (let slot = 0; slot < totalSlots; slot++) {
     const stack = container.getItem(slot);
     if (!stack) continue;
@@ -58,79 +66,40 @@ function formatStackLine(slot: number, stack: ItemStack): string {
   return `§7${slot + 1}. §f${name} §8x${stack.amount} §7(${stack.typeId})${loreText}`;
 }
 
-function getContainerSnapshot(container: { size: number; getItem(slot: number): ItemStack | undefined }): Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> {
-  const snapshot: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> = [];
-  for (let slot = 0; slot < container.size; slot++) {
-    const stack = container.getItem(slot);
-    if (!stack) continue;
-    snapshot.push({
-      slot,
-      itemId: stack.typeId,
-      amount: stack.amount,
-      nameTag: stack.nameTag?.trim() || undefined,
-      lore: stack.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
-    });
+function getContainerSnapshot(container: { size: number; getItem(slot: number): ItemStack | undefined; isValid?: boolean }, slotCount?: number): ModerationItemSnapshot[] | undefined {
+  try {
+    if (container.isValid === false) return undefined;
+    const snapshot: ModerationItemSnapshot[] = [];
+    const totalSlots = Math.max(0, Math.floor(Math.min(slotCount ?? container.size ?? 0, container.size ?? 0)));
+    for (let slot = 0; slot < totalSlots; slot++) {
+      const stack = container.getItem(slot);
+      if (!stack) continue;
+      snapshot.push({
+        slot,
+        itemId: stack.typeId,
+        amount: stack.amount,
+        nameTag: stack.nameTag?.trim() || undefined,
+        lore: stack.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
+      });
+    }
+    return snapshot;
+  } catch {
+    return undefined;
   }
-  return snapshot;
 }
 
-function saveModerationInspectionSnapshot(playerName: string, inventory: ReturnType<typeof getContainerSnapshot>, enderChest: ReturnType<typeof getContainerSnapshot>): void {
+function saveModerationInspectionSnapshot(playerName: string, inventory: ModerationItemSnapshot[]): void {
   state.moderation.inspectionSnapshots ??= {};
   state.moderation.inspectionSnapshots[playerName.toLowerCase()] = {
     playerName,
     updatedAt: Date.now(),
     inventory,
-    enderChest,
   };
   saveModeration();
 }
 
 function getInspectionSnapshotKey(playerName: string): string {
   return String(playerName ?? "").trim().toLowerCase();
-}
-
-function createSnapshotContainer(items: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }>): { size: number; getItem(slot: number): ItemStack | undefined; setItem(slot: number, item?: ItemStack): void } {
-  return {
-    size: Math.max(0, items.reduce((max, entry) => Math.max(max, entry.slot + 1), 0)),
-    getItem(slot: number): ItemStack | undefined {
-      const entry = items.find((item) => item.slot === slot);
-      if (!entry) return undefined;
-      const stack = new ItemStack(entry.itemId, entry.amount);
-      if (entry.nameTag) stack.nameTag = entry.nameTag;
-      if (entry.lore) stack.setLore(entry.lore);
-      return stack;
-    },
-    setItem(slot: number, item?: ItemStack): void {
-      const index = items.findIndex((entry) => entry.slot === slot);
-      if (!item) {
-        if (index >= 0) items.splice(index, 1);
-        return;
-      }
-      const next = {
-        slot,
-        itemId: item.typeId,
-        amount: item.amount,
-        nameTag: item.nameTag?.trim() || undefined,
-        lore: item.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
-      };
-      if (index >= 0) items[index] = next;
-      else items.push(next);
-    },
-  };
-}
-
-function getEnderChestContainer(player: Player): { size: number; getItem(slot: number): ItemStack | undefined; setItem(slot: number, item?: ItemStack): void } | undefined {
-  try {
-    const ender = player.getComponent("ender_inventory") as { container?: { size: number; getItem(slot: number): ItemStack | undefined; setItem(slot: number, item?: ItemStack): void } } | undefined;
-    return ender?.container;
-  } catch {
-    try {
-      const ender = player.getComponent("minecraft:ender_inventory") as { container?: { size: number; getItem(slot: number): ItemStack | undefined; setItem(slot: number, item?: ItemStack): void } } | undefined;
-      return ender?.container;
-    } catch {
-      return undefined;
-    }
-  }
 }
 
 async function showContainerInspector(player: Player, title: string, container: { size: number; getItem(slot: number): ItemStack | undefined; setItem(slot: number, item?: ItemStack): void }, slotCount?: number) {
@@ -162,63 +131,33 @@ async function showContainerInspector(player: Player, title: string, container: 
 async function showOnlinePlayerInspector(player: Player) {
   while (true) {
     const online = world.getAllPlayers().filter((entry) => entry.name !== player.name);
+    const targets = online.length > 0 ? online : [player];
     const form = new ActionFormData()
       .title("§cPlayer Inspector§r")
-      .body(`§7Online players: §f${online.length}§r`)
+      .body(`§7Online players: §f${world.getAllPlayers().length}§r`)
       .button("Inventory", ICONS.item)
-      .button("Ender Chest", ICONS.utility)
       .button("Back", ICONS.back);
 
     const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined || response.selection === 2) return;
-
-    if (online.length === 0) {
-      tell(player, "No other online players found.");
-      continue;
-    }
+    if (!response || response.canceled || response.selection === undefined || response.selection === 1) return;
 
     const picker = new ActionFormData().title("Select Player").body("§7Choose a player to inspect.");
-    for (const target of online) picker.button(target.name, ICONS.item);
+    for (const target of targets) picker.button(target.name, ICONS.item);
     picker.button("Back", ICONS.back);
     const picked = await picker.show(player).catch(() => undefined);
-    if (!picked || picked.canceled || picked.selection === undefined || picked.selection >= online.length) continue;
+    if (!picked || picked.canceled || picked.selection === undefined || picked.selection >= targets.length) continue;
 
-    const target = online[picked.selection];
-    const snapshotKey = getInspectionSnapshotKey(target.name);
+    const target = targets[picked.selection];
     const inventoryContainer = getInventoryContainer(target);
-    const inventorySnapshot = inventoryContainer ? getContainerSnapshot(inventoryContainer) : [];
-    const enderContainer = getEnderChestContainer(target);
-    const savedSnapshot = state.moderation.inspectionSnapshots?.[snapshotKey];
-    const liveEnderSnapshot = enderContainer ? getContainerSnapshot(enderContainer) : [];
-    const enderSnapshot = liveEnderSnapshot.length > 0 ? liveEnderSnapshot : (savedSnapshot?.enderChest ?? []);
-    saveModerationInspectionSnapshot(target.name, inventorySnapshot, enderSnapshot);
+    const inventorySnapshot = inventoryContainer ? (getContainerSnapshot(inventoryContainer) ?? []) : [];
 
-    if (response.selection === 0) {
-      const container = inventoryContainer;
-      if (!container) {
-        tell(player, "That player has no inventory component.");
-        continue;
-      }
-      await showContainerInspector(player, `Inventory: ${target.name}`, container);
-      continue;
-    }
-
-    const container = enderContainer;
+    const container = inventoryContainer;
     if (!container) {
-      const snapshot = state.moderation.inspectionSnapshots?.[snapshotKey];
-      if (snapshot) {
-        await showContainerInspector(player, `Ender Chest Snapshot: ${target.name}`, createSnapshotContainer(snapshot.enderChest), 27);
-        continue;
-      }
-      tell(player, "That player has no ender chest component or saved snapshot.");
+      tell(player, "That player has no inventory component.");
       continue;
     }
-    const currentSnapshot = state.moderation.inspectionSnapshots?.[snapshotKey]?.enderChest;
-    if (currentSnapshot && currentSnapshot.length > 0) {
-      await showContainerInspector(player, `Ender Chest: ${target.name}`, createSnapshotContainer(currentSnapshot), 27);
-      continue;
-    }
-    await showContainerInspector(player, `Ender Chest: ${target.name}`, container, 27);
+    saveModerationInspectionSnapshot(target.name, inventorySnapshot);
+    await showContainerInspector(player, `Inventory: ${target.name}`, container);
   }
 }
 
@@ -247,7 +186,7 @@ async function showOfflinePlayerInspector(player: Player) {
     return;
   }
 
-  tell(player, `Saved snapshot for ${snapshot.playerName}: inventory ${snapshot.inventory.length} item(s), ender chest ${snapshot.enderChest.length} item(s).`);
+  tell(player, `Saved snapshot for ${snapshot.playerName}: inventory ${snapshot.inventory.length} item(s).`);
 }
 
 function captureHeldBannedItem(player: Player): { itemId: string; label?: string } | undefined {

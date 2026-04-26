@@ -51,53 +51,76 @@ function isBannedItemId(itemId: string): boolean {
   return state.moderation.bannedItems.some((entry) => normalizeItemId(entry.itemId) === normalized);
 }
 
-function getPlayerEnderContainer(player: Player): { size: number; getItem(slot: number): ItemStack | undefined } | undefined {
+function snapshotContainer(container: { size: number; getItem(slot: number): ItemStack | undefined; isValid?: boolean }, slotCount?: number): Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> | undefined {
   try {
-    const ender = player.getComponent("minecraft:ender_inventory") as { container?: { size: number; getItem(slot: number): ItemStack | undefined } } | undefined;
-    return ender?.container;
-  } catch {
-    try {
-      const ender = player.getComponent("ender_inventory") as { container?: { size: number; getItem(slot: number): ItemStack | undefined } } | undefined;
-      return ender?.container;
-    } catch {
-      return undefined;
+    if (container.isValid === false) return undefined;
+    const snapshot: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> = [];
+    const totalSlots = Math.max(0, Math.floor(Math.min(slotCount ?? container.size ?? 0, container.size ?? 0)));
+    for (let slot = 0; slot < totalSlots; slot++) {
+      const stack = container.getItem(slot);
+      if (!stack) continue;
+      snapshot.push({
+        slot,
+        itemId: stack.typeId,
+        amount: stack.amount,
+        nameTag: stack.nameTag?.trim() || undefined,
+        lore: stack.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
+      });
     }
+    return snapshot;
+  } catch {
+    return undefined;
   }
 }
 
-function snapshotContainer(container: { size: number; getItem(slot: number): ItemStack | undefined }): Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> {
-  const snapshot: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> = [];
-  for (let slot = 0; slot < container.size; slot++) {
-    const stack = container.getItem(slot);
-    if (!stack) continue;
-    snapshot.push({
-      slot,
-      itemId: stack.typeId,
-      amount: stack.amount,
-      nameTag: stack.nameTag?.trim() || undefined,
-      lore: stack.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
-    });
+function snapshotsEqual(
+  left: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> | undefined,
+  right: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> | undefined,
+): boolean {
+  const a = left ?? [];
+  const b = right ?? [];
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    const first = a[index];
+    const second = b[index];
+    if (!second) return false;
+    if (first.slot !== second.slot) return false;
+    if (first.itemId !== second.itemId) return false;
+    if (first.amount !== second.amount) return false;
+    if ((first.nameTag ?? "") !== (second.nameTag ?? "")) return false;
+    const firstLore = first.lore ?? [];
+    const secondLore = second.lore ?? [];
+    if (firstLore.length !== secondLore.length) return false;
+    for (let loreIndex = 0; loreIndex < firstLore.length; loreIndex++) {
+      if (firstLore[loreIndex] !== secondLore[loreIndex]) return false;
+    }
   }
-  return snapshot;
+  return true;
 }
 
 function cacheModerationInspectionSnapshot(player: Player | undefined): void {
   if (!player) return;
-  state.moderation.inspectionSnapshots ??= {};
-  const key = player.name.toLowerCase();
-  const current = state.moderation.inspectionSnapshots[key];
-  const inventory = getInventoryContainer(player);
-  const ender = getPlayerEnderContainer(player);
-  const inventorySnapshot = inventory ? snapshotContainer(inventory) : (current?.inventory ?? []);
-  const nextEnderSnapshot = ender ? snapshotContainer(ender) : [];
-  const enderSnapshot = nextEnderSnapshot.length > 0 ? nextEnderSnapshot : (current?.enderChest ?? []);
-  state.moderation.inspectionSnapshots[key] = {
-    playerName: player.name,
-    updatedAt: Date.now(),
-    inventory: inventorySnapshot,
-    enderChest: enderSnapshot,
-  };
-  saveModeration();
+  try {
+    state.moderation.inspectionSnapshots ??= {};
+    const key = player.name.toLowerCase();
+    const current = state.moderation.inspectionSnapshots[key];
+    const inventory = getInventoryContainer(player);
+    const inventorySnapshot = inventory ? (snapshotContainer(inventory) ?? (current?.inventory ?? [])) : (current?.inventory ?? []);
+    if (
+      current
+      && current.playerName === player.name
+      && snapshotsEqual(current.inventory, inventorySnapshot)
+    ) {
+      return;
+    }
+    state.moderation.inspectionSnapshots[key] = {
+      playerName: player.name,
+      updatedAt: Date.now(),
+      inventory: inventorySnapshot,
+    };
+    saveModeration();
+  } catch {
+  }
 }
 
 function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
@@ -106,6 +129,7 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
   clearBannedInventoryItems(player);
   handleCombatJoin(player);
+  cacheModerationInspectionSnapshot(player);
 
   if (!isFeatureEnabled("plots")) return;
 
@@ -343,10 +367,6 @@ export function registerEventInterceptors() {
   });
 
   world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
-    if (event.block.typeId === "minecraft:ender_chest" || event.block.typeId === "ender_chest") {
-      system.runTimeout(() => cacheModerationInspectionSnapshot(event.player), 1);
-    }
-
     if (isFeatureEnabled("items")) {
       const handled = tryHandleTauItemTrigger(event.player, "use_block", event.itemStack, {
         location: event.block.location,
@@ -507,6 +527,18 @@ export function registerEventInterceptors() {
       plotSaveCursor++;
     }
   }, Math.max(1, state.plots.config.saveIntervalTicks));
+
+  let moderationSnapshotCursor = 0;
+  system.runInterval(() => {
+    const players = getCachedPlayers();
+    if (players.length === 0) return;
+    const perTick = Math.max(1, Math.ceil(players.length / 20));
+    for (let index = 0; index < perTick; index++) {
+      const player = players[moderationSnapshotCursor % players.length];
+      if (player) cacheModerationInspectionSnapshot(player);
+      moderationSnapshotCursor++;
+    }
+  }, 40);
 
   system.runInterval(() => {
     if (!isFeatureEnabled("plots")) return;

@@ -263,7 +263,6 @@ export type ModerationInspectionSnapshot = {
   playerName: string;
   updatedAt: number;
   inventory: ModerationItemSnapshot[];
-  enderChest: ModerationItemSnapshot[];
 };
 
 export type ModerationStore = {
