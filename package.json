@@ -2,7 +2,7 @@
   "name": "eysicutils",
   "private": true,
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --format=esm --target=es2020 --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
+    "build": "esbuild src/main.ts --bundle --format=esm --target=es2020 --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && esbuild src/client-main.ts --bundle --format=esm --target=es2020 --outfile=behavior_pack/scripts/client.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

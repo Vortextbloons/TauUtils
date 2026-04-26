@@ -1,0 +1,195 @@
+{
+  "namespace": "tau_custom",
+
+  "tau_panel_bg": {
+    "type": "image",
+    "texture": "textures/ui/Black",
+    "alpha": 0.92,
+    "size": ["100%", "100%"]
+  },
+
+  "tau_header_bar": {
+    "type": "panel",
+    "size": ["100%", 48],
+    "controls": [
+      {
+        "header_bg": {
+          "type": "image",
+          "texture": "textures/ui/Grey",
+          "alpha": 0.35,
+          "size": ["100%", "100%"]
+        }
+      },
+      {
+        "header_title": {
+          "type": "label",
+          "text": "#title_text",
+          "color": [1.0, 0.85, 0.0, 1.0],
+          "font_size": "large",
+          "anchor_from": "center",
+          "anchor_to": "center"
+        }
+      }
+    ]
+  },
+
+  "tau_button_card": {
+    "type": "panel",
+    "size": ["25%", 96],
+    "controls": [
+      {
+        "card_bg": {
+          "type": "image",
+          "texture": "textures/ui/button_borderless_light",
+          "alpha": 0.15,
+          "size": ["100%", "100%"]
+        }
+      },
+      {
+        "card_content": {
+          "type": "stack_panel",
+          "orientation": "vertical",
+          "size": ["100%", "100%"],
+          "controls": [
+            {
+              "icon_area": {
+                "type": "panel",
+                "size": ["100%", 56],
+                "controls": [
+                  {
+                    "icon_image": {
+                      "type": "image",
+                      "texture": "#icon_path",
+                      "size": [40, 40],
+                      "anchor_from": "center",
+                      "anchor_to": "center"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "text_area": {
+                "type": "panel",
+                "size": ["100%", 36],
+                "controls": [
+                  {
+                    "text_label": {
+                      "type": "label",
+                      "text": "#button_text",
+                      "font_size": "small",
+                      "anchor_from": "center",
+                      "anchor_to": "center"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  "tau_row": {
+    "type": "panel",
+    "size": ["100%", 96],
+    "controls": [
+      {
+        "row_stack": {
+          "type": "stack_panel",
+          "orientation": "horizontal",
+          "size": ["100%", "100%"],
+          "controls": [
+            { "slot_0@tau_custom.tau_button_card": {} },
+            { "slot_1@tau_custom.tau_button_card": {} },
+            { "slot_2@tau_custom.tau_button_card": {} },
+            { "slot_3@tau_custom.tau_button_card": {} }
+          ]
+        }
+      }
+    ]
+  },
+
+  "tau_body": {
+    "type": "label",
+    "text": "#body_text",
+    "font_size": "normal",
+    "size": ["100%", "default"]
+  },
+
+  "tau_content": {
+    "type": "stack_panel",
+    "orientation": "vertical",
+    "size": ["100%", "default"],
+    "controls": [
+      {
+        "body_panel": {
+          "type": "panel",
+          "size": ["100%", "default"],
+          "controls": [
+            { "body_text@tau_custom.tau_body": {} }
+          ]
+        }
+      },
+      {
+        "gap": {
+          "type": "panel",
+          "size": ["100%", 12]
+        }
+      },
+      {
+        "button_row_0@tau_custom.tau_row": {}
+      },
+      {
+        "button_row_1@tau_custom.tau_row": {}
+      }
+    ]
+  },
+
+  "tau_custom_menu@common.base_screen": {
+    "button_mappings": [
+      {
+        "from_button_id": "button.menu_cancel",
+        "to_button_id": "button.menu_exit",
+        "mapping_type": "global"
+      }
+    ],
+    "controls": [
+      {
+        "bg@tau_custom.tau_panel_bg": {}
+      },
+      {
+        "main_stack": {
+          "type": "stack_panel",
+          "orientation": "vertical",
+          "size": ["90%", "85%"],
+          "anchor_from": "center",
+          "anchor_to": "center",
+          "controls": [
+            {
+              "header@tau_custom.tau_header_bar": {}
+            },
+            {
+              "spacer": {
+                "type": "panel",
+                "size": ["100%", 8]
+              }
+            },
+            {
+              "scroll": {
+                "type": "scroll_view",
+                "size": ["100%", "fill"],
+                "controls": [
+                  {
+                    "content@tau_custom.tau_content": {}
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
