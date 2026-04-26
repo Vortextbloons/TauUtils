@@ -1,0 +1,17 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "TauUtils Resources",
+    "description": "Resources for TauUtils",
+    "uuid": "66bc8fed-910d-4525-b790-4ff247865234",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 20, 60]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "2b03ea19-d9cb-4476-a6c3-6b5441afb651",
+      "version": [1, 0, 0]
+    }
+  ]
+}

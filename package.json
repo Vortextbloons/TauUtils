@@ -1,0 +1,16 @@
+{
+  "name": "eysicutils",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --format=esm --target=es2020 --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@minecraft/server": "^2.8.0-beta.1.26.20-preview.20",
+    "@minecraft/server-ui": "^2.1.0-beta.1.26.20-preview.20"
+  }
+}
