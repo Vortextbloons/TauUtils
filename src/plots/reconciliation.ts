@@ -1,10 +1,10 @@
 import { Player, world } from "@minecraft/server";
 import { type PlotSlot } from "../types";
 import { getPlayerId, savePlots, state } from "../storage";
-import { getDimension, invalidatePlotSlotCache } from "./grid";
-import { reorderPlotSlots } from "./build";
+import { getPlotSlots, invalidatePlotSlotCache } from "./grid";
+import { reorderPlotSlots, saveAndClearSlot } from "./build";
 import { reconcilePlotOwnershipData, reconcileTeamPlotSlots, resolveAuthoritativeOwnedSlotId, repairOwnedPlotSlots, getPlotOwnerIdForPlayerId } from "./ownership";
-import { deployPlayerPlot, findFreeSlotId } from "./player-ops";
+import { deployPlayerPlot } from "./player-ops";
 
 function reconcileOnlinePlotAssignmentsInternal(reason: string): { ok: boolean; assigned: number; fixed: number; failed: number; message: string } {
   const reconciled = reconcileAllPlotState(reason);
@@ -40,6 +40,40 @@ export type PlotReconcileResult = {
   message: string;
 };
 
+function releaseOwnedPlotSlot(slot: PlotSlot): boolean {
+  const ownerId = slot.occupiedByPlayerId;
+  if (!ownerId) return false;
+
+  const didSave = saveAndClearSlot(slot, ownerId);
+  if (!didSave) return false;
+
+  slot.occupiedByPlayerId = undefined;
+  if (state.plots.playerToSlot[ownerId] === slot.id) {
+    delete state.plots.playerToSlot[ownerId];
+  }
+  return true;
+}
+
+function shouldClearOfflinePlots(reason: string): boolean {
+  return reason.startsWith("startup");
+}
+
+function clearOfflinePlotAssignments(onlineOwnerIds: Set<string>): number {
+  let cleared = 0;
+  const seenOwnerIds = new Set<string>();
+
+  for (const slot of getPlotSlots()) {
+    const ownerId = slot.occupiedByPlayerId;
+    if (!ownerId || onlineOwnerIds.has(ownerId) || seenOwnerIds.has(ownerId)) continue;
+    if (releaseOwnedPlotSlot(slot)) {
+      seenOwnerIds.add(ownerId);
+      cleared += 1;
+    }
+  }
+
+  return cleared;
+}
+
 export function reconcileAllPlotState(reason: string = "general"): PlotReconcileResult {
   if (!state.plots.config.enabled) {
     return {
@@ -56,12 +90,16 @@ export function reconcileAllPlotState(reason: string = "general"): PlotReconcile
   const ownership = reconcilePlotOwnershipData();
   const teamPlotsReconciled = reconcileTeamPlotSlots();
 
+  const onlineOwnerIds = new Set<string>();
   const ownerRepresentatives = new Map<string, Player>();
   for (const player of world.getAllPlayers()) {
     const playerId = getPlayerId(player);
     const ownerId = getPlotOwnerIdForPlayerId(playerId);
+    onlineOwnerIds.add(ownerId);
     if (!ownerRepresentatives.has(ownerId)) ownerRepresentatives.set(ownerId, player);
   }
+
+  const offlinePlotsCleared = shouldClearOfflinePlots(reason) ? clearOfflinePlotAssignments(onlineOwnerIds) : 0;
 
   let assigned = 0;
   let failed = 0;
@@ -70,7 +108,8 @@ export function reconcileAllPlotState(reason: string = "general"): PlotReconcile
     (ownership.snapshotsFixed ?? 0) +
     (ownership.generatorsFixed ?? 0) +
     (reordered ? 1 : 0) +
-    (teamPlotsReconciled ? 1 : 0);
+    (teamPlotsReconciled ? 1 : 0) +
+    offlinePlotsCleared;
 
   for (const [ownerId, representative] of ownerRepresentatives.entries()) {
     const slotId = resolveAuthoritativeOwnedSlotId(ownerId) ?? state.plots.playerToSlot[ownerId];
