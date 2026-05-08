@@ -435,8 +435,8 @@ export function registerEventInterceptors() {
       saveAssignedPlayerPlot(dead);
       incrementStat(dead, "deaths", 1);
       const deadStats = getPlayerStats(dead);
-      deadStats.killstreak = 0;
       if (deadStats.longestKillstreak < deadStats.killstreak) deadStats.longestKillstreak = deadStats.killstreak;
+      deadStats.killstreak = 0;
       void getPlayerStatsById(getPlayerId(dead));
       return;
     }
