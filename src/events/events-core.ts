@@ -1,3 +1,4 @@
+// test 
 import { ItemStack, Player, world, system } from "@minecraft/server";
 import { ensurePlayerPlotAssigned, getAssignedSlotIdForOwner, getPlotForLocation, getPlotOwnerIdForPlayer, getPlotSlotsList, getPlotTitle, processQueuedPlotBuildJobs, processQueuedPlotSnapshots, reconcileAllPlotState, releasePlayerPlotById, saveAssignedPlayerPlot, showPlotError, teleportPlayerToSlot } from "../plots";
 import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUseOnBlock, isGeneratorBlock, processGenerators } from "../generators";
@@ -287,18 +288,27 @@ export function registerEventInterceptors() {
     reconcileAllPlotState("player_leave");
   });
 
-  world.beforeEvents.chatSend.subscribe((event) => {
-    if (shouldBlockCommandWhileTagged(event.sender, event.message)) {
+  if (world.beforeEvents.chatSend) {
+    world.beforeEvents.chatSend.subscribe((event) => {
+      if (shouldBlockCommandWhileTagged(event.sender, event.message)) {
+        event.cancel = true;
+        return;
+      }
+      if (!isFeatureEnabled("ranks")) return;
+      const formatted = formatChatMessage(event.sender, event.message);
       event.cancel = true;
-      return;
-    }
-    if (!isFeatureEnabled("ranks")) return;
-    const formatted = formatChatMessage(event.sender, event.message);
-    event.cancel = true;
-    system.run(() => {
-      world.sendMessage(formatted);
+      system.run(() => {
+        world.sendMessage(formatted);
+      });
     });
-  });
+  } else if (world.afterEvents.chatSend && isFeatureEnabled("ranks")) {
+    world.afterEvents.chatSend.subscribe((event) => {
+      const formatted = formatChatMessage(event.sender, event.message);
+      system.run(() => {
+        world.sendMessage(formatted);
+      });
+    });
+  }
 
   world.afterEvents.itemUse.subscribe((event) => {
     const player = asPlayer(event.source);
