@@ -44,6 +44,18 @@ import {
 } from "./utils";
 import { ICONS } from "../icons";
 
+type SellAllSlotPlan = {
+  slot: number;
+  amount: number;
+};
+
+type SellAllPlanEntry = {
+  item: ShopItemDefinition;
+  owned: number;
+  total: number;
+  slots: SellAllSlotPlan[];
+};
+
 export async function openShopProfile(player: Player, profileId: string) {
   await showShopFront(player, canonicalShopId(profileId));
 }
@@ -69,6 +81,70 @@ function moveCategoryItems(profile: ShopProfile, sourceCategory: string, targetP
   targetProfile.categories ??= [];
   if (!targetProfile.categories.includes(nextCategory)) targetProfile.categories.push(nextCategory);
   saveShops();
+}
+
+function buildSellAllPlan(player: Player, profile: ShopProfile): { entries: SellAllPlanEntry[]; totalGain: number } {
+  const container = getInventoryContainer(player);
+  if (!container) return { entries: [], totalGain: 0 };
+
+  const availableByItemId = new Map<string, SellAllSlotPlan[]>();
+  for (let slot = 0; slot < container.size; slot++) {
+    const stack = container.getItem(slot);
+    if (!stack || isProtectedCrateKey(stack)) continue;
+    const itemId = normalizeItemId(stack.typeId);
+    const slots = availableByItemId.get(itemId) ?? [];
+    slots.push({ slot, amount: stack.amount });
+    availableByItemId.set(itemId, slots);
+  }
+
+  const entries: SellAllPlanEntry[] = [];
+  let totalGain = 0;
+  for (const item of profile.items) {
+    if (item.bundle && item.bundle.length > 0) continue;
+    if (item.canSell === false || item.sellPrice <= 0) continue;
+    const availableSlots = availableByItemId.get(normalizeItemId(item.itemId));
+    if (!availableSlots || availableSlots.length === 0) continue;
+
+    let owned = 0;
+    const slots: SellAllSlotPlan[] = [];
+    for (const slotPlan of availableSlots) {
+      if (slotPlan.amount <= 0) continue;
+      const stack = container.getItem(slotPlan.slot);
+      if (!stack || !itemMatchesDefinition(stack, getItemInstanceDefinition(item))) continue;
+      owned += slotPlan.amount;
+      slots.push({ slot: slotPlan.slot, amount: slotPlan.amount });
+      slotPlan.amount = 0;
+    }
+    if (owned <= 0) continue;
+
+    const total = item.sellPrice * owned;
+    totalGain += total;
+    entries.push({ item, owned, total, slots });
+  }
+
+  return { entries, totalGain };
+}
+
+function applySellAllPlan(player: Player, entries: SellAllPlanEntry[]): boolean {
+  const container = getInventoryContainer(player);
+  if (!container) return false;
+  for (const entry of entries) {
+    for (const plan of entry.slots) {
+      let remaining = plan.amount;
+      const stack = container.getItem(plan.slot);
+      if (!stack || !itemMatchesDefinition(stack, getItemInstanceDefinition(entry.item))) return false;
+      if (stack.amount < remaining) return false;
+      if (stack.amount === remaining) {
+        container.setItem(plan.slot, undefined);
+      } else {
+        stack.amount -= remaining;
+        remaining = 0;
+        container.setItem(plan.slot, stack);
+      }
+      if (remaining !== 0) return false;
+    }
+  }
+  return true;
 }
 
 async function moveCategoryToProfile(player: Player, sourceProfile: ShopProfile, category: string): Promise<void> {
@@ -920,18 +996,9 @@ export async function sellAllSellableItems(player: Player, profileId: string) {
     return;
   }
 
-  const sellItems: { item: ShopItemDefinition; owned: number; total: number }[] = [];
-  let totalGain = 0;
-
-  for (const item of profile.items) {
-    if (item.bundle && item.bundle.length > 0) continue;
-    if (item.canSell === false) continue;
-    const owned = getItemInstanceCount(player, item);
-    if (owned <= 0 || item.sellPrice <= 0) continue;
-    const total = item.sellPrice * owned;
-    totalGain += total;
-    sellItems.push({ item, owned, total });
-  }
+  const plan = buildSellAllPlan(player, profile);
+  const sellItems = plan.entries;
+  const totalGain = plan.totalGain;
 
   if (sellItems.length === 0) {
     tell(player, "Nothing sellable was found.");
@@ -964,11 +1031,22 @@ export async function sellAllSellableItems(player: Player, profileId: string) {
     if (!response || response.canceled || response.selection === undefined) return;
 
     if (response.selection === 0) {
-      for (const entry of sellItems) {
-        removeItemInstance(player, entry.item, entry.owned);
+      const latest = buildSellAllPlan(player, profile);
+      if (latest.entries.length === 0) {
+        tell(player, "Nothing sellable was found.");
+        return;
       }
-      setScore(player, profile.currencyObjective, current + totalGain);
-      tell(player, `§aSold all items for §e${totalGain} ${profile.currencyObjective}§a!`);
+      const latestBalance = getScore(player, profile.currencyObjective);
+      if (latestBalance === undefined) {
+        tell(player, `Missing scoreboard objective "${profile.currencyObjective}".`);
+        return;
+      }
+      if (!applySellAllPlan(player, latest.entries)) {
+        tell(player, "Inventory changed before the sale could complete. Try again.");
+        return;
+      }
+      setScore(player, profile.currencyObjective, latestBalance + latest.totalGain);
+      tell(player, `§aSold all items for §e${latest.totalGain} ${profile.currencyObjective}§a!`);
       return;
     }
     return;

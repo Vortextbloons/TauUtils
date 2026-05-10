@@ -48,6 +48,7 @@ function normalizeItemId(value: string): string {
 }
 
 function isBannedItemId(itemId: string): boolean {
+  if (state.moderation.bannedItems.length === 0) return false;
   const normalized = normalizeItemId(itemId);
   return state.moderation.bannedItems.some((entry) => normalizeItemId(entry.itemId) === normalized);
 }
@@ -99,8 +100,9 @@ function snapshotsEqual(
   return true;
 }
 
-function cacheModerationInspectionSnapshot(player: Player | undefined): void {
-  if (!player) return;
+function cacheModerationInspectionSnapshot(player: Player | undefined): boolean {
+  if (!isFeatureEnabled("moderation")) return false;
+  if (!player) return false;
   try {
     state.moderation.inspectionSnapshots ??= {};
     const key = player.name.toLowerCase();
@@ -112,15 +114,16 @@ function cacheModerationInspectionSnapshot(player: Player | undefined): void {
       && current.playerName === player.name
       && snapshotsEqual(current.inventory, inventorySnapshot)
     ) {
-      return;
+      return false;
     }
     state.moderation.inspectionSnapshots[key] = {
       playerName: player.name,
       updatedAt: Date.now(),
       inventory: inventorySnapshot,
     };
-    saveModeration();
+    return true;
   } catch {
+    return false;
   }
 }
 
@@ -128,9 +131,11 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   if (!player) return;
   const id = getPlayerId(player);
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
-  clearBannedInventoryItems(player);
-  handleCombatJoin(player);
-  cacheModerationInspectionSnapshot(player);
+  if (isFeatureEnabled("moderation")) {
+    clearBannedInventoryItems(player);
+    if (cacheModerationInspectionSnapshot(player)) saveModeration();
+  }
+  if (isFeatureEnabled("combat")) handleCombatJoin(player);
 
   if (!isFeatureEnabled("plots")) return;
 
@@ -269,6 +274,7 @@ export function registerEventInterceptors() {
   });
 
   world.beforeEvents.playerLeave.subscribe((event) => {
+    if (!isFeatureEnabled("combat")) return;
     handleCombatLeave(event.player);
   });
 
@@ -312,7 +318,7 @@ export function registerEventInterceptors() {
 
   world.afterEvents.itemUse.subscribe((event) => {
     const player = asPlayer(event.source);
-    if (player) clearBannedInventoryItems(player);
+    if (player && isFeatureEnabled("moderation")) clearBannedHeldItem(player);
 
     if (player && isFeatureEnabled("items")) {
       const handled = tryHandleTauItemTrigger(player, "use_air", event.itemStack, {
@@ -440,7 +446,7 @@ export function registerEventInterceptors() {
   world.afterEvents.entityDie.subscribe((event) => {
     const dead = asPlayer(event.deadEntity);
     if (dead) {
-      handleCombatDeath(dead);
+      if (isFeatureEnabled("combat")) handleCombatDeath(dead);
       if (!isFeatureEnabled("stats")) return;
       saveAssignedPlayerPlot(dead);
       incrementStat(dead, "deaths", 1);
@@ -476,6 +482,7 @@ export function registerEventInterceptors() {
   });
 
   world.afterEvents.entityHurt.subscribe((event) => {
+    if (!isFeatureEnabled("combat")) return;
     const victim = asPlayer(event.hurtEntity);
     if (!victim) return;
     const attacker = resolveCombatAttacker(event.damageSource);
@@ -484,6 +491,7 @@ export function registerEventInterceptors() {
   });
 
   world.afterEvents.projectileHitEntity.subscribe((event) => {
+    if (!isFeatureEnabled("combat")) return;
     const victim = asPlayer(event.getEntityHit().entity);
     if (!victim) return;
     const attacker = resolveCombatProjectileAttacker(event.projectile, event.source);
@@ -540,14 +548,17 @@ export function registerEventInterceptors() {
 
   let moderationSnapshotCursor = 0;
   system.runInterval(() => {
+    if (!isFeatureEnabled("moderation")) return;
     const players = getCachedPlayers();
     if (players.length === 0) return;
     const perTick = Math.max(1, Math.ceil(players.length / 20));
+    let changed = false;
     for (let index = 0; index < perTick; index++) {
       const player = players[moderationSnapshotCursor % players.length];
-      if (player) cacheModerationInspectionSnapshot(player);
+      if (player && cacheModerationInspectionSnapshot(player)) changed = true;
       moderationSnapshotCursor++;
     }
+    if (changed) saveModeration();
   }, 40);
 
   system.runInterval(() => {

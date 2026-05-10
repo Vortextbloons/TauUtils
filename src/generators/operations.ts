@@ -6,6 +6,50 @@ import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, Plac
 import { generatorCache, GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
 import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, normalizeId, normalizeItemId, parsePlotIndex, readGeneratorItemData } from "./definitions";
 
+let generatorProcessCursor = 0;
+
+type GeneratorIndexes = {
+  byOwnerId: Map<string, PlacedGenerator[]>;
+  bySlotId: Map<string, PlacedGenerator[]>;
+  dueSorted: PlacedGenerator[];
+};
+
+let generatorIndexes: GeneratorIndexes | undefined;
+let generatorIndexesDirty = true;
+
+function markGeneratorIndexesDirty(): void {
+  generatorIndexesDirty = true;
+}
+
+function buildGeneratorIndexes(): GeneratorIndexes {
+  const byOwnerId = new Map<string, PlacedGenerator[]>();
+  const bySlotId = new Map<string, PlacedGenerator[]>();
+  const dueSorted = Object.values(state.generators.placed).slice().sort((a, b) => a.nextSpawnAt - b.nextSpawnAt || a.id.localeCompare(b.id));
+
+  for (const placed of dueSorted) {
+    const ownerGenerators = byOwnerId.get(placed.ownerPlayerId) ?? [];
+    ownerGenerators.push(placed);
+    byOwnerId.set(placed.ownerPlayerId, ownerGenerators);
+
+    const slot = getPlotForLocation({ x: placed.x, y: placed.y, z: placed.z });
+    if (slot) {
+      const slotGenerators = bySlotId.get(slot.id) ?? [];
+      slotGenerators.push(placed);
+      bySlotId.set(slot.id, slotGenerators);
+    }
+  }
+
+  return { byOwnerId, bySlotId, dueSorted };
+}
+
+function getGeneratorIndexes(): GeneratorIndexes {
+  if (!generatorIndexes || generatorIndexesDirty) {
+    generatorIndexes = buildGeneratorIndexes();
+    generatorIndexesDirty = false;
+  }
+  return generatorIndexes;
+}
+
 function stripFormatting(value: string): string {
   return String(value ?? "").replace(/§./g, "").trim();
 }
@@ -48,13 +92,9 @@ function canAccessTeamPlotGenerator(player: Player, location: GeneratorLocation)
   return playerId === team.ownerPlayerId || team.memberPlayerIds.includes(playerId);
 }
 
-function isGeneratorOwnerActive(placed: PlacedGenerator, onlineIds: Set<string>): boolean {
+function isGeneratorOwnerActive(placed: PlacedGenerator, onlineIds: Set<string>, activeTeamOwnerIds: Set<string>): boolean {
   if (onlineIds.has(placed.ownerPlayerId)) return true;
-
-  const team = Object.values(state.teams.teams).find((entry) => entry.ownerPlayerId === placed.ownerPlayerId && entry.teamPlotEnabled);
-  if (!team) return false;
-
-  return team.memberPlayerIds.some((memberId) => onlineIds.has(memberId));
+  return activeTeamOwnerIds.has(placed.ownerPlayerId);
 }
 
 function isAutoBreakerUnlocked(placed: PlacedGenerator, definition: GeneratorDefinition): boolean {
@@ -299,6 +339,7 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
   }
 
   state.generators.placed[placed.id] = placed;
+  markGeneratorIndexesDirty();
   saveGenerators();
   savePlotAtLocation(loc);
   return { ok: true, message: `Placed ${def.name} block.` };
@@ -327,6 +368,7 @@ export function pickupGenerator(player: Player, location: Vector3, dimensionId: 
   }
 
   delete state.generators.placed[placed.id];
+  markGeneratorIndexesDirty();
 
   clearGeneratorOutput(loc);
   saveGenerators();
@@ -375,6 +417,14 @@ export function getPlacedGeneratorDefinition(location: Vector3, dimensionId: str
   return state.generators.definitions[placed.definitionId];
 }
 
+export function getPlacedGeneratorsForOwner(ownerPlayerId: string): PlacedGenerator[] {
+  return [...(getGeneratorIndexes().byOwnerId.get(ownerPlayerId) ?? [])];
+}
+
+export function getPlacedGeneratorsForSlot(slotId: string): PlacedGenerator[] {
+  return [...(getGeneratorIndexes().bySlotId.get(slotId) ?? [])];
+}
+
 export function describeGeneratorStack(itemStack?: ItemStack): string | undefined {
   const def = getDefinitionByStack(itemStack);
   if (!def) return undefined;
@@ -408,6 +458,7 @@ export function upgradeGenerator(player: Player, location: Vector3, dimensionId:
 
   placed.tier += 1;
   placed.nextSpawnAt = Date.now() + nextTier.rateTicks * 50;
+  markGeneratorIndexesDirty();
   saveGenerators();
   savePlotAtLocation(loc);
   return { ok: true, message: `Upgraded to tier ${placed.tier} for $${nextTier.upgradeCost}.` };
@@ -427,6 +478,7 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
 
   if (placed.autoBreakerPurchased) {
     placed.autoBreakerEnabled = !placed.autoBreakerEnabled;
+    markGeneratorIndexesDirty();
     saveGenerators();
     savePlotAtLocation(loc);
     return { ok: true, message: `Autobreaker ${placed.autoBreakerEnabled ? "enabled" : "disabled"}.` };
@@ -441,6 +493,7 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
 
   placed.autoBreakerPurchased = true;
   placed.autoBreakerEnabled = true;
+  markGeneratorIndexesDirty();
   saveGenerators();
   savePlotAtLocation(loc);
   return { ok: true, message: `Bought autobreaker for $${cost}.` };
@@ -456,8 +509,27 @@ export function processGenerators(): void {
     onlinePlayersById.set(getPlayerId(player), player);
   }
 
-  for (const placed of Object.values(state.generators.placed)) {
-    if (!isGeneratorOwnerActive(placed, onlineIds)) continue;
+  const activeTeamOwnerIds = new Set<string>();
+  for (const team of Object.values(state.teams.teams)) {
+    if (!team.teamPlotEnabled) continue;
+    if (onlineIds.has(team.ownerPlayerId) || team.memberPlayerIds.some((memberId) => onlineIds.has(memberId))) {
+      activeTeamOwnerIds.add(team.ownerPlayerId);
+    }
+  }
+
+  const placedGenerators = getGeneratorIndexes().dueSorted;
+  if (placedGenerators.length === 0) {
+    generatorProcessCursor = 0;
+    return;
+  }
+
+  let changedSchedule = false;
+  const processBudget = Math.min(placedGenerators.length, Math.max(64, onlinePlayers.length * 16));
+  for (let index = 0; index < processBudget; index++) {
+    const placed = placedGenerators[generatorProcessCursor % placedGenerators.length];
+    generatorProcessCursor = (generatorProcessCursor + 1) % placedGenerators.length;
+    if (!placed) continue;
+    if (!isGeneratorOwnerActive(placed, onlineIds, activeTeamOwnerIds)) continue;
     const def = state.generators.definitions[placed.definitionId];
     if (!def) continue;
     const tier = getTier(def, placed.tier);
@@ -467,6 +539,7 @@ export function processGenerators(): void {
     const spawned = spawnGeneratorOutput({ dimensionId: placed.dimensionId, x: placed.x, y: placed.y, z: placed.z }, def, 1);
     if (!spawned) {
       placed.nextSpawnAt = now + Math.max(1, tier.rateTicks) * 50;
+      changedSchedule = true;
       continue;
     }
 
@@ -479,7 +552,9 @@ export function processGenerators(): void {
     }
 
     placed.nextSpawnAt = now + Math.max(0, tier.rateTicks) * 50;
+    changedSchedule = true;
   }
+  if (changedSchedule) markGeneratorIndexesDirty();
 }
 
 export function clearAllGenerators(): void {
@@ -489,5 +564,6 @@ export function clearAllGenerators(): void {
   }
   generatorCache.definitions = undefined;
   generatorCache.source = undefined;
+  markGeneratorIndexesDirty();
   saveGenerators();
 }

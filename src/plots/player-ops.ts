@@ -6,6 +6,30 @@ import { clearSlot, saveAndClearSlot, captureSlotGenerators, saveSlotSnapshot, l
 import { getPlotOwnerIdForPlayerId, resolveAuthoritativeOwnedSlotId } from "./ownership";
 import { getPlayerTeam } from "../teams";
 
+type PlotTitleCacheEntry = {
+  key: string;
+  title: string;
+};
+
+const plotTitleCache = new Map<string, PlotTitleCacheEntry>();
+
+function plotTitleCacheKey(slot: PlotSlot): string {
+  const teamVersion = Object.values(state.teams.teams)
+    .map((team) => `${team.ownerPlayerId}:${team.teamPlotEnabled ? 1 : 0}:${team.name}`)
+    .join("|");
+  return `${state.plots.config.autoBuild.titleMode}:${slot.id}:${slot.occupiedByPlayerId ?? ""}:${teamVersion}:${Object.keys(state.stats.playerIds).length}`;
+}
+
+function buildPlotTitle(slot: PlotSlot): string {
+  const auto = state.plots.config.autoBuild;
+  if (auto.titleMode === "plot") return `Plot ${slot.id}`;
+  if (!slot.occupiedByPlayerId) return `Plot ${slot.id}`;
+  const team = Object.values(state.teams.teams).find((entry) => entry.ownerPlayerId === slot.occupiedByPlayerId);
+  if (team && team.teamPlotEnabled) return `${team.name} Plot`;
+  const ownerName = Object.entries(state.stats.playerIds).find(([, pid]) => pid === slot.occupiedByPlayerId)?.[0];
+  return ownerName ? `${ownerName}'s Plot` : `Plot ${slot.id}`;
+}
+
 export function findFreeSlotId(): string | undefined {
   for (const slot of getPlotSlots()) {
     if (!slot.occupiedByPlayerId) return slot.id;
@@ -213,11 +237,10 @@ export function showPlotError(player: Player, message: string) {
 }
 
 export function getPlotTitle(slot: PlotSlot): string {
-  const auto = state.plots.config.autoBuild;
-  if (auto.titleMode === "plot") return `Plot ${slot.id}`;
-  if (!slot.occupiedByPlayerId) return `Plot ${slot.id}`;
-  const team = Object.values(state.teams.teams).find((entry) => entry.ownerPlayerId === slot.occupiedByPlayerId);
-  if (team && team.teamPlotEnabled) return `${team.name} Plot`;
-  const ownerName = Object.entries(state.stats.playerIds).find(([, pid]) => pid === slot.occupiedByPlayerId)?.[0];
-  return ownerName ? `${ownerName}'s Plot` : `Plot ${slot.id}`;
+  const key = plotTitleCacheKey(slot);
+  const cached = plotTitleCache.get(slot.id);
+  if (cached?.key === key) return cached.title;
+  const title = buildPlotTitle(slot);
+  plotTitleCache.set(slot.id, { key, title });
+  return title;
 }

@@ -97,6 +97,7 @@ export type FeatureFlags = {
   crates: boolean;
   items: boolean;
   combat: boolean;
+  moderation: boolean;
 };
 
 export type ConfigStore = {

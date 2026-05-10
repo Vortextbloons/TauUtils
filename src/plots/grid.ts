@@ -79,11 +79,13 @@ export function invalidatePlotSlotCache() {
 export function setPlotOriginFromPlayer(player: Player) {
   state.plots.config.origin = roundVec(player.location);
   state.plots.config.dimensionId = player.dimension.id;
+  invalidatePlotSlotCache();
   savePlots();
 }
 
 export function setPlotCount(count: number) {
   state.plots.config.activePlotCount = clampCount(count);
+  invalidatePlotSlotCache();
   savePlots();
 }
 
@@ -93,11 +95,13 @@ export function setPlotSize(x: number, y: number, z: number) {
     y: Math.max(1, Math.floor(y)),
     z: Math.max(1, Math.floor(z)),
   };
+  invalidatePlotSlotCache();
   savePlots();
 }
 
 export function setPlotSpacing(spacing: number) {
   state.plots.config.spacing = Math.max(0, Math.floor(spacing));
+  invalidatePlotSlotCache();
   savePlots();
 }
 
@@ -150,8 +154,7 @@ export function buildManualGridSlots(options?: PlotLayoutOptions): { ok: boolean
     }
   }
 
-  cachedPlotSlots = undefined;
-  cachedPlotSlotsSource = undefined;
+  invalidatePlotSlotCache();
   savePlots();
   return { ok: true, message: `Built ${cfg.count} plots.` };
 }
@@ -176,6 +179,7 @@ export function setSlotManualBounds(slotId: string, cornerA: Vector3, cornerB: V
     z: Math.max(a.z, b.z),
   };
   slot.manual = true;
+  invalidatePlotSlotCache();
   savePlots();
   return true;
 }

@@ -1,4 +1,4 @@
-import { world } from "@minecraft/server";
+import { system, world } from "@minecraft/server";
 import { STORAGE_KEYS } from "../types";
 import {
   state,
@@ -6,20 +6,32 @@ import {
   markStatsPlayerDirty,
   markStatsPlayerIdsDirty,
   normalizePlotStore,
-  writePlotsToSplitKeys,
+  writePlotsIncrementalToSplitKeys,
   PLOTS_MIGRATION_MARKER_KEY,
-  PLAYER_SHOPS_CONFIG_KEY,
-  PLAYER_SHOPS_SHOP_PREFIX,
-  PLAYER_SHOPS_LISTING_PREFIX,
-  PLAYER_SHOPS_EARNINGS_PREFIX,
+  writePlayerShopsIncrementalToSplitKeys,
 } from "./state";
 
+const pendingDynamicSaves = new Map<string, () => void>();
+let dynamicSaveFlushScheduled = false;
+
+function scheduleDynamicSave(key: string, flush: () => void): void {
+  pendingDynamicSaves.set(key, flush);
+  if (dynamicSaveFlushScheduled) return;
+  dynamicSaveFlushScheduled = true;
+  system.runTimeout(() => {
+    dynamicSaveFlushScheduled = false;
+    const saves = [...pendingDynamicSaves.values()];
+    pendingDynamicSaves.clear();
+    for (const save of saves) save();
+  }, 5);
+}
+
 export function saveForms() {
-  safeSetDynamicJson(STORAGE_KEYS.forms, state.forms);
+  scheduleDynamicSave(STORAGE_KEYS.forms, () => safeSetDynamicJson(STORAGE_KEYS.forms, state.forms));
 }
 
 export function saveShops() {
-  safeSetDynamicJson(STORAGE_KEYS.shops, state.shops);
+  scheduleDynamicSave(STORAGE_KEYS.shops, () => safeSetDynamicJson(STORAGE_KEYS.shops, state.shops));
 }
 
 export function saveBinds() {
@@ -27,7 +39,7 @@ export function saveBinds() {
 }
 
 export function saveSidebars() {
-  safeSetDynamicJson(STORAGE_KEYS.sidebars, state.sidebars);
+  scheduleDynamicSave(STORAGE_KEYS.sidebars, () => safeSetDynamicJson(STORAGE_KEYS.sidebars, state.sidebars));
 }
 
 export function saveConfig() {
@@ -35,11 +47,11 @@ export function saveConfig() {
 }
 
 export function saveRanks() {
-  safeSetDynamicJson(STORAGE_KEYS.ranks, state.ranks);
+  scheduleDynamicSave(STORAGE_KEYS.ranks, () => safeSetDynamicJson(STORAGE_KEYS.ranks, state.ranks));
 }
 
 export function saveChat() {
-  safeSetDynamicJson(STORAGE_KEYS.chat, state.chat);
+  scheduleDynamicSave(STORAGE_KEYS.chat, () => safeSetDynamicJson(STORAGE_KEYS.chat, state.chat));
 }
 
 export function saveStats() {
@@ -50,81 +62,64 @@ export function saveStats() {
 }
 
 export function saveProfiles() {
-  safeSetDynamicJson("tau:profiles", state.profiles);
+  scheduleDynamicSave("tau:profiles", () => safeSetDynamicJson("tau:profiles", state.profiles));
 }
 
 export function savePlots() {
-  writePlotsToSplitKeys(normalizePlotStore(state.plots));
+  writePlotsIncrementalToSplitKeys(normalizePlotStore(state.plots));
   world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
   world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
 }
 
 export function saveTpa() {
-  safeSetDynamicJson(STORAGE_KEYS.tpa, state.tpa);
+  scheduleDynamicSave(STORAGE_KEYS.tpa, () => safeSetDynamicJson(STORAGE_KEYS.tpa, state.tpa));
 }
 
 export function saveHomes() {
-  safeSetDynamicJson(STORAGE_KEYS.homes, state.homes);
+  scheduleDynamicSave(STORAGE_KEYS.homes, () => safeSetDynamicJson(STORAGE_KEYS.homes, state.homes));
 }
 
 export function savePay() {
-  safeSetDynamicJson(STORAGE_KEYS.pay, state.pay);
+  scheduleDynamicSave(STORAGE_KEYS.pay, () => safeSetDynamicJson(STORAGE_KEYS.pay, state.pay));
 }
 
 export function savePlayerSettings() {
-  safeSetDynamicJson(STORAGE_KEYS.playerSettings, state.playerSettings);
+  scheduleDynamicSave(STORAGE_KEYS.playerSettings, () => safeSetDynamicJson(STORAGE_KEYS.playerSettings, state.playerSettings));
 }
 
 export function saveTeams() {
-  safeSetDynamicJson(STORAGE_KEYS.teams, state.teams);
+  scheduleDynamicSave(STORAGE_KEYS.teams, () => safeSetDynamicJson(STORAGE_KEYS.teams, state.teams));
 }
 
 export function savePrune() {
-  safeSetDynamicJson("tau:prune", state.prune);
+  scheduleDynamicSave("tau:prune", () => safeSetDynamicJson("tau:prune", state.prune));
 }
 
 export function saveWarps() {
-  safeSetDynamicJson(STORAGE_KEYS.warps, state.warps);
+  scheduleDynamicSave(STORAGE_KEYS.warps, () => safeSetDynamicJson(STORAGE_KEYS.warps, state.warps));
 }
 
 export function saveGenerators() {
-  safeSetDynamicJson(STORAGE_KEYS.generators, state.generators);
+  scheduleDynamicSave(STORAGE_KEYS.generators, () => safeSetDynamicJson(STORAGE_KEYS.generators, state.generators));
 }
 
 export function saveModeration() {
-  safeSetDynamicJson(STORAGE_KEYS.moderation, state.moderation);
+  scheduleDynamicSave(STORAGE_KEYS.moderation, () => safeSetDynamicJson(STORAGE_KEYS.moderation, state.moderation));
 }
 
 export function saveCrates() {
-  safeSetDynamicJson(STORAGE_KEYS.crates, state.crates);
+  scheduleDynamicSave(STORAGE_KEYS.crates, () => safeSetDynamicJson(STORAGE_KEYS.crates, state.crates));
 }
 
 export function saveTauItems() {
-  safeSetDynamicJson(STORAGE_KEYS.tauItems, state.tauItems);
+  scheduleDynamicSave(STORAGE_KEYS.tauItems, () => safeSetDynamicJson(STORAGE_KEYS.tauItems, state.tauItems));
 }
 
 export function saveCombat() {
-  safeSetDynamicJson(STORAGE_KEYS.combat, state.combat);
+  scheduleDynamicSave(STORAGE_KEYS.combat, () => safeSetDynamicJson(STORAGE_KEYS.combat, state.combat));
 }
 
 export function savePlayerShops() {
-  const keys = world.getDynamicPropertyIds();
-  for (const key of keys) {
-    if (key.startsWith(PLAYER_SHOPS_SHOP_PREFIX) || key.startsWith(PLAYER_SHOPS_LISTING_PREFIX) || key.startsWith(PLAYER_SHOPS_EARNINGS_PREFIX)) {
-      world.setDynamicProperty(key, undefined);
-    }
-  }
-
-  safeSetDynamicJson(PLAYER_SHOPS_CONFIG_KEY, state.playerShops.config);
-  for (const [shopId, shop] of Object.entries(state.playerShops.shops)) {
-    safeSetDynamicJson(`${PLAYER_SHOPS_SHOP_PREFIX}${shopId}`, shop);
-  }
-  for (const [listingId, listing] of Object.entries(state.playerShops.listings)) {
-    safeSetDynamicJson(`${PLAYER_SHOPS_LISTING_PREFIX}${listingId}`, listing);
-  }
-  for (const [playerId, earnings] of Object.entries(state.playerShops.earningsByPlayerId)) {
-    safeSetDynamicJson(`${PLAYER_SHOPS_EARNINGS_PREFIX}${playerId}`, earnings);
-  }
-
+  writePlayerShopsIncrementalToSplitKeys(state.playerShops);
   world.setDynamicProperty(STORAGE_KEYS.playerShops, undefined);
 }

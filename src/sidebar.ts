@@ -8,6 +8,26 @@ let tpsSampleTick = 0;
 let tpsSampleTime = Date.now();
 let cachedTps = "20.0";
 
+type SidebarPlaceholderContext = {
+  name: string;
+  money: string;
+  ping: string;
+  pos: string;
+  tps: string;
+  health: string;
+  healthColor: string;
+  rank: string;
+};
+
+type SidebarRenderCache = {
+  sidebarId?: string;
+  lastRenderTick: number;
+  lastText: string;
+};
+
+let enabledSidebarCache: SidebarDefinition[] | undefined;
+const playerRenderCache = new Map<string, SidebarRenderCache>();
+
 const DEFAULT_SIDEBAR: SidebarDefinition = {
   id: "main_hud",
   title: "§l§bMY SERVER§r",
@@ -37,7 +57,7 @@ function ensureSidebarDefaults() {
   if (Object.keys(state.sidebars.sidebars).length > 0) return;
   state.sidebars.sidebars.main_hud = createDefaultSidebar();
   state.sidebars.defaultSidebarId = "main_hud";
-  saveSidebars();
+  saveSidebarsAndInvalidate();
 }
 
 function ensureDefaultSidebarExists() {
@@ -56,6 +76,16 @@ function sanitizeAllSidebars() {
       sidebar.lines = ["Player: [name]"];
     }
   }
+}
+
+function invalidateSidebarCaches(): void {
+  enabledSidebarCache = undefined;
+  playerRenderCache.clear();
+}
+
+function saveSidebarsAndInvalidate(): void {
+  saveSidebars();
+  invalidateSidebarCaches();
 }
 
 function formatNumber(value: number): string {
@@ -81,24 +111,33 @@ function getServerTps(): string {
   return cachedTps;
 }
 
+function getEnabledSidebars(): SidebarDefinition[] {
+  if (!enabledSidebarCache) {
+    enabledSidebarCache = Object.values(state.sidebars.sidebars)
+      .filter((sidebar) => sidebar.enabled)
+      .sort((a, b) => b.priority - a.priority);
+  }
+  return enabledSidebarCache;
+}
+
 function pickSidebarForPlayer(player: Player): SidebarDefinition | undefined {
   if (!state.sidebars.enabled) return undefined;
 
-  const candidates = Object.values(state.sidebars.sidebars).filter((sidebar) => sidebar.enabled);
+  const candidates = getEnabledSidebars();
   if (candidates.length === 0) return undefined;
 
-  const tagged = player
-    .getTags()
-    .filter((tag) => tag.startsWith("sidebar:"))
-    .map((tag) => tag.slice("sidebar:".length));
+  const tagged = new Set<string>();
+  for (const tag of player.getTags()) {
+    if (tag.startsWith("sidebar:")) tagged.add(tag.slice("sidebar:".length));
+  }
 
-  const matched = candidates.filter((sidebar) => tagged.includes(sidebar.id));
-  const pool = matched.length > 0 ? matched : candidates;
-  pool.sort((a, b) => b.priority - a.priority);
-  return pool[0];
+  for (const sidebar of candidates) {
+    if (tagged.has(sidebar.id)) return sidebar;
+  }
+  return candidates[0];
 }
 
-function replacePlaceholders(player: Player, sidebar: SidebarDefinition, line: string): string {
+function buildPlaceholderContext(player: Player, sidebar: SidebarDefinition): SidebarPlaceholderContext {
   const pos = `${Math.floor(player.location.x)}, ${Math.floor(player.location.y)}, ${Math.floor(player.location.z)}`;
   const money = getPlayerMoney(player, sidebar.moneyObjective);
   const health = player.getComponent("minecraft:health") as { currentValue?: number } | undefined;
@@ -109,18 +148,31 @@ function replacePlaceholders(player: Player, sidebar: SidebarDefinition, line: s
   const rank = getPlayerRank(player.name);
   const rankText = rank ? `${rank.color}${rank.name}§r` : "";
 
-  return line
-    .split("[name]").join(player.name)
-    .split("[money]").join(formatNumber(money))
-    .split("[ping]").join(Number.isFinite(ping) ? `${Math.round(ping)}ms` : "N/A")
-    .split("[pos]").join(pos)
-    .split("[tps]").join(getServerTps())
-    .split("[health]").join(String(healthValue))
-    .split("[health_color]").join(healthColor)
-    .split("[rank]").join(rankText);
+  return {
+    name: player.name,
+    money: formatNumber(money),
+    ping: Number.isFinite(ping) ? `${Math.round(ping)}ms` : "N/A",
+    pos,
+    tps: getServerTps(),
+    health: String(healthValue),
+    healthColor,
+    rank: rankText,
+  };
 }
 
-function buildSidebarLines(player: Player, sidebar: SidebarDefinition): string[] {
+function replacePlaceholders(line: string, context: SidebarPlaceholderContext): string {
+  return line
+    .split("[name]").join(context.name)
+    .split("[money]").join(context.money)
+    .split("[ping]").join(context.ping)
+    .split("[pos]").join(context.pos)
+    .split("[tps]").join(context.tps)
+    .split("[health]").join(context.health)
+    .split("[health_color]").join(context.healthColor)
+    .split("[rank]").join(context.rank);
+}
+
+function buildSidebarLines(sidebar: SidebarDefinition, context: SidebarPlaceholderContext): string[] {
   const lines: string[] = [];
   for (const line of sidebar.lines) {
     const trimmed = line.trim();
@@ -129,12 +181,12 @@ function buildSidebarLines(player: Player, sidebar: SidebarDefinition): string[]
     if (lines.length >= 15) break;
   }
   if (!sidebar.scroll || lines.length <= 1) {
-    return lines.map((line) => replacePlaceholders(player, sidebar, line));
+    return lines.map((line) => replacePlaceholders(line, context));
   }
   const interval = Math.max(1, sidebar.updateInterval);
   const offset = Math.floor(sidebarTick / interval) % lines.length;
   const rotated = [...lines.slice(offset), ...lines.slice(0, offset)];
-  return rotated.map((line) => replacePlaceholders(player, sidebar, line));
+  return rotated.map((line) => replacePlaceholders(line, context));
 }
 
 function truncateLine(line: string, max = 80): string {
@@ -143,14 +195,29 @@ function truncateLine(line: string, max = 80): string {
 }
 
 function buildSidebarText(player: Player, sidebar: SidebarDefinition): string {
-  const title = truncateLine(replacePlaceholders(player, sidebar, sidebar.title), 80);
-  const lines = buildSidebarLines(player, sidebar).map((line) => truncateLine(line));
+  const context = buildPlaceholderContext(player, sidebar);
+  const title = truncateLine(replacePlaceholders(sidebar.title, context), 80);
+  const lines = buildSidebarLines(sidebar, context).map((line) => truncateLine(line));
   return [title, ...lines].filter((line) => line.length > 0).join("\n");
 }
 
+function getPlayerCacheKey(player: Player): string {
+  return player.id || player.name;
+}
+
 function applySidebarForPlayer(player: Player, sidebar: SidebarDefinition) {
+  const key = getPlayerCacheKey(player);
+  const cache = playerRenderCache.get(key);
+  const interval = Math.max(1, Math.floor(sidebar.updateInterval || 20));
+  const changedSidebar = cache?.sidebarId !== sidebar.id;
+  if (!changedSidebar && cache && sidebarTick - cache.lastRenderTick < interval) {
+    player.onScreenDisplay.setActionBar(cache.lastText || "§r");
+    return;
+  }
+
   const text = buildSidebarText(player, sidebar);
   player.onScreenDisplay.setActionBar(text || "§r");
+  playerRenderCache.set(key, { sidebarId: sidebar.id, lastRenderTick: sidebarTick, lastText: text });
 }
 
 function renderSidebarTick() {
@@ -228,7 +295,7 @@ async function createOrEditSidebar(player: Player, sidebarId?: string) {
 
   state.sidebars.sidebars[id] = existing;
   state.sidebars.defaultSidebarId ??= id;
-  saveSidebars();
+  saveSidebarsAndInvalidate();
   tell(player, `Saved sidebar ${id}.`);
 }
 
@@ -246,7 +313,7 @@ async function editSidebarLines(player: Player, sidebar: SidebarDefinition) {
     .filter((line) => line.length > 0)
     .slice(0, 15);
   sidebar.lines = cleaned.length > 0 ? cleaned : ["Player: [name]"];
-  saveSidebars();
+  saveSidebarsAndInvalidate();
   tell(player, `Updated lines for ${sidebar.id}.`);
 }
 
@@ -263,7 +330,7 @@ async function setSidebarDefault(player: Player) {
   if (!response || response.canceled || response.selection === undefined) return;
   if (response.selection >= ids.length) return;
   state.sidebars.defaultSidebarId = ids[response.selection];
-  saveSidebars();
+  saveSidebarsAndInvalidate();
   tell(player, `Default sidebar set to ${ids[response.selection]}.`);
 }
 
@@ -290,7 +357,7 @@ export async function showSidebarEditor(player: Player) {
 
     if (response.selection === 0) {
       state.sidebars.enabled = !state.sidebars.enabled;
-      saveSidebars();
+      saveSidebarsAndInvalidate();
       tell(player, `Sidebar system ${state.sidebars.enabled ? "enabled" : "disabled"}.`);
       continue;
     }

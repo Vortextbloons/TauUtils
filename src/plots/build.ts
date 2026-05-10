@@ -74,6 +74,7 @@ type SnapshotJob = {
   slotId: string;
   mode: "save" | "load";
   attempts: number;
+  nextAttemptAt?: number;
   generators?: PlotSnapshot["generators"];
 };
 
@@ -83,6 +84,62 @@ const pendingJobCountsBySlot: Record<string, number> = {};
 const completedSlots: Set<string> = new Set();
 let buildSessionTotalSlots = 0;
 export const snapshotQueue: SnapshotJob[] = [];
+const SNAPSHOT_JOBS_PER_TICK = 1;
+const PLOT_SPATIAL_CELL_SIZE = 64;
+
+type PlotSpatialIndex = {
+  signature: string;
+  buckets: Map<string, PlotSlot[]>;
+};
+
+let plotSpatialIndex: PlotSpatialIndex | undefined;
+
+function plotSpatialSignature(): string {
+  return `${state.plots.config.dimensionId}|${getPlotSlots().map((slot) => `${slot.id}:${slot.min.x},${slot.min.y},${slot.min.z}:${slot.max.x},${slot.max.y},${slot.max.z}`).join("|")}`;
+}
+
+function bucketCoord(value: number): number {
+  return Math.floor(value / PLOT_SPATIAL_CELL_SIZE);
+}
+
+function bucketKey(x: number, y: number, z: number): string {
+  return `${x}:${y}:${z}`;
+}
+
+function buildPlotSpatialIndex(): PlotSpatialIndex {
+  const buckets = new Map<string, PlotSlot[]>();
+  for (const slot of getPlotSlots()) {
+    const minX = bucketCoord(slot.min.x);
+    const maxX = bucketCoord(slot.max.x);
+    const minY = bucketCoord(slot.min.y);
+    const maxY = bucketCoord(slot.max.y);
+    const minZ = bucketCoord(slot.min.z);
+    const maxZ = bucketCoord(slot.max.z);
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          const key = bucketKey(x, y, z);
+          const slots = buckets.get(key) ?? [];
+          slots.push(slot);
+          buckets.set(key, slots);
+        }
+      }
+    }
+  }
+  return { signature: plotSpatialSignature(), buckets };
+}
+
+function getPlotSpatialIndex(): PlotSpatialIndex {
+  const signature = plotSpatialSignature();
+  if (!plotSpatialIndex || plotSpatialIndex.signature !== signature) {
+    plotSpatialIndex = buildPlotSpatialIndex();
+  }
+  return plotSpatialIndex;
+}
+
+export function invalidatePlotRuntimeCaches(): void {
+  plotSpatialIndex = undefined;
+}
 
 function canUsePlotCommandsNow(): boolean {
   try {
@@ -318,7 +375,6 @@ export function buildPlotGeometry(slotId?: string): { ok: boolean; message: stri
 export function autoBuildPlots(): { ok: boolean; message: string } {
   const built = buildManualGridSlots();
   if (!built.ok) return built;
-  enqueueLayoutClear(getPlotSlots());
   const geometry = buildPlotGeometry();
   if (!geometry.ok) return geometry;
   return { ok: true, message: `Built ${Object.keys(state.plots.slots).length} plots and queued geometry. Get close to each plot to finish it.` };
@@ -419,7 +475,7 @@ export function isGeneratorInSlot(generator: PlacedGenerator, slot: PlotSlot): b
     generator.z >= slot.min.z && generator.z <= slot.max.z;
 }
 
-export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: PlotSnapshot["generators"]): boolean {
+export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: PlotSnapshot["generators"], queueOnFailure = true): boolean {
   const dim = getDimension();
   const name = structureNameForPlayer(playerId);
   const snapshotGenerators = generators ?? captureSlotGenerators(slot, playerId);
@@ -436,12 +492,12 @@ export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: 
     };
     return true;
   } catch {
-    snapshotQueue.push({ playerId, slotId: slot.id, mode: "save", attempts: 0, generators: snapshotGenerators });
+    if (queueOnFailure) snapshotQueue.push({ playerId, slotId: slot.id, mode: "save", attempts: 0, generators: snapshotGenerators });
     return false;
   }
 }
 
-export function loadSlotSnapshot(slot: PlotSlot, playerId: string): boolean {
+export function loadSlotSnapshot(slot: PlotSlot, playerId: string, queueOnFailure = true): boolean {
   const snap = state.plots.snapshots[playerId];
   if (!snap) return false;
   snap.slotId = slot.id;
@@ -452,7 +508,7 @@ export function loadSlotSnapshot(slot: PlotSlot, playerId: string): boolean {
     if (restoreSlotGenerators(snap, slot, playerId)) saveGenerators();
     return true;
   } catch {
-    snapshotQueue.push({ playerId, slotId: slot.id, mode: "load", attempts: 0 });
+    if (queueOnFailure) snapshotQueue.push({ playerId, slotId: slot.id, mode: "load", attempts: 0 });
     return false;
   }
 }
@@ -461,16 +517,28 @@ export function processQueuedPlotSnapshots(): void {
   if (snapshotQueue.length === 0 || !canUsePlotCommandsNow()) return;
 
   const retryLimit = 20;
-  const current = snapshotQueue.splice(0, snapshotQueue.length);
-  for (const job of current) {
+  let processed = 0;
+  let scanned = 0;
+  const maxScans = snapshotQueue.length;
+  while (snapshotQueue.length > 0 && processed < SNAPSHOT_JOBS_PER_TICK && scanned < maxScans) {
+    const job = snapshotQueue.shift();
+    scanned++;
+    if (!job) break;
+    if ((job.nextAttemptAt ?? 0) > Date.now()) {
+      snapshotQueue.push(job);
+      continue;
+    }
+
     const slot = state.plots.slots[job.slotId];
     if (!slot) continue;
 
     const ok = job.mode === "save"
-      ? saveSlotSnapshot(slot, job.playerId, job.generators)
-      : loadSlotSnapshot(slot, job.playerId);
+      ? saveSlotSnapshot(slot, job.playerId, job.generators, false)
+      : loadSlotSnapshot(slot, job.playerId, false);
+    processed++;
     if (!ok && job.attempts + 1 < retryLimit) {
-      snapshotQueue.push({ ...job, attempts: job.attempts + 1 });
+      const attempts = job.attempts + 1;
+      snapshotQueue.push({ ...job, attempts, nextAttemptAt: Date.now() + Math.min(5000, attempts * 250) });
     }
   }
 }
@@ -481,8 +549,7 @@ export function clearSlot(slot: PlotSlot) {
     const selector = `@e[type=!player,x=${slot.min.x},y=${slot.min.y},z=${slot.min.z},dx=${slot.max.x - slot.min.x},dy=${slot.max.y - slot.min.y},dz=${slot.max.z - slot.min.z}]`;
     dim.runCommand(`kill ${selector}`);
     dim.runCommand(`kill @e[type=item,x=${slot.min.x},y=${slot.min.y},z=${slot.min.z},dx=${slot.max.x - slot.min.x},dy=${slot.max.y - slot.min.y},dz=${slot.max.z - slot.min.z}]`);
-    dim.runCommand(`fill ${slot.min.x} ${slot.min.y} ${slot.min.z} ${slot.max.x} ${slot.max.y} ${slot.max.z} air`);
-    dim.runCommand(`kill @e[type=item,x=${slot.min.x},y=${slot.min.y},z=${slot.min.z},dx=${slot.max.x - slot.min.x},dy=${slot.max.y - slot.min.y},dz=${slot.max.z - slot.min.z}]`);
+    enqueueFill(slot.id, slot.min, slot.max, "air");
   } catch {
     // Ignore fill failures for unloaded chunks
   }
@@ -497,7 +564,9 @@ export function saveAndClearSlot(slot: PlotSlot, ownerPlayerId: string): boolean
 }
 
 export function getPlotForLocation(location: Vector3): PlotSlot | undefined {
-  for (const slot of getPlotSlots()) {
+  const index = getPlotSpatialIndex();
+  const candidates = index.buckets.get(bucketKey(bucketCoord(location.x), bucketCoord(location.y), bucketCoord(location.z))) ?? [];
+  for (const slot of candidates) {
     if (
       location.x >= slot.min.x && location.x <= slot.max.x &&
       location.y >= slot.min.y && location.y <= slot.max.y &&
