@@ -28,6 +28,7 @@ import { listWarps } from "../warps";
 import { addGeneratorTier, createGeneratorDefinition, giveGenerator } from "../generators";
 import { listCrateIds } from "../crates";
 import { listTauItemIds } from "../tau-items";
+import { TAUUTILS_VERSION } from "../version";
 
 export function registerCustomCommands(
   startupEvent: { customCommandRegistry: { registerCommand: Function } }
@@ -1143,7 +1144,7 @@ export function registerCustomCommands(
       };
       msg("§6--- TauUtils Credits ---");
       msg("§eCreator: §aRCodE777");
-      msg("§eVersion: §71.9.2-test-Beta");
+      msg(`§eVersion: §7${TAUUTILS_VERSION}`);
       msg("§7Thank you for using TauUtils!");
       return { status: 0, message: "Credits shown." };
     }

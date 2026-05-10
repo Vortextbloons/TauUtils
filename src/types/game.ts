@@ -1,3 +1,42 @@
+export type KillConditionScoreAction = {
+  type: "score";
+  target: "killer" | "victim";
+  objective: string;
+  operation: "add" | "set" | "remove";
+  amount: number;
+};
+
+export type KillConditionCommandAction = {
+  type: "command";
+  commands: string[];
+};
+
+export type KillConditionAction = KillConditionScoreAction | KillConditionCommandAction;
+
+export type KillConditionFilters = {
+  requireKillerRankMatch: boolean;
+  killerRanks: string[];
+  requireVictimRankMatch: boolean;
+  victimRanks: string[];
+  minKillerKillstreak?: number;
+  maxKillerKillstreak?: number;
+  minKillerKills?: number;
+};
+
+export type KillConditionRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  filters: KillConditionFilters;
+  actions: KillConditionAction[];
+};
+
+export type KillConditionStore = {
+  enabled: boolean;
+  rules: KillConditionRule[];
+};
+
 export type CombatConfig = {
   enabled: boolean;
   combatTimeSeconds: number;
@@ -8,6 +47,7 @@ export type CombatConfig = {
   logoutBroadcastMessage: string;
   rejoinPenaltyMessage: string;
   blockedCommandMessage: string;
+  killConditions: KillConditionStore;
 };
 
 export type CombatStore = {

@@ -5,6 +5,7 @@ import { registerCustomCommands } from "./commands";
 import { registerSidebarSystem } from "./sidebar";
 import { reconcileAllPlotState } from "./plots";
 import { reconcileTeamAssignments } from "./teams";
+import { formatTauUtilsLoadedMessage } from "./version";
 
 export { state } from "./storage";
 export {
@@ -72,6 +73,7 @@ function bootstrap() {
     reconcileAllPlotState("startup_phase_3");
     initializeOnlinePlayersAfterReload();
     reconcileAllPlotState("startup_finalize");
+    world.sendMessage(formatTauUtilsLoadedMessage());
     initialized = true;
   }, 20);
 }

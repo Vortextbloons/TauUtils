@@ -52,6 +52,12 @@ export {
 export {
   type CombatConfig,
   type CombatStore,
+  type KillConditionStore,
+  type KillConditionRule,
+  type KillConditionFilters,
+  type KillConditionAction,
+  type KillConditionScoreAction,
+  type KillConditionCommandAction,
   type TauItemTriggerType,
   type TauItemConsumptionMode,
   type TauItemCostType,

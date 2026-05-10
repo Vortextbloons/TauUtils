@@ -74,6 +74,10 @@ export function defaultCombatStore(): CombatStore {
       logoutBroadcastMessage: "§e[!] {player} quit while tagged and dropped their loot!",
       rejoinPenaltyMessage: "§4» Your items were dropped because you logged out during combat.",
       blockedCommandMessage: "§c» Commands are disabled while you are in combat.",
+      killConditions: {
+        enabled: true,
+        rules: [],
+      },
     },
   };
 }
@@ -986,6 +990,9 @@ export function loadState() {
   state.combat.config.logoutBroadcastMessage ??= defaultCombatStore().config.logoutBroadcastMessage;
   state.combat.config.rejoinPenaltyMessage ??= defaultCombatStore().config.rejoinPenaltyMessage;
   state.combat.config.blockedCommandMessage ??= defaultCombatStore().config.blockedCommandMessage;
+  state.combat.config.killConditions ??= defaultCombatStore().config.killConditions;
+  state.combat.config.killConditions.enabled ??= true;
+  state.combat.config.killConditions.rules ??= [];
   const splitShops = loadPlayerShopsFromSplitKeys(dynamicPropertyIds);
   state.playerShops = splitShops.hasSplitData
     ? splitShops.store

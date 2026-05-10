@@ -1,7 +1,7 @@
 import { Player, system, world } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ICONS, type SidebarDefinition } from "./tau-models";
-import { getPlayerRank, isOperator, saveSidebars, state, tell } from "./storage";
+import { getPlayerId, getPlayerRank, isOperator, saveSidebars, state, tell } from "./storage";
 
 let sidebarTick = 0;
 let tpsSampleTick = 0;
@@ -17,6 +17,8 @@ type SidebarPlaceholderContext = {
   health: string;
   healthColor: string;
   rank: string;
+  kills: string;
+  longestKillstreak: string;
 };
 
 type SidebarRenderCache = {
@@ -147,6 +149,7 @@ function buildPlaceholderContext(player: Player, sidebar: SidebarDefinition): Si
 
   const rank = getPlayerRank(player.name);
   const rankText = rank ? `${rank.color}${rank.name}§r` : "";
+  const stats = state.stats.players[getPlayerId(player)];
 
   return {
     name: player.name,
@@ -157,6 +160,8 @@ function buildPlaceholderContext(player: Player, sidebar: SidebarDefinition): Si
     health: String(healthValue),
     healthColor,
     rank: rankText,
+    kills: formatNumber(stats?.kills ?? 0),
+    longestKillstreak: formatNumber(stats?.longestKillstreak ?? 0),
   };
 }
 
@@ -169,7 +174,9 @@ function replacePlaceholders(line: string, context: SidebarPlaceholderContext): 
     .split("[tps]").join(context.tps)
     .split("[health]").join(context.health)
     .split("[health_color]").join(context.healthColor)
-    .split("[rank]").join(context.rank);
+    .split("[rank]").join(context.rank)
+    .split("[kills]").join(context.kills)
+    .split("[longest_killstreak]").join(context.longestKillstreak);
 }
 
 function buildSidebarLines(sidebar: SidebarDefinition, context: SidebarPlaceholderContext): string[] {

@@ -8,7 +8,8 @@ import {
   system,
   world,
 } from "@minecraft/server";
-import { asPlayer, getInventoryContainer, getPlayerId, isFeatureEnabled, state, tell } from "./storage";
+import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "./storage";
+import type { KillConditionAction, KillConditionRule, PlayerStats } from "./types";
 
 type CombatTagEntry = {
   expiresAt: number;
@@ -27,6 +28,11 @@ type PendingCombatLogout = {
   inventory: ItemStack[];
   equipment: ItemStack[];
   attempts: number;
+};
+
+type CombatKillContext = {
+  killerStats: PlayerStats;
+  killstreak: number;
 };
 
 const combatTagsByPlayerId = new Map<string, CombatTagEntry>();
@@ -51,6 +57,10 @@ function penaltyKey(playerId: string): string {
 
 function formatCombatMessage(template: string, playerName: string): string {
   return String(template ?? "").split("{player}").join(playerName);
+}
+
+function commandStripSlash(value: string): string {
+  return String(value ?? "").trim().replace(/^\/+/, "");
 }
 
 function getCombatDurationMs(): number {
@@ -299,6 +309,86 @@ export function handleCombatDamage(victim: Player, attacker: Player): void {
   if (victim.id === attacker.id) return;
   setCombatTag(victim);
   setCombatTag(attacker);
+}
+
+function rankMatches(player: Player, ranks: string[]): boolean {
+  if (ranks.length === 0) return false;
+  const rank = getPlayerRank(player.name);
+  return Boolean(rank && ranks.includes(rank.id));
+}
+
+function matchesKillCondition(rule: KillConditionRule, killer: Player, victim: Player, context: CombatKillContext): boolean {
+  const filters = rule.filters;
+  if (filters.requireKillerRankMatch && !rankMatches(killer, filters.killerRanks ?? [])) return false;
+  if (filters.requireVictimRankMatch && !rankMatches(victim, filters.victimRanks ?? [])) return false;
+  if (filters.minKillerKillstreak !== undefined && context.killstreak < filters.minKillerKillstreak) return false;
+  if (filters.maxKillerKillstreak !== undefined && context.killstreak > filters.maxKillerKillstreak) return false;
+  if (filters.minKillerKills !== undefined && context.killerStats.kills < filters.minKillerKills) return false;
+  return true;
+}
+
+function replaceKillPlaceholders(value: string, killer: Player, victim: Player, context: CombatKillContext): string {
+  const killerRank = getPlayerRank(killer.name)?.id ?? "";
+  const victimRank = getPlayerRank(victim.name)?.id ?? "";
+  const loc = victim.location;
+  return String(value ?? "")
+    .split("{killer}").join(killer.name)
+    .split("{victim}").join(victim.name)
+    .split("{killer_id}").join(getPlayerId(killer))
+    .split("{victim_id}").join(getPlayerId(victim))
+    .split("{killer_rank}").join(killerRank)
+    .split("{victim_rank}").join(victimRank)
+    .split("{killstreak}").join(String(context.killstreak))
+    .split("{kills}").join(String(context.killerStats.kills))
+    .split("{x}").join(String(Math.floor(loc.x)))
+    .split("{y}").join(String(Math.floor(loc.y)))
+    .split("{z}").join(String(Math.floor(loc.z)))
+    .split("{dimension}").join(victim.dimension.id);
+}
+
+function runKillConditionAction(action: KillConditionAction, killer: Player, victim: Player, context: CombatKillContext): void {
+  if (action.type === "score") {
+    const target = action.target === "victim" ? victim : killer;
+    const current = getScore(target, action.objective);
+    if (current === undefined) return;
+    const amount = Math.floor(Number(action.amount) || 0);
+    const next = action.operation === "set"
+      ? amount
+      : action.operation === "remove"
+        ? current - amount
+        : current + amount;
+    setScore(target, action.objective, next);
+    return;
+  }
+
+  if (action.type === "command") {
+    const commands = action.commands.slice(0, 10);
+    system.run(() => {
+      for (const raw of commands) {
+        const command = commandStripSlash(replaceKillPlaceholders(raw, killer, victim, context));
+        if (!command) continue;
+        try {
+          killer.runCommand(command);
+        } catch {
+        }
+      }
+    });
+  }
+}
+
+export function handleCombatKill(killer: Player, victim: Player, context: CombatKillContext): void {
+  if (!isFeatureEnabled("combat")) return;
+  const killConditions = state.combat.config.killConditions;
+  if (!killConditions?.enabled) return;
+  const rules = killConditions.rules
+    .filter((rule) => rule.enabled)
+    .sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
+  for (const rule of rules) {
+    if (!matchesKillCondition(rule, killer, victim, context)) continue;
+    for (const action of rule.actions.slice(0, 20)) {
+      runKillConditionAction(action, killer, victim, context);
+    }
+  }
 }
 
 export function shouldBlockCommandWhileTagged(player: Player, message: string): boolean {

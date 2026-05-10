@@ -1,6 +1,6 @@
 import { Player, world } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
-import { ICONS } from "../types";
+import { ICONS, type KillConditionAction, type KillConditionRule, type KillConditionScoreAction } from "../types";
 import { getPlayerId, isFeatureEnabled, isOperator, normalizeKey, saveCombat, state, tell } from "../storage";
 import { createTpaRequest, deleteHome, listHomes, payPlayer, setHome, teleportHome, updateHomesConfig, updatePayConfig, updatePlayerSettings, updatePlayerSettingsConfig, updateTpaConfig } from "../social";
 import { acceptTeamInvite, createTeam, disbandTeam, getPlayerTeam, getTeamSummary, inviteToTeam, joinTeam, kickFromTeam, leaveTeam, listTeams, revokeTeamInvite, setTeamFriendlyFire, setTeamPlotEnabled } from "../teams";
@@ -155,9 +155,223 @@ export async function showSocialSettingsAdmin(player: Player) {
   tell(player, "Social settings saved.");
 }
 
+function splitCsv(value: unknown): string[] {
+  return String(value ?? "")
+    .split(",")
+    .map((entry) => normalizeKey(entry.trim()))
+    .filter((entry) => entry.length > 0);
+}
+
+function createDefaultKillConditionRule(): KillConditionRule {
+  const now = Date.now().toString(36);
+  return {
+    id: `kill_${now}`,
+    name: "New Kill Rule",
+    enabled: true,
+    priority: 0,
+    filters: {
+      requireKillerRankMatch: false,
+      killerRanks: [],
+      requireVictimRankMatch: false,
+      victimRanks: [],
+    },
+    actions: [],
+  };
+}
+
+function formatKillRuleLine(rule: KillConditionRule): string {
+  return `${rule.enabled ? "§aON" : "§cOFF"}§r ${rule.name} §7(${rule.actions.length} actions, priority ${rule.priority})`;
+}
+
+async function editKillConditionRuleDetails(player: Player, rule: KillConditionRule): Promise<void> {
+  const filters = rule.filters;
+  const modal = new ModalFormData()
+    .title(`Kill Rule: ${rule.name}`)
+    .textField("Name", "VIP Kill Reward", { defaultValue: rule.name })
+    .toggle("Enabled", { defaultValue: rule.enabled })
+    .textField("Priority", "0", { defaultValue: String(rule.priority) })
+    .toggle("Filter killer ranks", { defaultValue: filters.requireKillerRankMatch })
+    .textField("Killer rank IDs (comma)", "vip,admin", { defaultValue: filters.killerRanks.join(",") })
+    .toggle("Filter victim ranks", { defaultValue: filters.requireVictimRankMatch })
+    .textField("Victim rank IDs (comma)", "member,vip", { defaultValue: filters.victimRanks.join(",") })
+    .textField("Min killer killstreak (blank off)", "3", { defaultValue: filters.minKillerKillstreak === undefined ? "" : String(filters.minKillerKillstreak) })
+    .textField("Max killer killstreak (blank off)", "10", { defaultValue: filters.maxKillerKillstreak === undefined ? "" : String(filters.maxKillerKillstreak) })
+    .textField("Min killer total kills (blank off)", "100", { defaultValue: filters.minKillerKills === undefined ? "" : String(filters.minKillerKills) })
+    .submitButton("Save");
+
+  const result = await modal.show(player).catch(() => undefined);
+  if (!result || result.canceled || !result.formValues) return;
+  rule.name = String(result.formValues[0] ?? rule.name).trim() || rule.name;
+  rule.enabled = Boolean(result.formValues[1]);
+  rule.priority = Math.floor(Number(result.formValues[2] ?? 0)) || 0;
+  filters.requireKillerRankMatch = Boolean(result.formValues[3]);
+  filters.killerRanks = splitCsv(result.formValues[4]);
+  filters.requireVictimRankMatch = Boolean(result.formValues[5]);
+  filters.victimRanks = splitCsv(result.formValues[6]);
+  const minStreak = String(result.formValues[7] ?? "").trim();
+  const maxStreak = String(result.formValues[8] ?? "").trim();
+  const minKills = String(result.formValues[9] ?? "").trim();
+  filters.minKillerKillstreak = minStreak ? Math.max(0, Math.floor(Number(minStreak))) : undefined;
+  filters.maxKillerKillstreak = maxStreak ? Math.max(0, Math.floor(Number(maxStreak))) : undefined;
+  filters.minKillerKills = minKills ? Math.max(0, Math.floor(Number(minKills))) : undefined;
+  saveCombat();
+  tell(player, "Kill rule saved.");
+}
+
+async function addKillScoreAction(player: Player, rule: KillConditionRule, current?: KillConditionScoreAction): Promise<void> {
+  const operations: KillConditionScoreAction["operation"][] = ["add", "set", "remove"];
+  const targets: KillConditionScoreAction["target"][] = ["killer", "victim"];
+  const modal = new ModalFormData()
+    .title(current ? "Edit Score Action" : "Add Score Action")
+    .dropdown("Target", targets, { defaultValueIndex: Math.max(0, targets.indexOf(current?.target ?? "killer")) })
+    .textField("Objective", "money", { defaultValue: current?.objective ?? "money" })
+    .dropdown("Operation", operations, { defaultValueIndex: Math.max(0, operations.indexOf(current?.operation ?? "add")) })
+    .textField("Amount", "100", { defaultValue: String(current?.amount ?? 100) })
+    .submitButton("Save");
+
+  const result = await modal.show(player).catch(() => undefined);
+  if (!result || result.canceled || !result.formValues) return;
+  const action: KillConditionScoreAction = {
+    type: "score",
+    target: targets[Number(result.formValues[0] ?? 0)] ?? "killer",
+    objective: String(result.formValues[1] ?? "money").trim() || "money",
+    operation: operations[Number(result.formValues[2] ?? 0)] ?? "add",
+    amount: Math.floor(Number(result.formValues[3] ?? 0)) || 0,
+  };
+  if (current) Object.assign(current, action);
+  else rule.actions.push(action);
+  saveCombat();
+}
+
+async function addKillCommandAction(player: Player, rule: KillConditionRule, current?: Extract<KillConditionAction, { type: "command" }>): Promise<void> {
+  const modal = new ModalFormData()
+    .title(current ? "Edit Command Chain" : "Add Command Chain")
+    .textField("Commands separated by ;", "say {killer} killed {victim};give @s diamond 1", { defaultValue: current?.commands.join(";") ?? "" })
+    .submitButton("Save");
+  const result = await modal.show(player).catch(() => undefined);
+  if (!result || result.canceled || !result.formValues) return;
+  const commands = String(result.formValues[0] ?? "")
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .slice(0, 10);
+  if (commands.length === 0) return;
+  if (current) current.commands = commands;
+  else rule.actions.push({ type: "command", commands });
+  saveCombat();
+}
+
+async function editKillConditionActions(player: Player, rule: KillConditionRule): Promise<void> {
+  while (true) {
+    const form = new ActionFormData().title(`Actions: ${rule.name}`).body(`Actions: ${rule.actions.length}`)
+      .button("Add Score Action", ICONS.shop)
+      .button("Add Command Chain", ICONS.settings);
+    for (const action of rule.actions) {
+      form.button(action.type === "score" ? `Score: ${action.target} ${action.operation} ${action.amount} ${action.objective}` : `Commands: ${action.commands.length}`, ICONS.edit);
+    }
+    form.button("Back", ICONS.back);
+
+    const response = await form.show(player).catch(() => undefined);
+    if (!response || response.canceled || response.selection === undefined) return;
+    if (response.selection === 0) {
+      await addKillScoreAction(player, rule);
+      continue;
+    }
+    if (response.selection === 1) {
+      await addKillCommandAction(player, rule);
+      continue;
+    }
+    const actionIndex = response.selection - 2;
+    if (actionIndex >= rule.actions.length) return;
+    const action = rule.actions[actionIndex];
+    const manage = new ActionFormData().title("Action").button("Edit", ICONS.edit).button("Delete", ICONS.delete).button("Back", ICONS.back);
+    const picked = await manage.show(player).catch(() => undefined);
+    if (!picked || picked.canceled || picked.selection === undefined || picked.selection === 2) continue;
+    if (picked.selection === 1) {
+      rule.actions.splice(actionIndex, 1);
+      saveCombat();
+      continue;
+    }
+    if (action.type === "score") await addKillScoreAction(player, rule, action);
+    else await addKillCommandAction(player, rule, action);
+  }
+}
+
+async function editKillConditionRule(player: Player, rule: KillConditionRule): Promise<void> {
+  while (true) {
+    const form = new ActionFormData()
+      .title(rule.name)
+      .body(formatKillRuleLine(rule))
+      .button("Edit Details/Filters", ICONS.edit)
+      .button("Actions", ICONS.settings)
+      .button("Duplicate", ICONS.confirm)
+      .button("Delete", ICONS.delete)
+      .button("Back", ICONS.back);
+    const response = await form.show(player).catch(() => undefined);
+    if (!response || response.canceled || response.selection === undefined) return;
+    if (response.selection === 0) await editKillConditionRuleDetails(player, rule);
+    else if (response.selection === 1) await editKillConditionActions(player, rule);
+    else if (response.selection === 2) {
+      state.combat.config.killConditions.rules.push({ ...rule, id: `kill_${Date.now().toString(36)}`, name: `${rule.name} Copy`, filters: { ...rule.filters }, actions: rule.actions.map((action) => ({ ...action })) });
+      saveCombat();
+      tell(player, "Kill rule duplicated.");
+    } else if (response.selection === 3) {
+      state.combat.config.killConditions.rules = state.combat.config.killConditions.rules.filter((entry) => entry.id !== rule.id);
+      saveCombat();
+      tell(player, "Kill rule deleted.");
+      return;
+    } else return;
+  }
+}
+
+async function showKillConditionsAdmin(player: Player): Promise<void> {
+  while (true) {
+    const store = state.combat.config.killConditions;
+    const rules = store.rules.slice().sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
+    const form = new ActionFormData()
+      .title("Kill Conditions")
+      .body(`Enabled: ${store.enabled ? "Yes" : "No"}\nRules: ${rules.length}`)
+      .button(`Toggle: ${store.enabled ? "On" : "Off"}`, ICONS.settings)
+      .button("Create Rule", ICONS.confirm);
+    for (const rule of rules) form.button(formatKillRuleLine(rule), ICONS.edit);
+    form.button("Back", ICONS.back);
+
+    const response = await form.show(player).catch(() => undefined);
+    if (!response || response.canceled || response.selection === undefined) return;
+    if (response.selection === 0) {
+      store.enabled = !store.enabled;
+      saveCombat();
+      continue;
+    }
+    if (response.selection === 1) {
+      const rule = createDefaultKillConditionRule();
+      store.rules.push(rule);
+      saveCombat();
+      await editKillConditionRule(player, rule);
+      continue;
+    }
+    const rule = rules[response.selection - 2];
+    if (!rule) return;
+    await editKillConditionRule(player, rule);
+  }
+}
+
 export async function showCombatSettingsAdmin(player: Player): Promise<void> {
   if (!isOperator(player)) return;
-  const combat = state.combat.config;
+  while (true) {
+    const combat = state.combat.config;
+    const menu = new ActionFormData()
+      .title("Combat Admin")
+      .body(`Combat: ${combat.enabled ? "On" : "Off"}\nKill conditions: ${combat.killConditions.enabled ? "On" : "Off"}`)
+      .button("Combat Settings", ICONS.settings)
+      .button("Kill Conditions", ICONS.sidebar)
+      .button("Back", ICONS.back);
+    const picked = await menu.show(player).catch(() => undefined);
+    if (!picked || picked.canceled || picked.selection === undefined || picked.selection === 2) return;
+    if (picked.selection === 1) {
+      await showKillConditionsAdmin(player);
+      continue;
+    }
 
   const modal = new ModalFormData()
     .title("Combat Settings")
@@ -186,6 +400,7 @@ export async function showCombatSettingsAdmin(player: Player): Promise<void> {
   combat.blockedCommandMessage = String(result.formValues[8] ?? combat.blockedCommandMessage).trim() || combat.blockedCommandMessage;
   saveCombat();
   tell(player, "Combat settings saved.");
+  }
 }
 
 async function showTeamInviteCenter(player: Player) {

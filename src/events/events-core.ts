@@ -5,7 +5,7 @@ import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUs
 import { tryHandleCrateInteract } from "../crates";
 import { tryHandleTauItemTrigger } from "../tau-items";
 import { getPlayerTeam } from "../teams";
-import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
+import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
 import {
   asPlayer,
   incrementStat,
@@ -447,13 +447,22 @@ export function registerEventInterceptors() {
     const dead = asPlayer(event.deadEntity);
     if (dead) {
       if (isFeatureEnabled("combat")) handleCombatDeath(dead);
-      if (!isFeatureEnabled("stats")) return;
-      saveAssignedPlayerPlot(dead);
-      incrementStat(dead, "deaths", 1);
-      const deadStats = getPlayerStats(dead);
-      if (deadStats.longestKillstreak < deadStats.killstreak) deadStats.longestKillstreak = deadStats.killstreak;
-      deadStats.killstreak = 0;
-      void getPlayerStatsById(getPlayerId(dead));
+      const killer = resolveCombatAttacker(event.damageSource);
+      if (isFeatureEnabled("stats")) {
+        saveAssignedPlayerPlot(dead);
+        incrementStat(dead, "deaths", 1);
+        const deadStats = getPlayerStats(dead);
+        if (deadStats.longestKillstreak < deadStats.killstreak) deadStats.longestKillstreak = deadStats.killstreak;
+        deadStats.killstreak = 0;
+        void getPlayerStatsById(getPlayerId(dead));
+      }
+      if (killer && killer.id !== dead.id) {
+        const streak = isFeatureEnabled("stats") ? incrementStat(killer, "killstreak", 1) : 0;
+        if (isFeatureEnabled("stats")) incrementStat(killer, "kills", 1);
+        const killerStats = getPlayerStats(killer);
+        if (streak > killerStats.longestKillstreak) killerStats.longestKillstreak = streak;
+        if (isFeatureEnabled("combat")) handleCombatKill(killer, dead, { killerStats, killstreak: streak });
+      }
       return;
     }
 
