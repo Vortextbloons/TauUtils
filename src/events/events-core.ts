@@ -4,6 +4,7 @@ import { ensurePlayerPlotAssigned, getAssignedSlotIdForOwner, getPlotForLocation
 import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUseOnBlock, isGeneratorBlock, processGenerators } from "../generators";
 import { tryHandleCrateInteract } from "../crates";
 import { tryHandleTauItemTrigger } from "../tau-items";
+import { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
 import {
@@ -318,6 +319,7 @@ export function registerEventInterceptors() {
 
   world.afterEvents.itemUse.subscribe((event) => {
     const player = asPlayer(event.source);
+    if (player && shouldCancelAreaItemUse(player)) return;
     if (player && isFeatureEnabled("moderation")) clearBannedHeldItem(player);
 
     if (player && isFeatureEnabled("items")) {
@@ -337,6 +339,7 @@ export function registerEventInterceptors() {
   });
 
   world.afterEvents.playerInteractWithEntity.subscribe((event) => {
+    if (shouldCancelAreaEntityInteract(event.player)) return;
     if (!isFeatureEnabled("forms")) return;
     const menuId = resolveEntityMenu(event.target);
     if (!menuId) return;
@@ -378,11 +381,25 @@ export function registerEventInterceptors() {
   });
 
   world.afterEvents.playerPlaceBlock.subscribe((event) => {
+    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id)) return;
     if (!isFeatureEnabled("stats")) return;
     incrementStat(event.player, "blocksPlaced", 1);
   });
 
+  const beforePlaceBlock = (world.beforeEvents as unknown as { playerPlaceBlock?: { subscribe(callback: (event: { player: Player; block: { location: { x: number; y: number; z: number } }; cancel: boolean }) => void): void } }).playerPlaceBlock;
+  beforePlaceBlock?.subscribe((event) => {
+    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot place blocks in this area.");
+    }
+  });
+
   world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
+    if (shouldCancelAreaItemUse(event.player)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot use items in this area.");
+      return;
+    }
     if (isFeatureEnabled("items")) {
       const handled = tryHandleTauItemTrigger(event.player, "use_block", event.itemStack, {
         location: event.block.location,
@@ -427,6 +444,11 @@ export function registerEventInterceptors() {
   });
 
   world.beforeEvents.playerBreakBlock.subscribe((event) => {
+    if (shouldCancelAreaBlockBreak(event.player, event.block.location, event.player.dimension.id)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot break blocks in this area.");
+      return;
+    }
     if (isFeatureEnabled("items")) {
       const held = getInventoryContainer(event.player)?.getItem(event.player.selectedSlotIndex);
       const handled = tryHandleTauItemTrigger(event.player, "mine_block", held, {
@@ -450,23 +472,31 @@ export function registerEventInterceptors() {
       const killer = resolveCombatAttacker(event.damageSource);
       if (isFeatureEnabled("stats")) {
         saveAssignedPlayerPlot(dead);
+        void getPlayerStatsById(getPlayerId(dead));
+      }
+      if (isFeatureEnabled("stats") && isFeatureEnabled("combat")) {
         incrementStat(dead, "deaths", 1);
         const deadStats = getPlayerStats(dead);
         if (deadStats.longestKillstreak < deadStats.killstreak) deadStats.longestKillstreak = deadStats.killstreak;
         deadStats.killstreak = 0;
-        void getPlayerStatsById(getPlayerId(dead));
       }
       if (killer && killer.id !== dead.id) {
-        const streak = isFeatureEnabled("stats") ? incrementStat(killer, "killstreak", 1) : 0;
-        if (isFeatureEnabled("stats")) incrementStat(killer, "kills", 1);
-        const killerStats = getPlayerStats(killer);
-        if (streak > killerStats.longestKillstreak) killerStats.longestKillstreak = streak;
-        if (isFeatureEnabled("combat")) handleCombatKill(killer, dead, { killerStats, killstreak: streak });
+        if (isFeatureEnabled("stats") && isFeatureEnabled("combat")) {
+          const streak = incrementStat(killer, "killstreak", 1);
+          incrementStat(killer, "kills", 1);
+          const killerStats = getPlayerStats(killer);
+          if (streak > killerStats.longestKillstreak) killerStats.longestKillstreak = streak;
+          if (isFeatureEnabled("combat")) handleCombatKill(killer, dead, { killerStats, killstreak: streak });
+        } else if (isFeatureEnabled("combat")) {
+          const killerStats = getPlayerStats(killer);
+          handleCombatKill(killer, dead, { killerStats, killstreak: 0 });
+        }
       }
       return;
     }
 
     if (!isFeatureEnabled("stats")) return;
+    if (!isFeatureEnabled("combat")) return;
     const killer = asPlayer(event.damageSource.damagingEntity);
     if (killer) {
       incrementStat(killer, "kills", 1);
@@ -480,6 +510,10 @@ export function registerEventInterceptors() {
     const victim = asPlayer(event.hurtEntity);
     const attacker = asPlayer(event.damageSource.damagingEntity);
     if (!victim || !attacker) return;
+    if (shouldCancelAreaPvp(victim, attacker)) {
+      event.cancel = true;
+      return;
+    }
     if (!isFeatureEnabled("teams")) return;
 
     const victimTeam = getPlayerTeam(victim);
@@ -523,6 +557,10 @@ export function registerEventInterceptors() {
   system.runInterval(() => {
     processCombatTags();
   }, 20);
+
+  system.runInterval(() => {
+    processCustomAreas();
+  }, Math.max(1, state.customAreas.config.checkIntervalTicks));
 
   system.runInterval(() => {
     if (!isFeatureEnabled("stats")) return;

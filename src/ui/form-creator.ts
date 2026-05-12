@@ -239,6 +239,8 @@ export async function showCreatorMenu(player: Player) {
       .button("TauItems", ICONS.utility)
       .button("Icon Dev", ICONS.menu)
       .button("Moderation", ICONS.utility)
+      .button("Combat Settings", ICONS.settings)
+      .button("Custom Areas", ICONS.sidebar)
       .button("Close", ICONS.cancel);
 
     const response = await form.show(player).catch(() => undefined);
@@ -321,6 +323,16 @@ export async function showCreatorMenu(player: Player) {
     if (response.selection === 13) {
       const { showModerationMenu } = await import("./admin-ui");
       await showModerationMenu(player);
+      continue;
+    }
+    if (response.selection === 14) {
+      const { showCombatSettingsAdmin } = await import("./social-ui");
+      await showCombatSettingsAdmin(player);
+      continue;
+    }
+    if (response.selection === 15) {
+      const { showCustomAreasAdminMenu } = await import("./custom-areas-ui");
+      await showCustomAreasAdminMenu(player);
       continue;
     }
     return;

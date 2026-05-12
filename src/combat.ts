@@ -9,6 +9,7 @@ import {
   world,
 } from "@minecraft/server";
 import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "./storage";
+import { renderCommandTemplate, renderTemplate } from "./templates";
 import type { KillConditionAction, KillConditionRule, PlayerStats } from "./types";
 
 type CombatTagEntry = {
@@ -56,11 +57,7 @@ function penaltyKey(playerId: string): string {
 }
 
 function formatCombatMessage(template: string, playerName: string): string {
-  return String(template ?? "").split("{player}").join(playerName);
-}
-
-function commandStripSlash(value: string): string {
-  return String(value ?? "").trim().replace(/^\/+/, "");
+  return renderTemplate(template, { extra: { player: playerName } });
 }
 
 function getCombatDurationMs(): number {
@@ -331,19 +328,23 @@ function replaceKillPlaceholders(value: string, killer: Player, victim: Player, 
   const killerRank = getPlayerRank(killer.name)?.id ?? "";
   const victimRank = getPlayerRank(victim.name)?.id ?? "";
   const loc = victim.location;
-  return String(value ?? "")
-    .split("{killer}").join(killer.name)
-    .split("{victim}").join(victim.name)
-    .split("{killer_id}").join(getPlayerId(killer))
-    .split("{victim_id}").join(getPlayerId(victim))
-    .split("{killer_rank}").join(killerRank)
-    .split("{victim_rank}").join(victimRank)
-    .split("{killstreak}").join(String(context.killstreak))
-    .split("{kills}").join(String(context.killerStats.kills))
-    .split("{x}").join(String(Math.floor(loc.x)))
-    .split("{y}").join(String(Math.floor(loc.y)))
-    .split("{z}").join(String(Math.floor(loc.z)))
-    .split("{dimension}").join(victim.dimension.id);
+  return renderTemplate(value, {
+    player: killer,
+    killer,
+    victim,
+    extra: {
+      killer_id: getPlayerId(killer),
+      victim_id: getPlayerId(victim),
+      killer_rank: killerRank,
+      victim_rank: victimRank,
+      killstreak: context.killstreak,
+      kills: context.killerStats.kills,
+      x: Math.floor(loc.x),
+      y: Math.floor(loc.y),
+      z: Math.floor(loc.z),
+      dimension: victim.dimension.id,
+    },
+  });
 }
 
 function runKillConditionAction(action: KillConditionAction, killer: Player, victim: Player, context: CombatKillContext): void {
@@ -365,7 +366,7 @@ function runKillConditionAction(action: KillConditionAction, killer: Player, vic
     const commands = action.commands.slice(0, 10);
     system.run(() => {
       for (const raw of commands) {
-        const command = commandStripSlash(replaceKillPlaceholders(raw, killer, victim, context));
+        const command = renderCommandTemplate(replaceKillPlaceholders(raw, killer, victim, context));
         if (!command) continue;
         try {
           killer.runCommand(command);

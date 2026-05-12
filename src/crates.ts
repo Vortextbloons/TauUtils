@@ -1,5 +1,6 @@
 import { Block, ItemStack, Player, system, world } from "@minecraft/server";
 import { getInventoryContainer, getPlayerId, getScore, saveCrates, setScore, state } from "./storage";
+import { renderCommandTemplate } from "./templates";
 import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "./tau-models";
 
 type CrateInteractResult = {
@@ -199,7 +200,7 @@ function giveItemReward(player: Player, reward: Extract<CrateReward, { type: "it
   }
 }
 
-function giveReward(player: Player, reward: CrateReward): RewardGrantResult {
+function giveReward(player: Player, crate: CrateDefinition, reward: CrateReward): RewardGrantResult {
   if (reward.type === "item") {
     return giveItemReward(player, reward);
   }
@@ -219,7 +220,18 @@ function giveReward(player: Player, reward: CrateReward): RewardGrantResult {
 
   if (reward.type === "command") {
     try {
-      player.runCommand(reward.command);
+      player.runCommand(renderCommandTemplate(reward.command, {
+        player,
+        extra: {
+          crate: crate.displayName,
+          crate_id: crate.id,
+          reward: reward.label,
+          x: Math.floor(player.location.x),
+          y: Math.floor(player.location.y),
+          z: Math.floor(player.location.z),
+          dimension: player.dimension.id,
+        },
+      }));
       return { ok: true, message: `Granted ${reward.label}.` };
     } catch {
       return { ok: false, message: `Failed command reward: ${reward.label}.` };
@@ -320,7 +332,7 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
     activeLocations.add(entry.locationKey);
 
     runRevealSequence(player, entry.crate, reward, () => {
-      const result = giveReward(player, reward);
+      const result = giveReward(player, entry.crate, reward);
       if (!result.ok) {
         try {
           player.sendMessage(`§c[Crate] ${result.message}`);

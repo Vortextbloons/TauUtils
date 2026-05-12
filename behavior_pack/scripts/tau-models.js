@@ -20,7 +20,7 @@ export const STORAGE_KEYS = {
     tauItems: "tau:items",
     playerShops: "tau:player_shops",
 };
-export const CHAT_PREFIX = "§6[TauUI]§r";
+export const CHAT_PREFIX = "§6[Tau]§r";
 export const RANK_COLORS = [
     "Black", "Dark Blue", "Dark Green", "Dark Aqua", "Dark Red", "Dark Purple",
     "Gold", "Gray", "Dark Gray", "Blue", "Green", "Aqua", "Red", "Light Purple",

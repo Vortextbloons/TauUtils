@@ -1,7 +1,7 @@
 import { Player, ItemStack } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ACTION_TYPES, isWorkingIconPath, ICONS, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
-import { applyTemplate, findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
+import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
 import { iconForAction, iconForElement, optionalIcon } from "../tau-ui";
 
 export async function openFormById(player: Player, menuId: string) {
@@ -100,9 +100,13 @@ async function runBoundAction(
 ) {
   const { ItemStack, Player } = await import("@minecraft/server");
   const { openShopTransaction } = await import("../shop-ui");
-  const { applyTemplate, sanitizePlayerCommand, commandStripSlash, normalizeForSudo } = await import("../storage");
+  const { sanitizePlayerCommand, commandStripSlash, normalizeForSudo } = await import("../storage");
+  const { renderTemplate } = await import("../templates");
 
-  const value = applyTemplate(rawValue, player, selectedValue).trim();
+  const value = renderTemplate(rawValue, {
+    player,
+    extra: { value: selectedValue === undefined ? "" : String(selectedValue) },
+  }).trim();
   try {
     switch (action) {
       case "COMMAND_PLAYER": {

@@ -1,5 +1,6 @@
 import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, system } from "@minecraft/server";
 import { commandStripSlash, getInventoryContainer, getPlayerId, getScore, saveTauItems, setScore, state } from "./storage";
+import { renderCommandTemplate as renderSharedCommandTemplate } from "./templates";
 import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "./tau-models";
 
 type TriggerContext = {
@@ -250,15 +251,15 @@ function payCost(player: Player, def: TauItemDefinition): boolean {
 
 function renderCommandTemplate(command: string, player: Player, context: TriggerContext): string {
   const loc = context.location ?? player.location;
-  return commandStripSlash(String(command ?? ""))
-    .split("{player}")
-    .join(player.name)
-    .split("{x}")
-    .join(String(Math.floor(loc.x)))
-    .split("{y}")
-    .join(String(Math.floor(loc.y)))
-    .split("{z}")
-    .join(String(Math.floor(loc.z)));
+  return renderSharedCommandTemplate(command, {
+    player,
+    extra: {
+      x: Math.floor(loc.x),
+      y: Math.floor(loc.y),
+      z: Math.floor(loc.z),
+      dimension: player.dimension.id,
+    },
+  });
 }
 
 function runCommandChain(player: Player, commands: string[], context: TriggerContext): void {

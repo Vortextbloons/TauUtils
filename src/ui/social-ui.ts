@@ -246,7 +246,7 @@ async function addKillScoreAction(player: Player, rule: KillConditionRule, curre
 async function addKillCommandAction(player: Player, rule: KillConditionRule, current?: Extract<KillConditionAction, { type: "command" }>): Promise<void> {
   const modal = new ModalFormData()
     .title(current ? "Edit Command Chain" : "Add Command Chain")
-    .textField("Commands separated by ;", "say {killer} killed {victim};give @s diamond 1", { defaultValue: current?.commands.join(";") ?? "" })
+    .textField("Commands separated by ; ({killer}, {victim}, [killer_money], [victim_rank])", "say {killer} killed {victim};give @s diamond 1", { defaultValue: current?.commands.join(";") ?? "" })
     .submitButton("Save");
   const result = await modal.show(player).catch(() => undefined);
   if (!result || result.canceled || !result.formValues) return;
@@ -381,7 +381,7 @@ export async function showCombatSettingsAdmin(player: Player): Promise<void> {
     .toggle("Block commands while tagged", { defaultValue: combat.blockCommands })
     .textField("Enter combat message", "message", { defaultValue: combat.enterMessage })
     .textField("Exit combat message", "message", { defaultValue: combat.exitMessage })
-    .textField("Logout broadcast", "Use {player}", { defaultValue: combat.logoutBroadcastMessage })
+    .textField("Logout broadcast ({player}, [player])", "Use {player}", { defaultValue: combat.logoutBroadcastMessage })
     .textField("Rejoin penalty message", "message", { defaultValue: combat.rejoinPenaltyMessage })
     .textField("Blocked command message", "message", { defaultValue: combat.blockedCommandMessage })
     .submitButton("Save");

@@ -19,9 +19,10 @@ export const STORAGE_KEYS = {
   crates: "tau:crates",
   tauItems: "tau:items",
   playerShops: "tau:player_shops",
+  customAreas: "tau:custom_areas",
 } as const;
 
-export const CHAT_PREFIX = "§6[TauUI]§r";
+export const CHAT_PREFIX = "§6[Tau]§r";
 
 export const RANK_COLORS = [
   "Black", "Dark Blue", "Dark Green", "Dark Aqua", "Dark Red", "Dark Purple",
@@ -98,6 +99,7 @@ export type FeatureFlags = {
   items: boolean;
   combat: boolean;
   moderation: boolean;
+  customAreas: boolean;
 };
 
 export type ConfigStore = {

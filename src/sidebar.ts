@@ -1,25 +1,13 @@
 import { Player, system, world } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ICONS, type SidebarDefinition } from "./tau-models";
-import { getPlayerId, getPlayerRank, isOperator, saveSidebars, state, tell } from "./storage";
+import { isOperator, saveSidebars, state, tell } from "./storage";
+import { renderTemplate } from "./templates";
 
 let sidebarTick = 0;
 let tpsSampleTick = 0;
 let tpsSampleTime = Date.now();
 let cachedTps = "20.0";
-
-type SidebarPlaceholderContext = {
-  name: string;
-  money: string;
-  ping: string;
-  pos: string;
-  tps: string;
-  health: string;
-  healthColor: string;
-  rank: string;
-  kills: string;
-  longestKillstreak: string;
-};
 
 type SidebarRenderCache = {
   sidebarId?: string;
@@ -90,25 +78,6 @@ function saveSidebarsAndInvalidate(): void {
   invalidateSidebarCaches();
 }
 
-function formatNumber(value: number): string {
-  return Math.floor(value).toLocaleString("en-US");
-}
-
-function getPlayerMoney(player: Player, objectiveId?: string): number {
-  const id = objectiveId ?? "money";
-  const objective = world.scoreboard.getObjective(id);
-  if (!objective) return 0;
-  const identity = player.scoreboardIdentity;
-  if (!identity) return 0;
-  return objective.getScore(identity) ?? 0;
-}
-
-function getPlayerPing(player: Player): number {
-  const value = player.getDynamicProperty("ping");
-  const ping = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(ping) ? ping : Number.NaN;
-}
-
 function getServerTps(): string {
   return cachedTps;
 }
@@ -139,47 +108,11 @@ function pickSidebarForPlayer(player: Player): SidebarDefinition | undefined {
   return candidates[0];
 }
 
-function buildPlaceholderContext(player: Player, sidebar: SidebarDefinition): SidebarPlaceholderContext {
-  const pos = `${Math.floor(player.location.x)}, ${Math.floor(player.location.y)}, ${Math.floor(player.location.z)}`;
-  const money = getPlayerMoney(player, sidebar.moneyObjective);
-  const health = player.getComponent("minecraft:health") as { currentValue?: number } | undefined;
-  const healthValue = Math.floor(health?.currentValue ?? 20);
-  const healthColor = healthValue < 5 ? "§c" : healthValue < 10 ? "§6" : "§a";
-  const ping = getPlayerPing(player);
-
-  const rank = getPlayerRank(player.name);
-  const rankText = rank ? `${rank.color}${rank.name}§r` : "";
-  const stats = state.stats.players[getPlayerId(player)];
-
-  return {
-    name: player.name,
-    money: formatNumber(money),
-    ping: Number.isFinite(ping) ? `${Math.round(ping)}ms` : "N/A",
-    pos,
-    tps: getServerTps(),
-    health: String(healthValue),
-    healthColor,
-    rank: rankText,
-    kills: formatNumber(stats?.kills ?? 0),
-    longestKillstreak: formatNumber(stats?.longestKillstreak ?? 0),
-  };
+function renderSidebarTemplate(player: Player, sidebar: SidebarDefinition, line: string): string {
+  return renderTemplate(line, { player, moneyObjective: sidebar.moneyObjective, extra: { tps: getServerTps() } });
 }
 
-function replacePlaceholders(line: string, context: SidebarPlaceholderContext): string {
-  return line
-    .split("[name]").join(context.name)
-    .split("[money]").join(context.money)
-    .split("[ping]").join(context.ping)
-    .split("[pos]").join(context.pos)
-    .split("[tps]").join(context.tps)
-    .split("[health]").join(context.health)
-    .split("[health_color]").join(context.healthColor)
-    .split("[rank]").join(context.rank)
-    .split("[kills]").join(context.kills)
-    .split("[longest_killstreak]").join(context.longestKillstreak);
-}
-
-function buildSidebarLines(sidebar: SidebarDefinition, context: SidebarPlaceholderContext): string[] {
+function buildSidebarLines(player: Player, sidebar: SidebarDefinition): string[] {
   const lines: string[] = [];
   for (const line of sidebar.lines) {
     const trimmed = line.trim();
@@ -188,12 +121,12 @@ function buildSidebarLines(sidebar: SidebarDefinition, context: SidebarPlacehold
     if (lines.length >= 15) break;
   }
   if (!sidebar.scroll || lines.length <= 1) {
-    return lines.map((line) => replacePlaceholders(line, context));
+    return lines.map((line) => renderSidebarTemplate(player, sidebar, line));
   }
   const interval = Math.max(1, sidebar.updateInterval);
   const offset = Math.floor(sidebarTick / interval) % lines.length;
   const rotated = [...lines.slice(offset), ...lines.slice(0, offset)];
-  return rotated.map((line) => replacePlaceholders(line, context));
+  return rotated.map((line) => renderSidebarTemplate(player, sidebar, line));
 }
 
 function truncateLine(line: string, max = 80): string {
@@ -202,9 +135,8 @@ function truncateLine(line: string, max = 80): string {
 }
 
 function buildSidebarText(player: Player, sidebar: SidebarDefinition): string {
-  const context = buildPlaceholderContext(player, sidebar);
-  const title = truncateLine(replacePlaceholders(sidebar.title, context), 80);
-  const lines = buildSidebarLines(sidebar, context).map((line) => truncateLine(line));
+  const title = truncateLine(renderSidebarTemplate(player, sidebar, sidebar.title), 80);
+  const lines = buildSidebarLines(player, sidebar).map((line) => truncateLine(line));
   return [title, ...lines].filter((line) => line.length > 0).join("\n");
 }
 

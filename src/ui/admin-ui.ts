@@ -482,9 +482,9 @@ export async function showConfigMenu(player: Player) {
       .button(`TauItems: ${features.items ? "On" : "Off"}`, ICONS.utility)
       .button(`Combat: ${features.combat ? "On" : "Off"}`, ICONS.settings)
       .button(`Moderation: ${features.moderation ? "On" : "Off"}`, ICONS.settings)
+      .button(`Custom Areas: ${features.customAreas ? "On" : "Off"}`, ICONS.sidebar)
       .button("Prune Data", ICONS.delete)
       .button("Social Settings", ICONS.settings)
-      .button("Combat Settings", ICONS.settings)
       .button("Back", ICONS.back);
 
     const response = await form.show(player).catch(() => undefined);
@@ -492,18 +492,12 @@ export async function showConfigMenu(player: Player) {
     if (response.selection === 21) return;
 
     if (response.selection === 20) {
-      const { showCombatSettingsAdmin } = await import("./social-ui");
-      await showCombatSettingsAdmin(player);
-      continue;
-    }
-
-    if (response.selection === 19) {
       const { showSocialSettingsAdmin } = await import("./social-ui");
       await showSocialSettingsAdmin(player);
       continue;
     }
 
-    if (response.selection === 18) {
+    if (response.selection === 19) {
       await showPruneDataMenu(player);
       continue;
     }
@@ -540,6 +534,12 @@ export async function showConfigMenu(player: Player) {
 
     if (response.selection === 17) {
       features.moderation = !features.moderation;
+      saveConfig();
+      continue;
+    }
+
+    if (response.selection === 18) {
+      features.customAreas = !features.customAreas;
       saveConfig();
       continue;
     }

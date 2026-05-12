@@ -283,6 +283,67 @@ export type SidebarStore = {
   sidebars: Record<string, SidebarDefinition>;
 };
 
+export type CustomAreaVector = { x: number; y: number; z: number };
+
+export type CustomAreaPermissions = {
+  pvp: boolean;
+  blockBreak: boolean;
+  blockPlace: boolean;
+  itemUse: boolean;
+  entityInteract: boolean;
+};
+
+export type CustomAreaEffect = {
+  enabled: boolean;
+  effectId: string;
+  amplifier: number;
+  durationSeconds: number;
+  hideParticles: boolean;
+  intervalTicks: number;
+};
+
+export type CustomAreaCommandRule = {
+  enabled: boolean;
+  commands: string[];
+  intervalTicks: number;
+  runOnEnter: boolean;
+  runOnLeave: boolean;
+  runWhileInside: boolean;
+};
+
+export type CustomAreaTickingArea = {
+  enabled: boolean;
+  name: string;
+};
+
+export type CustomAreaDefinition = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  dimensionId: string;
+  min: CustomAreaVector;
+  max: CustomAreaVector;
+  priority: number;
+  enterMessage?: string;
+  leaveMessage?: string;
+  broadcastMessages: boolean;
+  allowedRanks: string[];
+  permissions: CustomAreaPermissions;
+  effects: CustomAreaEffect[];
+  commandRules: CustomAreaCommandRule[];
+  tickingArea?: CustomAreaTickingArea;
+};
+
+export type CustomAreaStore = {
+  config: {
+    enabled: boolean;
+    checkIntervalTicks: number;
+    maxAreas: number;
+    maxCommandsPerArea: number;
+  };
+  areas: Record<string, CustomAreaDefinition>;
+};
+
 export type BannedItemDefinition = {
   itemId: string;
   label?: string;

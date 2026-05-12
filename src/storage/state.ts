@@ -6,6 +6,8 @@ import {
   type CombatStore,
   type ConfigStore,
   type CrateStore,
+  type CustomAreaDefinition,
+  type CustomAreaStore,
   type FormDefinition,
   type GeneratorStore,
   type HomeStore,
@@ -58,6 +60,7 @@ export function defaultConfig(): ConfigStore {
       items: true,
       combat: true,
       moderation: true,
+      customAreas: true,
     },
   };
 }
@@ -186,6 +189,18 @@ export function defaultModerationStore(): ModerationStore {
   return {
     bannedItems: [],
     inspectionSnapshots: {},
+  };
+}
+
+export function defaultCustomAreaStore(): CustomAreaStore {
+  return {
+    config: {
+      enabled: true,
+      checkIntervalTicks: 10,
+      maxAreas: 250,
+      maxCommandsPerArea: 10,
+    },
+    areas: {},
   };
 }
 
@@ -350,6 +365,8 @@ export const PLAYER_SHOPS_CONFIG_KEY = `${STORAGE_KEYS.playerShops}:config`;
 export const PLAYER_SHOPS_SHOP_PREFIX = `${STORAGE_KEYS.playerShops}:shop:`;
 export const PLAYER_SHOPS_LISTING_PREFIX = `${STORAGE_KEYS.playerShops}:listing:`;
 export const PLAYER_SHOPS_EARNINGS_PREFIX = `${STORAGE_KEYS.playerShops}:earn:`;
+export const CUSTOM_AREAS_CONFIG_KEY = `${STORAGE_KEYS.customAreas}:config`;
+export const CUSTOM_AREAS_AREA_PREFIX = `${STORAGE_KEYS.customAreas}:area:`;
 
 export const PLOTS_CONFIG_KEY = `${STORAGE_KEYS.plots}:config`;
 export const PLOTS_SLOT_PREFIX = `${STORAGE_KEYS.plots}:slot:`;
@@ -526,6 +543,25 @@ function loadPlayerShopsFromSplitKeys(dynamicPropertyIds: string[]): { store: Pl
     }
   }
 
+  return { store: base, hasSplitData };
+}
+
+function loadCustomAreasFromSplitKeys(dynamicPropertyIds: string[]): { store: CustomAreaStore; hasSplitData: boolean } {
+  const base = defaultCustomAreaStore();
+  let hasSplitData = false;
+  const configRaw = world.getDynamicProperty(CUSTOM_AREAS_CONFIG_KEY) as string | undefined;
+  if (configRaw) {
+    base.config = { ...base.config, ...parseJSON<Partial<CustomAreaStore["config"]>>(configRaw, {}) };
+    hasSplitData = true;
+  }
+  for (const key of dynamicPropertyIds) {
+    if (!key.startsWith(CUSTOM_AREAS_AREA_PREFIX)) continue;
+    const raw = world.getDynamicProperty(key) as string | undefined;
+    const parsed = parseJSON<CustomAreaDefinition | undefined>(raw, undefined);
+    if (!parsed?.id) continue;
+    base.areas[parsed.id] = parsed;
+    hasSplitData = true;
+  }
   return { store: base, hasSplitData };
 }
 
@@ -716,6 +752,20 @@ export function writePlayerShopsIncrementalToSplitKeys(store: PlayerShopStore): 
   return ok;
 }
 
+export function writeCustomAreasToSplitKeys(store: CustomAreaStore): boolean {
+  let ok = safeSetDynamicJson(CUSTOM_AREAS_CONFIG_KEY, store.config);
+  const wantedKeys = new Set<string>([CUSTOM_AREAS_CONFIG_KEY]);
+  for (const [areaId, area] of Object.entries(store.areas)) {
+    const key = `${CUSTOM_AREAS_AREA_PREFIX}${areaId}`;
+    wantedKeys.add(key);
+    ok = safeSetDynamicJson(key, area) && ok;
+  }
+  for (const key of world.getDynamicPropertyIds()) {
+    if (key.startsWith(CUSTOM_AREAS_AREA_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
+  }
+  return ok;
+}
+
 function rememberPlayerShopSplitKeys(store: PlayerShopStore): void {
   persistedPlayerShopJsonByKey.clear();
   const config = serializeDynamicJson(PLAYER_SHOPS_CONFIG_KEY, store.config);
@@ -810,6 +860,7 @@ export const state: {
   tauItems: TauItemsStore;
   combat: CombatStore;
   playerShops: PlayerShopStore;
+  customAreas: CustomAreaStore;
 } = {
   forms: {},
   shops: {},
@@ -834,6 +885,7 @@ export const state: {
   tauItems: defaultTauItemsStore(),
   combat: defaultCombatStore(),
   playerShops: defaultPlayerShopStore(),
+  customAreas: defaultCustomAreaStore(),
 };
 
 // ---------------------------------------------------------------------------
@@ -879,6 +931,7 @@ export function loadState() {
   );
   state.config.features.combat ??= defaultConfig().features.combat;
   state.config.features.moderation ??= defaultConfig().features.moderation;
+  state.config.features.customAreas ??= defaultConfig().features.customAreas;
   state.ranks = parseJSON<RankStore>(
     world.getDynamicProperty(STORAGE_KEYS.ranks) as string | undefined,
     defaultRankStore()
@@ -1013,6 +1066,12 @@ export function loadState() {
   state.playerShops.listings ??= {};
   state.playerShops.earningsByPlayerId ??= {};
   rememberPlayerShopSplitKeys(state.playerShops);
+  const splitCustomAreas = loadCustomAreasFromSplitKeys(dynamicPropertyIds);
+  state.customAreas = splitCustomAreas.hasSplitData
+    ? splitCustomAreas.store
+    : parseJSON<CustomAreaStore>(world.getDynamicProperty(STORAGE_KEYS.customAreas) as string | undefined, defaultCustomAreaStore());
+  state.customAreas.config = { ...defaultCustomAreaStore().config, ...(state.customAreas.config ?? {}) };
+  state.customAreas.areas ??= {};
   state.plots = normalizePlotStore(state.plots);
   state.plots.config.autoBuild ??= defaultPlotStore().config.autoBuild;
   state.plots.config.autoBuild.roofBlock ??= defaultPlotStore().config.autoBuild.roofBlock;
