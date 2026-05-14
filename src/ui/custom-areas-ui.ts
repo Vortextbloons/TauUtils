@@ -26,6 +26,7 @@ function defaultArea(id: string, player: Player, values: number[]): CustomAreaDe
     priority: 0,
     broadcastMessages: false,
     allowedRanks: [],
+    dropItemsIfInCombat: false,
     permissions: defaultPermissions(),
     effects: [],
     commandRules: [],
@@ -41,7 +42,8 @@ function copyArea(area: CustomAreaDefinition): CustomAreaDefinition {
     ...area,
     min: { ...area.min },
     max: { ...area.max },
-    allowedRanks: [...area.allowedRanks],
+    allowedRanks: [...(area.allowedRanks ?? [])],
+    dropItemsIfInCombat: area.dropItemsIfInCombat ?? false,
     permissions: { ...(area.permissions ?? defaultPermissions()) },
     commandRules: (area.commandRules ?? []).map((rule) => ({ ...rule, commands: [...(rule.commands ?? [])] })),
     effects: (area.effects ?? []).map((effect) => ({ ...effect })),
@@ -155,6 +157,7 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
     .toggle("Allow block placing", { defaultValue: area.permissions.blockPlace })
     .toggle("Allow item use", { defaultValue: area.permissions.itemUse })
     .toggle("Allow entity interact", { defaultValue: area.permissions.entityInteract })
+    .toggle("Drop items if in combat", { defaultValue: area.dropItemsIfInCombat ?? false })
     .submitButton("Save");
   const result = await modal.show(player).catch(() => undefined);
   if (!result || result.canceled || !result.formValues) return;
@@ -166,6 +169,7 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
     itemUse: Boolean(result.formValues[3]),
     entityInteract: Boolean(result.formValues[4]),
   };
+  next.dropItemsIfInCombat = Boolean(result.formValues[5]);
   tellCommitResult(player, commitCustomArea(next));
 }
 
@@ -267,7 +271,7 @@ async function editArea(player: Player, areaId: string): Promise<void> {
     }
     const form = new ActionFormData()
       .title(area.name)
-      .body(`${area.enabled ? "§aEnabled" : "§cDisabled"}§r\n${coords(area)}\nPriority: ${area.priority}`)
+      .body(`${area.enabled ? "§aEnabled" : "§cDisabled"}§r\n${coords(area)}\nPriority: ${area.priority}\nCombat drop: ${area.dropItemsIfInCombat ? "On" : "Off"}`)
       .button("Basics / Rank Filter", ICONS.edit)
       .button("Messages", ICONS.menu)
       .button("Permissions", ICONS.settings)

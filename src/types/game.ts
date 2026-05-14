@@ -328,6 +328,7 @@ export type CustomAreaDefinition = {
   leaveMessage?: string;
   broadcastMessages: boolean;
   allowedRanks: string[];
+  dropItemsIfInCombat: boolean;
   permissions: CustomAreaPermissions;
   effects: CustomAreaEffect[];
   commandRules: CustomAreaCommandRule[];

@@ -1072,6 +1072,9 @@ export function loadState() {
     : parseJSON<CustomAreaStore>(world.getDynamicProperty(STORAGE_KEYS.customAreas) as string | undefined, defaultCustomAreaStore());
   state.customAreas.config = { ...defaultCustomAreaStore().config, ...(state.customAreas.config ?? {}) };
   state.customAreas.areas ??= {};
+  for (const area of Object.values(state.customAreas.areas)) {
+    area.dropItemsIfInCombat ??= false;
+  }
   state.plots = normalizePlotStore(state.plots);
   state.plots.config.autoBuild ??= defaultPlotStore().config.autoBuild;
   state.plots.config.autoBuild.roofBlock ??= defaultPlotStore().config.autoBuild.roofBlock;

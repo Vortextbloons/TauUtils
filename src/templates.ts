@@ -1,6 +1,7 @@
 import { Player, world } from "@minecraft/server";
 import { state } from "./storage/state";
 import { getPlayerId, getPlayerRank } from "./storage/players";
+import { getCombatStatusText } from "./combat-status";
 
 const ERROR_PLACEHOLDER = "§c[error]§r";
 const PLAYER_PLACEHOLDERS = new Set([
@@ -17,6 +18,7 @@ const PLAYER_PLACEHOLDERS = new Set([
   "kills",
   "killstreak",
   "longest_killstreak",
+  "combat_status",
 ]);
 
 export type TemplateContext = {
@@ -62,6 +64,9 @@ function getPlayerPlaceholder(key: string, player: Player, moneyObjective?: stri
   if (key === "rank") {
     const rank = getPlayerRank(player.name);
     return rank ? `${rank.color}${rank.name}§r` : "";
+  }
+  if (key === "combat_status") {
+    return getCombatStatusText(player);
   }
   const stats = state.stats.players[getPlayerId(player)];
   if (key === "kills") return formatNumber(stats?.kills ?? 0);

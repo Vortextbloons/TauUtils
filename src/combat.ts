@@ -9,12 +9,9 @@ import {
   world,
 } from "@minecraft/server";
 import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "./storage";
+import { combatTagsByPlayerId, hasActiveCombatTag, isCombatFeatureActive, isPlayerInCombat } from "./combat-status";
 import { renderCommandTemplate, renderTemplate } from "./templates";
 import type { KillConditionAction, KillConditionRule, PlayerStats } from "./types";
-
-type CombatTagEntry = {
-  expiresAt: number;
-};
 
 type CombatLootSnapshot = {
   inventory: ItemStack[];
@@ -36,7 +33,6 @@ type CombatKillContext = {
   killstreak: number;
 };
 
-const combatTagsByPlayerId = new Map<string, CombatTagEntry>();
 const combatSnapshotsByPlayerId = new Map<string, CombatLootSnapshot>();
 const pendingCombatLogouts: PendingCombatLogout[] = [];
 const PENALTY_KEY_PREFIX = "tau:combat:penalty:";
@@ -66,7 +62,7 @@ function getCombatDurationMs(): number {
 }
 
 function isCombatSystemEnabled(): boolean {
-  return isFeatureEnabled("combat") && state.combat.config.enabled;
+  return isCombatFeatureActive();
 }
 
 function clearCombatTag(player: Player, playerId: string, notify: boolean): void {
@@ -85,12 +81,9 @@ function isTagged(player: Player, playerId: string): boolean {
 }
 
 function hasActiveTag(playerId: string): boolean {
-  const entry = combatTagsByPlayerId.get(playerId);
-  if (!entry) return false;
-  if (entry.expiresAt > nowMs()) return true;
-  combatTagsByPlayerId.delete(playerId);
-  combatSnapshotsByPlayerId.delete(playerId);
-  return false;
+  const active = hasActiveCombatTag(playerId, nowMs());
+  if (!active) combatSnapshotsByPlayerId.delete(playerId);
+  return active;
 }
 
 function setCombatTag(player: Player): void {
@@ -189,6 +182,43 @@ function spawnDroppedItems(dimensionId: string, location: { x: number; y: number
     return dropped.map((stack) => stack.clone());
   }
   return failed;
+}
+
+export function dropCombatInventory(player: Player, dropLocation: { x: number; y: number; z: number } = player.location): boolean {
+  if (!isCombatSystemEnabled()) return false;
+  const playerId = getPlayerId(player);
+  if (!hasActiveTag(playerId)) return false;
+
+  const liveSnapshot = captureCombatLoot(player);
+  const cachedSnapshot = combatSnapshotsByPlayerId.get(playerId);
+  const liveCount = liveSnapshot.inventory.length + liveSnapshot.equipment.length;
+  const snapshot = liveCount > 0
+    ? liveSnapshot
+    : (cachedSnapshot ? cloneCombatLoot(cachedSnapshot) : { inventory: [], equipment: [] });
+  if (snapshot.inventory.length + snapshot.equipment.length === 0) {
+    combatTagsByPlayerId.delete(playerId);
+    combatSnapshotsByPlayerId.delete(playerId);
+    return false;
+  }
+
+  clearInventoryAndEquipment(player);
+  const failedEquipment = spawnDroppedItems(player.dimension.id, dropLocation, snapshot.equipment);
+  const failedInventory = spawnDroppedItems(player.dimension.id, dropLocation, snapshot.inventory);
+  const failed = [...failedEquipment, ...failedInventory];
+  if (failed.length > 0) {
+    pendingCombatLogouts.push({
+      playerId,
+      playerName: player.name,
+      dimensionId: player.dimension.id,
+      location: dropLocation,
+      inventory: failedInventory,
+      equipment: failedEquipment,
+      attempts: 0,
+    });
+  }
+  combatTagsByPlayerId.delete(playerId);
+  combatSnapshotsByPlayerId.delete(playerId);
+  return true;
 }
 
 function processPendingCombatLogouts(): void {

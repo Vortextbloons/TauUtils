@@ -856,6 +856,7 @@ export function registerCustomCommands(
           "§e/tau help crates §7- Crate system",
           "§e/tau help items §7- Custom Tau items",
           "§e/tau help prune §7- Data pruning",
+          "§e/tau help areas §7- Custom areas",
           "§e/tau help placeholders §7- Available placeholders",
           "§7Use §e/tau help <topic>§7 for details.",
         ],
@@ -1033,6 +1034,19 @@ export function registerCustomCommands(
           "§e[rank_tag] §7- Player rank (static)",
           "§e[message] §7- Chat message",
           "§7Use §e[placeholder]§7 in sidebar lines, chat format, or form values",
+        ],
+        areas: [
+          "§6--- Custom Areas ---",
+          "§7Custom areas let you define 3D regions with special rules.",
+          "§7Configure them in §e/tau:creator§7 → Custom Areas.",
+          "§7Each area can have:",
+          "§e  •§7 Enter/leave messages (chat or global)",
+          "§e  •§7 Permission overrides: PvP, block break/place, item use, entity interact",
+          "§e  •§7 Periodic effects (any potion effect on interval)",
+          "§e  •§7 Periodic command rules (commands on interval per player)",
+          "§e  •§7 Rank filters (who is affected)",
+          "§e  •§7 Ticking area support (manual apply)",
+          "§7Operators bypass custom-area block restrictions.",
         ],
       };
 

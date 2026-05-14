@@ -57,7 +57,7 @@ export const ICON_DEV_OPTIONS: IconOption[] = [
   { label: "Coal", path: "textures/items/coal" },
   { label: "Ender Pearl", path: "textures/items/ender_pearl" },
   { label: "Feather", path: "textures/items/feather" },
-  { label: "Fishing Rod", path: "textures/items/fishing_hook" },
+  { label: "Fishing Rod", path: "textures/items/fishing_rod" },
   { label: "Flint and Steel", path: "textures/items/flint_and_steel" },
   { label: "Ghast Tear", path: "textures/items/ghast_tear" },
   { label: "Iron Ingot", path: "textures/items/iron_ingot" },

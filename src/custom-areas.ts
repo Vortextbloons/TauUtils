@@ -1,5 +1,7 @@
 import { Player, Vector3, world } from "@minecraft/server";
 import { getPlayerId, getPlayerRank, isFeatureEnabled, isOperator, saveCustomAreas, state, tell } from "./storage";
+import { dropCombatInventory } from "./combat";
+import { isPlayerInCombat } from "./combat-status";
 import { CUSTOM_AREAS_AREA_PREFIX } from "./storage/state";
 import { renderCommandTemplate, renderTemplate } from "./templates";
 import type { CustomAreaCommandRule, CustomAreaDefinition } from "./types";
@@ -11,6 +13,7 @@ type AreaState = {
 const playerAreaState = new Map<string, AreaState>();
 const lastRuleRunByPlayerArea = new Map<string, number>();
 const lastEffectRunByPlayerArea = new Map<string, number>();
+const combatDropsByPlayerArea = new Set<string>();
 const MAX_SAFE_AREA_COORD = 30000000;
 
 function enabled(): boolean {
@@ -103,6 +106,25 @@ function runLeave(area: CustomAreaDefinition, player: Player): void {
   for (const rule of area.commandRules) if (rule.runOnLeave) runCommandRule(player, area, rule);
 }
 
+function maybeDropCombatInventory(player: Player, area: CustomAreaDefinition): void {
+  if (!area.dropItemsIfInCombat) return;
+  if (isOperator(player)) return;
+  const key = `${getPlayerId(player)}:${area.id}`;
+  if (!isPlayerInCombat(player)) {
+    combatDropsByPlayerArea.delete(key);
+    return;
+  }
+  if (combatDropsByPlayerArea.has(key)) return;
+  combatDropsByPlayerArea.add(key);
+  const direction = player.getViewDirection();
+  const dropLocation = {
+    x: player.location.x - direction.x * 2,
+    y: player.location.y,
+    z: player.location.z - direction.z * 2,
+  };
+  if (dropCombatInventory(player, dropLocation)) tell(player, "§cYou entered a restricted combat area and dropped your items.");
+}
+
 export function processCustomAreas(): void {
   if (!enabled()) return;
   const areas = getEnabledAreas();
@@ -115,6 +137,7 @@ export function processCustomAreas(): void {
     const current = new Set(currentAreas.map((area) => area.id));
     for (const area of currentAreas) {
       if (!previous.has(area.id)) runEnter(area, player);
+      maybeDropCombatInventory(player, area);
       for (let index = 0; index < area.effects.length; index++) {
         const effect = area.effects[index];
         if (!effect.enabled) continue;
@@ -136,6 +159,7 @@ export function processCustomAreas(): void {
     }
     for (const oldId of previous) {
       if (current.has(oldId)) continue;
+      combatDropsByPlayerArea.delete(`${playerId}:${oldId}`);
       const area = state.customAreas.areas[oldId];
       if (area) runLeave(area, player);
     }
@@ -200,6 +224,7 @@ function normalizeAreaDefinition(area: CustomAreaDefinition): CustomAreaDefiniti
     max: bounds.max,
     allowedRanks: [...(area.allowedRanks ?? [])],
     permissions: Object.assign({ pvp: true, blockBreak: true, blockPlace: true, itemUse: true, entityInteract: true }, area.permissions ?? {}),
+    dropItemsIfInCombat: area.dropItemsIfInCombat ?? false,
     commandRules: (area.commandRules ?? []).map((rule) => ({ ...rule, commands: [...(rule.commands ?? [])] })),
     effects: (area.effects ?? []).map((effect) => ({ ...effect })),
     tickingArea: area.tickingArea ? { ...area.tickingArea } : undefined,
@@ -211,11 +236,13 @@ export function invalidateCustomAreaRuntimeState(areaId?: string): void {
   if (!areaId) {
     lastRuleRunByPlayerArea.clear();
     lastEffectRunByPlayerArea.clear();
+    combatDropsByPlayerArea.clear();
     return;
   }
   const marker = `:${areaId}:`;
   for (const key of lastRuleRunByPlayerArea.keys()) if (key.includes(marker)) lastRuleRunByPlayerArea.delete(key);
   for (const key of lastEffectRunByPlayerArea.keys()) if (key.includes(marker)) lastEffectRunByPlayerArea.delete(key);
+  for (const key of combatDropsByPlayerArea) if (key.endsWith(marker.slice(0, -1))) combatDropsByPlayerArea.delete(key);
 }
 
 export function commitCustomArea(area: CustomAreaDefinition): { ok: boolean; message: string; area?: CustomAreaDefinition } {
