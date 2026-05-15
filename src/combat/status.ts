@@ -1,6 +1,6 @@
 import { Player } from "@minecraft/server";
-import { getPlayerId } from "./storage/players";
-import { state } from "./storage/state";
+import { getPlayerId } from "../storage/players";
+import { state } from "../storage/state";
 
 export type CombatTagEntry = {
   expiresAt: number;

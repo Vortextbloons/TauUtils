@@ -1,7 +1,7 @@
 import { Player, world } from "@minecraft/server";
-import { getPlayerId, savePlots, saveTeams, state } from "./storage";
-import { type TeamDefinition } from "./tau-models";
-import { clearPlayerPlot, reconcileAllPlotState } from "./plots";
+import { getPlayerId, savePlots, saveTeams, state } from "../storage";
+import { type TeamDefinition } from "../types";
+import { clearPlayerPlot, reconcileAllPlotState } from "../plots";
 
 function normalizeTeamId(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "_");

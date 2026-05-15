@@ -8,10 +8,10 @@ import {
   system,
   world,
 } from "@minecraft/server";
-import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "./storage";
-import { combatTagsByPlayerId, hasActiveCombatTag, isCombatFeatureActive, isPlayerInCombat } from "./combat-status";
-import { renderCommandTemplate, renderTemplate } from "./templates";
-import type { KillConditionAction, KillConditionRule, PlayerStats } from "./types";
+import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "../storage";
+import { combatTagsByPlayerId, hasActiveCombatTag, isCombatFeatureActive, isPlayerInCombat } from "./status";
+import { renderCommandTemplate, renderTemplate } from "../shared/templates";
+import type { KillConditionAction, KillConditionRule, PlayerStats } from "../types";
 
 type CombatLootSnapshot = {
   inventory: ItemStack[];

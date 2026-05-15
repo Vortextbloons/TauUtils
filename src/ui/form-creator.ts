@@ -2,7 +2,7 @@ import { Player, world } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ACTION_TYPES, ICONS, WORKING_ICON_OPTIONS, isWorkingIconPath, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
 import { findForm, getPlayerId, getPlayerRank, getPlayerStats, isFeatureEnabled, isOperator, normalizeKey, saveForms, saveProfiles, saveModeration, state, tell } from "../storage";
-import { iconForAction, iconForElement, optionalIcon } from "../tau-ui";
+import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
 
 function formLabel(element: FormElement): string {
   switch (element.kind) {
@@ -274,7 +274,7 @@ export async function showCreatorMenu(player: Player) {
       continue;
     }
     if (response.selection === 3) {
-      const { showShopProfilesEditor } = await import("../shop-ui");
+      const { showShopProfilesEditor } = await import("../shop");
       await showShopProfilesEditor(player);
       continue;
     }

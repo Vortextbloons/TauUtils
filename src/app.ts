@@ -6,7 +6,7 @@ import { registerSidebarSystem } from "./sidebar";
 import { registerLootChestSystem } from "./loot-chests";
 import { reconcileAllPlotState } from "./plots";
 import { reconcileTeamAssignments } from "./teams";
-import { formatTauUtilsLoadedMessage } from "./version";
+import { formatTauUtilsLoadedMessage } from "./shared/version";
 
 export { state } from "./storage";
 export {
@@ -28,8 +28,8 @@ export {
   formatChatMessage,
 } from "./storage";
 
-export { openFormById, showCreatorMenu, showBindingsEditor, showRankManager, showRankEditor, showPlayerRankAssign, showRankMenu, showProfileBrowser, showPlayerProfileViewer, showPlayerProfileEditor, showPlotManager, showTpaMenu, showHomesMenu, showPayMenu, showPlayerSettingsMenu, showTeamMenu } from "./forms-ui";
-export { openShopTransaction, showShopProfilesEditor, sellAllSellableItems } from "./shop-ui";
+export { openFormById, showCreatorMenu, showBindingsEditor, showRankManager, showRankEditor, showPlayerRankAssign, showRankMenu, showProfileBrowser, showPlayerProfileViewer, showPlayerProfileEditor, showPlotManager, showTpaMenu, showHomesMenu, showPayMenu, showPlayerSettingsMenu, showTeamMenu } from "./ui";
+export { openShopTransaction, showShopProfilesEditor, sellAllSellableItems } from "./shop";
 export { openMyPlayerShop, openPlayerMarketplace, openPlayerShopAdmin, claimPlayerShopEarnings } from "./player-shops";
 export { showSidebarEditor } from "./sidebar";
 

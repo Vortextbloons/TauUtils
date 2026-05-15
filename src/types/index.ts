@@ -147,4 +147,4 @@ export {
   WORKING_ICON_PATHS,
   isWorkingIconPath,
   type IconOption,
-} from "../icons";
+} from "../ui/icons";

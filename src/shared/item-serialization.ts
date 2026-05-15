@@ -1,5 +1,5 @@
 import { EnchantmentTypes, ItemComponentTypes, ItemLockMode, ItemStack, type Vector3 } from "@minecraft/server";
-import { type SerializedDynamicValue, type SerializedItemStack, type SerializedVector3 } from "./tau-models";
+import { type SerializedDynamicValue, type SerializedItemStack, type SerializedVector3 } from "../types";
 
 function isSerializedVector3(value: unknown): value is SerializedVector3 {
   if (!value || typeof value !== "object") return false;

@@ -1,8 +1,8 @@
 import { Block, BlockComponentTypes, BlockInventoryComponent, Player, system, world, type Vector3 } from "@minecraft/server";
-import { isFeatureEnabled, isOperator, saveLootChests, state, tell } from "./storage";
-import { deserializeItemStack, serializeItemStack } from "./item-serialization";
-import { renderCommandTemplate, renderTemplate } from "./templates";
-import type { LootChestLocation, LootChestPool, LootChestRefillMode, LootChestSnapshot, LootChestSnapshotItem } from "./types";
+import { isFeatureEnabled, isOperator, saveLootChests, state, tell } from "../storage";
+import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
+import { renderCommandTemplate, renderTemplate } from "../shared/templates";
+import type { LootChestLocation, LootChestPool, LootChestRefillMode, LootChestSnapshot, LootChestSnapshotItem } from "../types";
 
 type ContainerLike = {
   size: number;

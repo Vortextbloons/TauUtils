@@ -1,0 +1,1 @@
+export { getAreasForLocation, processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaItemUse, shouldCancelAreaEntityInteract, shouldCancelAreaPvp, normalizeAreaBounds, invalidateCustomAreaRuntimeState, commitCustomArea, applyAreaTickingArea, saveAreaStore } from "./core";

@@ -1,7 +1,7 @@
 import { Player, world } from "@minecraft/server";
-import { state } from "./storage/state";
-import { getPlayerId, getPlayerRank } from "./storage/players";
-import { getCombatStatusText } from "./combat-status";
+import { state } from "../storage/state";
+import { getPlayerId, getPlayerRank } from "../storage/players";
+import { getCombatStatusText } from "../combat";
 
 const ERROR_PLACEHOLDER = "§c[error]§r";
 const PLAYER_PLACEHOLDERS = new Set([

@@ -28,7 +28,7 @@ import { listWarps } from "../warps";
 import { addGeneratorTier, createGeneratorDefinition, giveGenerator } from "../generators";
 import { listCrateIds } from "../crates";
 import { listTauItemIds } from "../tau-items";
-import { TAUUTILS_VERSION } from "../version";
+import { TAUUTILS_VERSION } from "../shared/version";
 
 export function registerCustomCommands(
   startupEvent: { customCommandRegistry: { registerCommand: Function } }
@@ -64,7 +64,7 @@ export function registerCustomCommands(
         return { status: 1, message: "Forms are disabled." };
       }
       system.run(async () => {
-        const { openFormById } = await import("../forms-ui");
+        const { openFormById } = await import("../ui");
         openFormById(player, id);
       });
       return { status: 0, message: `Opening ${id}.` };
@@ -98,7 +98,7 @@ export function registerCustomCommands(
       }
 
       system.run(async () => {
-        const { showCrateAdminMenu } = await import("../forms-ui");
+        const { showCrateAdminMenu } = await import("../ui");
         showCrateAdminMenu(player);
       });
       return { status: 0, message: "Opening crate admin." };
@@ -128,7 +128,7 @@ export function registerCustomCommands(
       }
 
       system.run(async () => {
-        const { showTauItemsAdminMenu } = await import("../forms-ui");
+        const { showTauItemsAdminMenu } = await import("../ui");
         showTauItemsAdminMenu(player);
       });
       return { status: 0, message: "Opening TauItems admin." };
@@ -148,7 +148,7 @@ export function registerCustomCommands(
       if (!isOperator(player)) return { status: 1, message: "Operator required." };
       if (!isFeatureEnabled("generators")) return { status: 1, message: "Generators are disabled." };
       system.run(async () => {
-        const { showGeneratorAdminMenu } = await import("../forms-ui");
+        const { showGeneratorAdminMenu } = await import("../ui");
         showGeneratorAdminMenu(player);
       });
       return { status: 0, message: "Opening generator admin menu." };
@@ -168,7 +168,7 @@ export function registerCustomCommands(
       if (!isOperator(player)) return { status: 1, message: "Operator required." };
       if (!isFeatureEnabled("lootChests")) return { status: 1, message: "Loot chests are disabled." };
       system.run(async () => {
-        const { showLootChestsAdminMenu } = await import("../forms-ui");
+        const { showLootChestsAdminMenu } = await import("../ui");
         showLootChestsAdminMenu(player);
       });
       return { status: 0, message: "Opening loot chest admin menu." };
@@ -187,7 +187,7 @@ export function registerCustomCommands(
       if (!player) return { status: 1, message: "This command can only be used by a player." };
       if (!isOperator(player)) return { status: 1, message: "Operator required." };
       system.run(async () => {
-        const { showIconDevMenu } = await import("../forms-ui");
+        const { showIconDevMenu } = await import("../ui");
         showIconDevMenu(player);
       });
       return { status: 0, message: "Opening icon dev menu." };
@@ -206,7 +206,7 @@ export function registerCustomCommands(
       if (!player) return { status: 1, message: "This command can only be used by a player." };
       if (!isFeatureEnabled("warps")) return { status: 1, message: "Warps are disabled." };
       system.run(async () => {
-        const { showWarpMenu } = await import("../forms-ui");
+        const { showWarpMenu } = await import("../ui");
         showWarpMenu(player);
       });
       return { status: 0, message: "Opening warp menu." };
@@ -226,7 +226,7 @@ export function registerCustomCommands(
       if (!isOperator(player)) return { status: 1, message: "Operator required." };
       if (!isFeatureEnabled("warps")) return { status: 1, message: "Warps are disabled." };
       system.run(async () => {
-        const { showWarpAdminMenu } = await import("../forms-ui");
+        const { showWarpAdminMenu } = await import("../ui");
         showWarpAdminMenu(player);
       });
       return { status: 0, message: "Opening warp admin menu." };
@@ -248,7 +248,7 @@ export function registerCustomCommands(
       const name = String(warpName ?? "").trim();
       if (!name) {
         system.run(async () => {
-          const { showWarpMenu } = await import("../forms-ui");
+          const { showWarpMenu } = await import("../ui");
           showWarpMenu(player);
         });
         return { status: 0, message: "Opening warp menu." };
@@ -277,7 +277,7 @@ export function registerCustomCommands(
       if (!isFeatureEnabled("plots")) return { status: 1, message: "Plots are disabled." };
       if (!isFeatureEnabled("plotTp")) return { status: 1, message: "Plot teleport is disabled." };
       system.run(async () => {
-        const { showPlotPlayerMenu } = await import("../forms-ui");
+        const { showPlotPlayerMenu } = await import("../ui");
         showPlotPlayerMenu(player);
       });
       return { status: 0, message: "Opening plot menu." };
@@ -303,7 +303,7 @@ export function registerCustomCommands(
       const act = String(action ?? "").trim().toLowerCase();
       if (!act || act === "ui" || act === "menu" || act === "open") {
         system.run(async () => {
-          const { showPruneDataMenu } = await import("../forms-ui");
+          const { showPruneDataMenu } = await import("../ui");
           showPruneDataMenu(player);
         });
         return { status: 0, message: "Opening prune menu." };
@@ -344,7 +344,7 @@ export function registerCustomCommands(
       const act = String(action ?? "").trim().toLowerCase();
       if (!act || act === "ui" || act === "menu" || act === "open") {
         system.run(async () => {
-          const { showTeamMenu } = await import("../forms-ui");
+          const { showTeamMenu } = await import("../ui");
           showTeamMenu(player);
         });
         return { status: 0, message: "Opening team menu." };
@@ -411,7 +411,7 @@ export function registerCustomCommands(
       const targetName = String(target ?? "").trim();
       if (!targetName) {
         system.run(async () => {
-          const { showTpaMenu } = await import("../forms-ui");
+          const { showTpaMenu } = await import("../ui");
           showTpaMenu(player);
         });
         return { status: 0, message: "Opening TPA menu." };
@@ -491,7 +491,7 @@ export function registerCustomCommands(
       const homeName = String(name ?? "").trim();
       if (!homeName) {
         system.run(async () => {
-          const { showHomesMenu } = await import("../forms-ui");
+          const { showHomesMenu } = await import("../ui");
           showHomesMenu(player);
         });
         return { status: 0, message: "Opening homes menu." };
@@ -555,7 +555,7 @@ export function registerCustomCommands(
       const targetName = String(target ?? "").trim();
       if (!targetName) {
         system.run(async () => {
-          const { showPayMenu } = await import("../forms-ui");
+          const { showPayMenu } = await import("../ui");
           showPayMenu(player);
         });
         return { status: 0, message: "Opening pay menu." };
@@ -584,7 +584,7 @@ export function registerCustomCommands(
       if (!player) return { status: 1, message: "This command can only be used by a player." };
       if (!isFeatureEnabled("playerConfig")) return { status: 1, message: "Player config is disabled." };
       system.run(async () => {
-        const { showPlayerSettingsMenu } = await import("../forms-ui");
+        const { showPlayerSettingsMenu } = await import("../ui");
         showPlayerSettingsMenu(player);
       });
       return { status: 0, message: "Opening player settings." };
@@ -603,7 +603,7 @@ export function registerCustomCommands(
       if (!player) return { status: 1, message: "This command can only be used by a player." };
       if (!isFeatureEnabled("plots")) return { status: 1, message: "Plots are disabled." };
       system.run(async () => {
-        const { showPlotManager } = await import("../forms-ui");
+        const { showPlotManager } = await import("../ui");
         showPlotManager(player);
       });
       return { status: 0, message: "Opening plot manager." };
@@ -631,7 +631,7 @@ export function registerCustomCommands(
       const matched = world.getAllPlayers().find((p) => p.name.toLowerCase() === targetName.toLowerCase());
       if (!stat) {
         system.run(async () => {
-          const { showPlayerProfileViewer } = await import("../forms-ui");
+          const { showPlayerProfileViewer } = await import("../ui");
           showPlayerProfileViewer(player ?? matched, targetName);
         });
         return { status: 0, message: `Opened stats/profile for ${targetName}.` };
@@ -669,7 +669,7 @@ export function registerCustomCommands(
         return { status: 1, message: "Creator is disabled." };
       }
       system.run(async () => {
-        const { showCreatorMenu } = await import("../forms-ui");
+        const { showCreatorMenu } = await import("../ui");
         showCreatorMenu(player);
       });
       return { status: 0, message: "Opening Tau UI creator." };
@@ -728,7 +728,7 @@ export function registerCustomCommands(
       }
       const id = String(profileId ?? "").trim() || "default";
       system.run(async () => {
-        const { openShopProfile } = await import("../shop-ui");
+        const { openShopProfile } = await import("../shop");
         await openShopProfile(player, id);
       });
       return { status: 0, message: `Opening shop profile ${id}.` };
@@ -1093,7 +1093,7 @@ export function registerCustomCommands(
       if (!player) return { status: 1, message: "This command can only be used by a player." };
       if (!isFeatureEnabled("creator")) return { status: 1, message: "Creator is disabled." };
       system.run(async () => {
-        const { showConfigMenu } = await import("../forms-ui");
+        const { showConfigMenu } = await import("../ui");
         showConfigMenu(player);
       });
       return { status: 0, message: "Opening Tau config." };
@@ -1283,7 +1283,7 @@ export function registerCustomCommands(
       }
 
       system.run(async () => {
-        const { showRankMenu } = await import("../forms-ui");
+        const { showRankMenu } = await import("../ui");
         showRankMenu(player);
       });
       return { status: 0, message: "Opening rank manager." };
@@ -1312,7 +1312,7 @@ export function registerCustomCommands(
       if (!targetName) {
         if (!player) return { status: 1, message: "Usage: /tau:profile <player>" };
         system.run(async () => {
-          const { showProfileBrowser } = await import("../forms-ui");
+          const { showProfileBrowser } = await import("../ui");
           showProfileBrowser(player);
         });
         return { status: 0, message: "Opening profile browser." };
@@ -1321,14 +1321,14 @@ export function registerCustomCommands(
       const online = world.getAllPlayers().find((p) => p.name.toLowerCase() === targetName.toLowerCase());
       if (online && player && isOperator(player)) {
         system.run(async () => {
-          const { showPlayerProfileEditor } = await import("../forms-ui");
+          const { showPlayerProfileEditor } = await import("../ui");
           showPlayerProfileEditor(player, online.name);
         });
         return { status: 0, message: `Opening profile editor for ${online.name}.` };
       }
 
       system.run(async () => {
-        const { showPlayerProfileViewer } = await import("../forms-ui");
+        const { showPlayerProfileViewer } = await import("../ui");
         showPlayerProfileViewer(player ?? online, targetName);
       });
       return { status: 0, message: `Opening profile for ${targetName}.` };

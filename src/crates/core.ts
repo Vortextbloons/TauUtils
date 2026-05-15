@@ -1,7 +1,7 @@
 import { Block, ItemStack, Player, system, world } from "@minecraft/server";
-import { getInventoryContainer, getPlayerId, getScore, saveCrates, setScore, state } from "./storage";
-import { renderCommandTemplate } from "./templates";
-import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "./tau-models";
+import { getInventoryContainer, getPlayerId, getScore, saveCrates, setScore, state } from "../storage";
+import { renderCommandTemplate } from "../shared/templates";
+import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "../types";
 
 type CrateInteractResult = {
   handled: boolean;

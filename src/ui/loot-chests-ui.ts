@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { ICONS } from "../icons";
+import { ICONS } from "./icons";
 import { isOperator, saveLootChests, state, tell } from "../storage";
 import {
   bindLootChestLocation,

@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { state, savePrune, saveProfiles, saveStats, saveTeams, savePlots, saveHomes, savePlayerSettings, tell } from "./storage";
+import { state, savePrune, saveProfiles, saveStats, saveTeams, savePlots, saveHomes, savePlayerSettings, tell } from "../storage";
 
 export type PruneCategory = "stats" | "profiles" | "teams" | "plots" | "homes" | "tpa" | "pay" | "playerSettings";
 

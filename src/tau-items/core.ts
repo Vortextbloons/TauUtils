@@ -1,7 +1,7 @@
 import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, system } from "@minecraft/server";
-import { commandStripSlash, getInventoryContainer, getPlayerId, getScore, saveTauItems, setScore, state } from "./storage";
-import { renderCommandTemplate as renderSharedCommandTemplate } from "./templates";
-import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "./tau-models";
+import { commandStripSlash, getInventoryContainer, getPlayerId, getScore, saveTauItems, setScore, state } from "../storage";
+import { renderCommandTemplate as renderSharedCommandTemplate } from "../shared/templates";
+import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "../types";
 
 type TriggerContext = {
   location?: { x: number; y: number; z: number };

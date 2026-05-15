@@ -1,6 +1,6 @@
 import { Player, world } from "@minecraft/server";
-import { getPlayerId, saveWarps, state } from "./storage";
-import { type WarpDefinition } from "./tau-models";
+import { getPlayerId, saveWarps, state } from "../storage";
+import { type WarpDefinition } from "../types";
 
 function normalizeWarpId(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "_");

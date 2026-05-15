@@ -1,5 +1,5 @@
   import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
-import type { ActionType, FormElement } from "./tau-models";
+import type { ActionType, FormElement } from "../types";
 import { ICONS, isWorkingIconPath } from "./icons";
 
 export function iconForAction(action: ActionType): string {

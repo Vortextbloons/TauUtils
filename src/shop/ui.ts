@@ -42,7 +42,7 @@ import {
   categoryList,
   promptHeldItemPricing,
 } from "./utils";
-import { ICONS } from "../icons";
+import { ICONS } from "../ui/icons";
 
 type SellAllSlotPlan = {
   slot: number;

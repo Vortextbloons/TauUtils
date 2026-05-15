@@ -2,7 +2,7 @@ import { Player, ItemStack } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ACTION_TYPES, isWorkingIconPath, ICONS, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
 import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
-import { iconForAction, iconForElement, optionalIcon } from "../tau-ui";
+import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
 
 export async function openFormById(player: Player, menuId: string) {
   const form = findForm(menuId);
@@ -99,9 +99,9 @@ async function runBoundAction(
   selectedValue?: unknown
 ) {
   const { ItemStack, Player } = await import("@minecraft/server");
-  const { openShopTransaction } = await import("../shop-ui");
+  const { openShopTransaction } = await import("../shop");
   const { sanitizePlayerCommand, commandStripSlash, normalizeForSudo } = await import("../storage");
-  const { renderTemplate } = await import("../templates");
+  const { renderTemplate } = await import("../shared/templates");
 
   const value = renderTemplate(rawValue, {
     player,

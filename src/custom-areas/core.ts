@@ -1,10 +1,10 @@
 import { Player, Vector3, world } from "@minecraft/server";
-import { getPlayerId, getPlayerRank, isFeatureEnabled, isOperator, saveCustomAreas, state, tell } from "./storage";
-import { dropCombatInventory } from "./combat";
-import { isPlayerInCombat } from "./combat-status";
-import { CUSTOM_AREAS_AREA_PREFIX } from "./storage/state";
-import { renderCommandTemplate, renderTemplate } from "./templates";
-import type { CustomAreaCommandRule, CustomAreaDefinition } from "./types";
+import { getPlayerId, getPlayerRank, isFeatureEnabled, isOperator, saveCustomAreas, state, tell } from "../storage";
+import { dropCombatInventory } from "../combat";
+import { isPlayerInCombat } from "../combat";
+import { CUSTOM_AREAS_AREA_PREFIX } from "../storage/state";
+import { renderCommandTemplate, renderTemplate } from "../shared/templates";
+import type { CustomAreaCommandRule, CustomAreaDefinition } from "../types";
 
 type AreaState = {
   areaIds: Set<string>;

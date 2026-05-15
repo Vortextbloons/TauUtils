@@ -1,8 +1,8 @@
 import { Player, system, world } from "@minecraft/server";
-import { ICONS, type SidebarDefinition } from "./tau-models";
-import { TauUi } from "./ui";
-import { isOperator, saveSidebars, state, tell } from "./storage";
-import { renderTemplate } from "./templates";
+import { ICONS, type SidebarDefinition } from "../types";
+import { TauUi } from "../ui";
+import { isOperator, saveSidebars, state, tell } from "../storage";
+import { renderTemplate } from "../shared/templates";
 
 let tpsSampleTick = 0;
 let tpsSampleTime = Date.now();

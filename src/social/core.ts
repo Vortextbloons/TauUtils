@@ -8,7 +8,7 @@ import {
   saveTpa,
   setScore,
   state,
-} from "./storage";
+} from "../storage";
 
 type TpaRequest = {
   fromPlayerId: string;

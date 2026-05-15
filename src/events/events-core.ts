@@ -36,7 +36,7 @@ function openGeneratorMenuOnce(player: ReturnType<typeof asPlayer>, placed: { de
   if (now - lastOpenAt < 600) return;
   generatorMenuOpenByPlayerId.set(playerId, now);
   system.run(() => {
-    void import("../forms-ui").then((formsUi) => {
+    void import("../ui").then((formsUi) => {
       void formsUi.showGeneratorUpgradeMenu(player, placed.definitionId, { x: placed.x, y: placed.y, z: placed.z }, placed.dimensionId);
     });
   });
@@ -339,7 +339,7 @@ export function registerEventInterceptors() {
     const menuId = resolveItemMenu(event.itemStack);
     if (!menuId) return;
     system.run(async () => {
-      const { openFormById } = await import("../forms-ui");
+      const { openFormById } = await import("../ui");
       openFormById(event.source, menuId);
     });
   });
@@ -350,7 +350,7 @@ export function registerEventInterceptors() {
     const menuId = resolveEntityMenu(event.target);
     if (!menuId) return;
     system.run(async () => {
-      const { openFormById } = await import("../forms-ui");
+      const { openFormById } = await import("../ui");
       openFormById(event.player, menuId);
     });
   });
@@ -371,7 +371,7 @@ export function registerEventInterceptors() {
         return;
       }
       system.run(async () => {
-        const { openFormById } = await import("../forms-ui");
+        const { openFormById } = await import("../ui");
         openFormById(player, arg);
       });
     } else if (subcommand === "creator") {
@@ -380,7 +380,7 @@ export function registerEventInterceptors() {
         return;
       }
       system.run(async () => {
-        const { showCreatorMenu } = await import("../forms-ui");
+        const { showCreatorMenu } = await import("../ui");
         showCreatorMenu(player);
       });
     }

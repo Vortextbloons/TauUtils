@@ -1,6 +1,6 @@
 import { EntityComponentTypes, ItemStack, Player, world } from "@minecraft/server";
 import { TauUi } from "../ui";
-import { deserializeItemStack, serializeItemStack } from "../item-serialization";
+import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
 import { ICONS, type PlayerShop, type PlayerShopListing } from "../types";
 import { getInventoryContainer, getPlayerId, getScore, isOperator, savePlayerShops, setScore, state, tell } from "../storage";
 
