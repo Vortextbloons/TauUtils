@@ -1,7 +1,27 @@
-const { cpSync, mkdirSync, rmSync, readdirSync } = require("fs");
+const { existsSync, readFileSync, cpSync, mkdirSync, rmSync } = require("fs");
 const { resolve } = require("path");
 
-const mcDev = "C:/Users/isaac/AppData/Roaming/Minecraft Bedrock/Users/Shared/games/com.mojang";
+const envPath = resolve(__dirname, "..", ".env");
+let mcDev = "";
+
+if (existsSync(envPath)) {
+  const env = readFileSync(envPath, "utf8");
+  for (const line of env.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      const eq = trimmed.indexOf("=");
+      if (eq > 0 && trimmed.slice(0, eq).trim() === "DEPLOY_PATH") {
+        mcDev = trimmed.slice(eq + 1).trim();
+      }
+    }
+  }
+}
+
+if (!mcDev) {
+  console.error("DEPLOY_PATH not set in .env. Copy .env.example to .env and set your path.");
+  process.exit(1);
+}
+
 const bpSrc = resolve(__dirname, "..", "behavior_pack");
 const rpSrc = resolve(__dirname, "..", "resource_pack");
 const bpDest = `${mcDev}/development_behavior_packs/TauUtils`;

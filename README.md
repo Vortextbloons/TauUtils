@@ -207,7 +207,7 @@ Use these in sidebars, chat formats, menus, and similar text systems.
 
 ## Installation
 
-1. Import both the behavior pack and resource pack into your world or server.
+1. Import the `.mcaddon` (see Development) into your world or server.
 2. Make sure the packs are enabled.
 3. Run `tau:help` or open `tau:creator` to start configuring the systems you want.
 
@@ -215,13 +215,32 @@ Use these in sidebars, chat formats, menus, and similar text systems.
 
 ## Development
 
+### Setup
+
+Copy `.env.example` to `.env` and set your paths:
+
 ```bash
-npm run typecheck
-npm run build
+cp .env.example .env
 ```
 
-- `typecheck` validates the TypeScript.
-- `build` bundles the scripts and deploys the packs locally.
+| Variable | Purpose |
+|:--|:--|
+| `DEPLOY_PATH` | Minecraft Bedrock `com.mojang` folder for dev deployment |
+| `DOWNLOAD_PATH` | Where to output the `.mcaddon` for production builds |
+
+### Commands
+
+```bash
+npm run typecheck    # Validate TypeScript
+npm run build        # Bundle scripts + deploy packs to dev folder
+npm run build:production  # Bundle scripts + package .mcaddon to Downloads
+```
+
+- `typecheck` validates the TypeScript (run after any code change).
+- `build` runs `sync-version`, esbuild bundling, then deploys to your Minecraft dev folder.
+- `build:production` runs `sync-version`, esbuild bundling, then outputs a `.mcaddon` to your Downloads folder.
+
+The version is managed in `src/shared/version.ts` — update it there and both manifests patch automatically during the build.
 
 ---
 
