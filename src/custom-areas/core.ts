@@ -1,4 +1,4 @@
-import { Player, Vector3, world } from "@minecraft/server";
+import { Player, Vector3, system, world } from "@minecraft/server";
 import { getPlayerId, getPlayerRank, isFeatureEnabled, isOperator, saveCustomAreas, state, tell } from "../storage";
 import { dropCombatInventory } from "../combat";
 import { isPlayerInCombat } from "../combat";
@@ -26,6 +26,7 @@ const lastEffectRunByPlayerArea = new Map<string, number>();
 const combatDropsByPlayerArea = new Set<string>();
 const MAX_SAFE_AREA_COORD = 30000000;
 let enabledAreaCache: AreaRuntimeCache | undefined;
+let customAreaJobId: number | undefined;
 
 function enabled(): boolean {
   return isFeatureEnabled("customAreas") && state.customAreas.config.enabled;
@@ -158,6 +159,11 @@ export function processCustomAreas(): void {
   if (!enabled()) return;
   const allAreas = getEnabledAreaRuntime();
   if (allAreas.length === 0) return;
+  if (customAreaJobId !== undefined) return;
+  customAreaJobId = system.runJob(processCustomAreasJob());
+}
+
+function* processCustomAreasJob(): Generator<void, void, void> {
   const now = Date.now();
   for (const player of world.getAllPlayers()) {
     const playerId = getPlayerId(player);
@@ -179,7 +185,10 @@ export function processCustomAreas(): void {
         const intervalMs = Math.max(1, effect.intervalTicks) * 50;
         if (now - (lastEffectRunByPlayerArea.get(key) ?? 0) < intervalMs) continue;
         lastEffectRunByPlayerArea.set(key, now);
-        player.runCommand(`effect @s ${effect.effectId} ${Math.max(1, Math.floor(effect.durationSeconds))} ${Math.max(0, Math.floor(effect.amplifier))} ${effect.hideParticles ? "true" : "false"}`);
+        try {
+          player.runCommand(`effect @s ${effect.effectId} ${Math.max(1, Math.floor(effect.durationSeconds))} ${Math.max(0, Math.floor(effect.amplifier))} ${effect.hideParticles ? "true" : "false"}`);
+        } catch {
+        }
       }
       for (let index = 0; index < area.commandRules.length; index++) {
         const rule = area.commandRules[index];
@@ -198,7 +207,9 @@ export function processCustomAreas(): void {
       if (area) runLeave(area, player);
     }
     playerAreaState.set(playerId, { areaIds: current });
+    yield;
   }
+  customAreaJobId = undefined;
 }
 
 export function shouldCancelAreaBlockBreak(player: Player, location: Vector3, dimensionId: string): boolean {

@@ -15,17 +15,32 @@ import {
 
 const pendingDynamicSaves = new Map<string, () => void>();
 let dynamicSaveFlushScheduled = false;
+let dynamicSaveFlushJobId: number | undefined;
 
-function scheduleDynamicSave(key: string, flush: () => void): void {
-  pendingDynamicSaves.set(key, flush);
+function* flushDynamicSavesJob(): Generator<void, void, void> {
+  const saves = [...pendingDynamicSaves.values()];
+  pendingDynamicSaves.clear();
+  for (const save of saves) {
+    save();
+    yield;
+  }
+  dynamicSaveFlushJobId = undefined;
+  if (pendingDynamicSaves.size > 0) scheduleDynamicSaveFlush();
+}
+
+function scheduleDynamicSaveFlush(): void {
   if (dynamicSaveFlushScheduled) return;
   dynamicSaveFlushScheduled = true;
   system.runTimeout(() => {
     dynamicSaveFlushScheduled = false;
-    const saves = [...pendingDynamicSaves.values()];
-    pendingDynamicSaves.clear();
-    for (const save of saves) save();
+    if (dynamicSaveFlushJobId !== undefined) return;
+    dynamicSaveFlushJobId = system.runJob(flushDynamicSavesJob());
   }, 5);
+}
+
+function scheduleDynamicSave(key: string, flush: () => void): void {
+  pendingDynamicSaves.set(key, flush);
+  scheduleDynamicSaveFlush();
 }
 
 export function saveForms() {

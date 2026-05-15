@@ -1,4 +1,4 @@
-import { BlockPermutation, Direction, ItemStack, Player, Vector3, world } from "@minecraft/server";
+import { BlockPermutation, Direction, ItemStack, Player, Vector3, system, world } from "@minecraft/server";
 import { getPlayerId, getScore, isOperator, saveGenerators, setScore, state } from "../storage";
 import { getPlayerTeam } from "../teams";
 import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from "../plots";
@@ -7,6 +7,7 @@ import { generatorCache, GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type Ge
 import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, normalizeId, normalizeItemId, parsePlotIndex, readGeneratorItemData } from "./definitions";
 
 let generatorProcessCursor = 0;
+let generatorProcessJobId: number | undefined;
 
 type GeneratorIndexes = {
   byOwnerId: Map<string, PlacedGenerator[]>;
@@ -509,9 +510,17 @@ export function processGenerators(): void {
     return;
   }
   if (now < indexes.earliestDueAt) return;
+  if (generatorProcessJobId !== undefined) return;
 
+  generatorProcessJobId = system.runJob(processGeneratorsJob(now, indexes));
+}
+
+function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generator<void, void, void> {
   const onlinePlayers = world.getAllPlayers();
-  if (onlinePlayers.length === 0) return;
+  if (onlinePlayers.length === 0) {
+    generatorProcessJobId = undefined;
+    return;
+  }
   const onlineIds = new Set<string>();
   const onlinePlayersById = new Map<string, Player>();
   for (const player of onlinePlayers) {
@@ -535,18 +544,34 @@ export function processGenerators(): void {
   for (let index = 0; index < processBudget; index++) {
     const placed = placedGenerators[generatorProcessCursor % placedGenerators.length];
     generatorProcessCursor = (generatorProcessCursor + 1) % placedGenerators.length;
-    if (!placed) continue;
-    if (!isGeneratorOwnerActive(placed, onlineIds, activeTeamOwnerIds)) continue;
+    if (!placed) {
+      yield;
+      continue;
+    }
+    if (!isGeneratorOwnerActive(placed, onlineIds, activeTeamOwnerIds)) {
+      yield;
+      continue;
+    }
     const def = state.generators.definitions[placed.definitionId];
-    if (!def) continue;
+    if (!def) {
+      yield;
+      continue;
+    }
     const tier = getTier(def, placed.tier);
-    if (!tier) continue;
-    if (now < placed.nextSpawnAt) continue;
+    if (!tier) {
+      yield;
+      continue;
+    }
+    if (now < placed.nextSpawnAt) {
+      yield;
+      continue;
+    }
 
     const spawned = spawnGeneratorOutput({ dimensionId: placed.dimensionId, x: placed.x, y: placed.y, z: placed.z }, def, 1);
     if (!spawned) {
       placed.nextSpawnAt = now + Math.max(1, tier.rateTicks) * 50;
       changedSchedule = true;
+      yield;
       continue;
     }
 
@@ -560,8 +585,10 @@ export function processGenerators(): void {
 
     placed.nextSpawnAt = now + Math.max(0, tier.rateTicks) * 50;
     changedSchedule = true;
+    yield;
   }
   if (changedSchedule) markGeneratorIndexesDirty();
+  generatorProcessJobId = undefined;
 }
 
 export function clearAllGenerators(): void {

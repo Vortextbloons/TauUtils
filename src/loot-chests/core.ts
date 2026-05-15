@@ -31,6 +31,7 @@ type RuntimeCache = {
 
 let runtimeCache: RuntimeCache | undefined;
 let processCursor = 0;
+let processJobId: number | undefined;
 
 function nowMs(): number {
   return Date.now();
@@ -418,6 +419,11 @@ export function processLootChests(): void {
   }
   const now = nowMs();
   if (now < cache.earliestDueAt) return;
+  if (processJobId !== undefined) return;
+  processJobId = system.runJob(processLootChestsJob(cache, now));
+}
+
+function* processLootChestsJob(cache: RuntimeCache, now: number): Generator<void, void, void> {
   const budget = Math.max(1, Math.floor(state.lootChests.config.maxRefillsPerTick || 1));
   let changed = false;
   let cacheChanged = false;
@@ -428,6 +434,7 @@ export function processLootChests(): void {
     const result = refillLootChest(chest);
     cacheChanged = true;
     if (result.savedChange !== false) changed = true;
+    yield;
   }
   if (changed) {
     saveLootChests();
@@ -435,12 +442,17 @@ export function processLootChests(): void {
   } else if (cacheChanged) {
     invalidateLootChestRuntimeCache();
   }
+  processJobId = undefined;
 }
 
 export function registerLootChestSystem(): void {
-  system.runInterval(() => {
+  const interval = Math.max(1, state.lootChests.config.processIntervalTicks);
+  system.runTimeout(() => {
     processLootChests();
-  }, Math.max(1, state.lootChests.config.processIntervalTicks));
+    system.runInterval(() => {
+      processLootChests();
+    }, interval);
+  }, Math.min(19, Math.max(1, Math.floor(interval / 2))));
 }
 
 export function getLookedAtContainerLocation(player: Player, maxDistance = 8): LocationInput | undefined {

@@ -408,6 +408,7 @@ export const STATS_PLAYER_PREFIX = "tau:stats:player:";
 const dirtyStatsPlayerIds = new Set<string>();
 const dirtyStatsPlayers = new Set<string>();
 let statsFlushScheduled = false;
+let statsFlushJobId: number | undefined;
 
 const persistedPlotJsonByKey = new Map<string, string>();
 const persistedPlayerShopJsonByKey = new Map<string, string>();
@@ -491,20 +492,25 @@ function loadStatsFromSplitKeys(dynamicPropertyIds: string[]): { store: StatsSto
   return { store: stats, hasSplitData };
 }
 
-function flushStatsNow(): void {
+function* flushStatsJob(): Generator<void, void, void> {
   if (dirtyStatsPlayerIds.size > 0) {
     safeSetDynamicJson(STATS_PLAYER_IDS_KEY, state.stats.playerIds);
     dirtyStatsPlayerIds.clear();
+    yield;
   }
   if (dirtyStatsPlayers.size > 0) {
-    for (const playerId of dirtyStatsPlayers) {
+    const playerIds = [...dirtyStatsPlayers];
+    dirtyStatsPlayers.clear();
+    for (const playerId of playerIds) {
       const stats = state.stats.players[playerId];
       if (!stats) continue;
       safeSetDynamicJson(`${STATS_PLAYER_PREFIX}${playerId}`, stats);
+      yield;
     }
-    dirtyStatsPlayers.clear();
   }
   world.setDynamicProperty("tau:stats", undefined);
+  statsFlushJobId = undefined;
+  if (dirtyStatsPlayerIds.size > 0 || dirtyStatsPlayers.size > 0) scheduleStatsFlush();
 }
 
 function scheduleStatsFlush(): void {
@@ -512,7 +518,8 @@ function scheduleStatsFlush(): void {
   statsFlushScheduled = true;
   system.runTimeout(() => {
     statsFlushScheduled = false;
-    flushStatsNow();
+    if (statsFlushJobId !== undefined) return;
+    statsFlushJobId = system.runJob(flushStatsJob());
   }, 20);
 }
 

@@ -36,6 +36,8 @@ type CombatKillContext = {
 const combatSnapshotsByPlayerId = new Map<string, CombatLootSnapshot>();
 const pendingCombatLogouts: PendingCombatLogout[] = [];
 const lastCombatSnapshotAtByPlayerId = new Map<string, number>();
+let pendingCombatLogoutsJobId: number | undefined;
+let combatTagsJobId: number | undefined;
 const PENALTY_KEY_PREFIX = "tau:combat:penalty:";
 const COMBAT_SNAPSHOT_INTERVAL_MS = 3000;
 const EQUIPMENT_SLOTS: EquipmentSlot[] = [
@@ -232,6 +234,11 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
 
 function processPendingCombatLogouts(): void {
   if (pendingCombatLogouts.length === 0) return;
+  if (pendingCombatLogoutsJobId !== undefined) return;
+  pendingCombatLogoutsJobId = system.runJob(processPendingCombatLogoutsJob());
+}
+
+function* processPendingCombatLogoutsJob(): Generator<void, void, void> {
   const pending = pendingCombatLogouts.splice(0, pendingCombatLogouts.length);
   for (const logout of pending) {
     const failedEquipment = spawnDroppedItems(logout.dimensionId, logout.location, logout.equipment);
@@ -252,7 +259,9 @@ function processPendingCombatLogouts(): void {
         world.sendMessage(formatCombatMessage(state.combat.config.logoutBroadcastMessage, logout.playerName));
       }
     }
+    yield;
   }
+  pendingCombatLogoutsJobId = undefined;
 }
 
 export function handleCombatJoin(player: Player): void {
@@ -452,6 +461,10 @@ export function shouldBlockCommandWhileTagged(player: Player, message: string): 
 
 export function processCombatTags(): void {
   if (!isCombatSystemEnabled()) {
+    if (combatTagsJobId !== undefined) {
+      system.clearJob(combatTagsJobId);
+      combatTagsJobId = undefined;
+    }
     combatTagsByPlayerId.clear();
     combatSnapshotsByPlayerId.clear();
     lastCombatSnapshotAtByPlayerId.clear();
@@ -461,7 +474,11 @@ export function processCombatTags(): void {
 
   processPendingCombatLogouts();
   if (combatTagsByPlayerId.size === 0) return;
+  if (combatTagsJobId !== undefined) return;
+  combatTagsJobId = system.runJob(processCombatTagsJob());
+}
 
+function* processCombatTagsJob(): Generator<void, void, void> {
   const now = nowMs();
   const onlineById = new Map<string, Player>();
   for (const player of world.getAllPlayers()) {
@@ -476,6 +493,7 @@ export function processCombatTags(): void {
       combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
       lastCombatSnapshotAtByPlayerId.set(playerId, now);
     }
+    yield;
   }
 
   for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
@@ -487,5 +505,7 @@ export function processCombatTags(): void {
       combatSnapshotsByPlayerId.delete(playerId);
       lastCombatSnapshotAtByPlayerId.delete(playerId);
     }
+    yield;
   }
+  combatTagsJobId = undefined;
 }

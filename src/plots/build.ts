@@ -1,4 +1,4 @@
-import { Player, Vector3, world } from "@minecraft/server";
+import { Player, Vector3, system, world } from "@minecraft/server";
 import { STORAGE_KEYS, type PlacedGenerator, type PlotSnapshot, type PlotSlot, type TeamDefinition } from "../types";
 import { getPlayerId, saveGenerators, savePlots, saveTeams, state, tell } from "../storage";
 import { getPlotSlots, getDimension, invalidatePlotSlotCache, parseSlotIndex, slotName, buildManualGridSlots, MAX_FILL_VOLUME, MAX_FILL_SPAN, BUILD_PROXIMITY_RADIUS } from "./grid";
@@ -80,6 +80,7 @@ type SnapshotJob = {
 
 const fillQueue: FillJob[] = [];
 let fillQueueCursor = 0;
+let fillJobId: number | undefined;
 const pendingJobCountsBySlot: Record<string, number> = {};
 const completedSlots: Set<string> = new Set();
 let buildSessionTotalSlots = 0;
@@ -214,11 +215,12 @@ function distanceToBox(location: { x: number; y: number; z: number }, min: { x: 
 }
 
 export function processQueuedPlotBuildJobs(): void {
-  if (fillQueue.length === 0) return;
+  if (fillQueue.length === 0 || fillJobId !== undefined) return;
+  fillJobId = system.runJob(processQueuedPlotBuildJobsJob());
+}
 
-  const jobsPerTick = 6;
-  let processed = 0;
-  while (fillQueueCursor < fillQueue.length && processed < jobsPerTick) {
+function* processQueuedPlotBuildJobsJob(): Generator<void, void, void> {
+  while (fillQueueCursor < fillQueue.length) {
     const job = fillQueue[fillQueueCursor++];
     if (!job) break;
 
@@ -226,10 +228,10 @@ export function processQueuedPlotBuildJobs(): void {
       runFillCommand(job.min, job.max, job.block);
     } catch {
       fillQueue.push(job);
-      break;
+      for (let tick = 0; tick < 20; tick++) yield;
+      continue;
     }
 
-    processed += 1;
     const remaining = (pendingJobCountsBySlot[job.slotId] ?? 1) - 1;
     if (remaining <= 0) {
       delete pendingJobCountsBySlot[job.slotId];
@@ -246,12 +248,20 @@ export function processQueuedPlotBuildJobs(): void {
     } else {
       pendingJobCountsBySlot[job.slotId] = remaining;
     }
+
+    if (fillQueueCursor > 0 && (fillQueueCursor >= fillQueue.length || fillQueueCursor > 256)) {
+      fillQueue.splice(0, fillQueueCursor);
+      fillQueueCursor = 0;
+    }
+
+    yield;
   }
 
-  if (fillQueueCursor > 0 && (fillQueueCursor >= fillQueue.length || fillQueueCursor > 256)) {
+  if (fillQueueCursor > 0) {
     fillQueue.splice(0, fillQueueCursor);
     fillQueueCursor = 0;
   }
+  fillJobId = undefined;
 }
 
 function buildSlotGeometry(slot: PlotSlot) {

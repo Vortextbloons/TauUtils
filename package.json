@@ -2,12 +2,12 @@
   "name": "eysicutils",
   "private": true,
   "scripts": {
-    "build": "node ./node_modules/esbuild/bin/esbuild src/main.ts --bundle --format=esm --target=es2020 --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node ./node_modules/esbuild/bin/esbuild src/client-main.ts --bundle --format=esm --target=es2020 --outfile=behavior_pack/scripts/client.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
+    "build": "node scripts/sync-version.js && node ./node_modules/esbuild/bin/esbuild src/main.ts --bundle --format=esm --target=esnext --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node ./node_modules/esbuild/bin/esbuild src/client-main.ts --bundle --format=esm --target=esnext --outfile=behavior_pack/scripts/client.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit"
   },
   "devDependencies": {
     "esbuild": "^0.25.9",
-    "typescript": "^5.9.2"
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "@minecraft/server": "^2.8.0-beta.1.26.20-stable",

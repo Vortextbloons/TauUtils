@@ -1,6 +1,7 @@
 import {
   CommandPermissionLevel,
   CustomCommandParamType,
+  CustomCommandRegistry,
   CustomCommandResult,
   system,
   world,
@@ -31,7 +32,7 @@ import { listTauItemIds } from "../tau-items";
 import { TAUUTILS_VERSION } from "../shared/version";
 
 export function registerCustomCommands(
-  startupEvent: { customCommandRegistry: { registerCommand: Function } }
+  startupEvent: { customCommandRegistry: CustomCommandRegistry }
 ) {
   const registry = startupEvent.customCommandRegistry;
 

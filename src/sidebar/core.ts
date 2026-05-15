@@ -28,6 +28,7 @@ type SidebarRuntimeCache = {
 
 let enabledSidebarCache: SidebarRuntimeCache | undefined;
 const playerRenderCache = new Map<string, SidebarRenderCache>();
+let sidebarRenderJobId: number | undefined;
 
 const DEFAULT_SIDEBAR: SidebarDefinition = {
   id: "main_hud",
@@ -182,11 +183,30 @@ function applySidebarForPlayer(player: Player, runtime: SidebarRuntime) {
 }
 
 function renderSidebarTick() {
-  for (const player of world.getPlayers()) {
+  if (sidebarRenderJobId !== undefined) return;
+  const players = world.getPlayers();
+  if (players.length === 0) return;
+  sidebarRenderJobId = system.runJob(renderSidebarJob(players));
+}
+
+function* renderSidebarJob(players: Player[]): Generator<void, void, void> {
+  for (const player of players) {
     const sidebar = pickSidebarForPlayer(player);
-    if (!sidebar) continue;
-    applySidebarForPlayer(player, sidebar);
+    if (sidebar) applySidebarForPlayer(player, sidebar);
+    yield;
   }
+  sidebarRenderJobId = undefined;
+}
+
+function registerStaggeredInterval(callback: () => void, interval: number, offset: number): void {
+  if (offset <= 0) {
+    system.runInterval(callback, interval);
+    return;
+  }
+  system.runTimeout(() => {
+    callback();
+    system.runInterval(callback, interval);
+  }, offset);
 }
 
 function sampleTpsTick() {
@@ -206,7 +226,7 @@ export function registerSidebarSystem() {
   ensureSidebarDefaults();
   sanitizeAllSidebars();
   system.runInterval(sampleTpsTick, 1);
-  system.runInterval(renderSidebarTick, 5);
+  registerStaggeredInterval(renderSidebarTick, 5, 3);
 }
 
 async function createOrEditSidebar(player: Player, sidebarId?: string) {

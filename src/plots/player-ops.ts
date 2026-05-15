@@ -1,4 +1,4 @@
-import { Player, Vector3, world } from "@minecraft/server";
+import { Player, Vector3, system } from "@minecraft/server";
 import { type PlotSlot } from "../types";
 import { getPlayerId, savePlots, saveGenerators, state, tell } from "../storage";
 import { getPlotSlots, getDimension } from "./grid";
@@ -12,6 +12,7 @@ type PlotTitleCacheEntry = {
 };
 
 const plotTitleCache = new Map<string, PlotTitleCacheEntry>();
+let clearFreePlotSlotsJobId: number | undefined;
 
 function plotTitleCacheKey(slot: PlotSlot): string {
   const teamVersion = Object.values(state.teams.teams)
@@ -82,14 +83,20 @@ export function assignPlayerToFreeSlot(player: Player): { ok: boolean; message: 
 export function clearAllPlotSlots(): { ok: boolean; message: string } {
   const slots = getPlotSlots();
   if (slots.length === 0) return { ok: false, message: "No plot slots configured." };
-  let cleared = 0;
+  if (clearFreePlotSlotsJobId !== undefined) return { ok: false, message: "Free plot cleanup is already running." };
+  const freeSlots = slots.filter((slot) => !slot.occupiedByPlayerId);
+  if (freeSlots.length === 0) return { ok: true, message: "No free plot slots needed cleanup." };
+  clearFreePlotSlotsJobId = system.runJob(clearFreePlotSlotsJob(freeSlots));
+  return { ok: true, message: `Queued cleanup for ${freeSlots.length} free plot slot(s). Assigned plots were left alone.` };
+}
+
+function* clearFreePlotSlotsJob(slots: PlotSlot[]): Generator<void, void, void> {
   for (const slot of slots) {
-    if (slot.occupiedByPlayerId) continue;
-    clearSlot(slot);
-    cleared += 1;
+    if (!slot.occupiedByPlayerId) clearSlot(slot);
+    yield;
   }
   savePlots();
-  return { ok: true, message: `Cleaned ${cleared} free plot slots. Assigned plots were left alone.` };
+  clearFreePlotSlotsJobId = undefined;
 }
 
 export function clearSlotById(slotId: string): { ok: boolean; message: string } {

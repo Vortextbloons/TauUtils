@@ -223,6 +223,10 @@ type PlotTitleSample = DistanceSample & {
 const lastSampleByPlayerId: Record<string, DistanceSample> = {};
 const lastSeenPlotByPlayerId: Record<string, string | undefined> = {};
 const lastPlotTitleSampleByPlayerId: Record<string, PlotTitleSample> = {};
+let statsSampleJobId: number | undefined;
+let plotAutoSaveJobId: number | undefined;
+let plotTitleJobId: number | undefined;
+let moderationSnapshotJobId: number | undefined;
 
 let cachedPlayersTick = -1;
 let cachedPlayers: Player[] = [];
@@ -233,6 +237,148 @@ function getCachedPlayers(): Player[] {
     cachedPlayersTick = system.currentTick;
   }
   return cachedPlayers;
+}
+
+function registerStaggeredInterval(callback: () => void, interval: number, offset: number): void {
+  const tickInterval = Math.max(1, Math.floor(interval));
+  const tickOffset = Math.max(0, Math.floor(offset));
+  if (tickOffset <= 0) {
+    system.runInterval(callback, tickInterval);
+    return;
+  }
+  system.runTimeout(() => {
+    callback();
+    system.runInterval(callback, tickInterval);
+  }, tickOffset);
+}
+
+function processStatsSample(): void {
+  if (!isFeatureEnabled("stats")) return;
+  if (statsSampleJobId !== undefined) return;
+  const players = getCachedPlayers().slice();
+  if (players.length === 0) return;
+  statsSampleJobId = system.runJob(processStatsSampleJob(players));
+}
+
+function* processStatsSampleJob(players: Player[]): Generator<void, void, void> {
+  for (const player of players) {
+    const id = getPlayerId(player);
+    const prev = lastSampleByPlayerId[id];
+    const location = player.location;
+    if (prev) {
+      const dx = location.x - prev.x;
+      const dy = location.y - prev.y;
+      const dz = location.z - prev.z;
+      if (dx !== 0 || dy !== 0 || dz !== 0) {
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 0) incrementStat(player, "distanceTraveled", dist);
+      }
+    }
+    lastSampleByPlayerId[id] = { x: location.x, y: location.y, z: location.z };
+    incrementStat(player, "timePlayed", 1);
+    yield;
+  }
+  statsSampleJobId = undefined;
+}
+
+function processPlotAutoSaveTick(getNextPlayer: () => Player | undefined, advanceCursor: () => void, perTick: number): void {
+  if (!isFeatureEnabled("plots")) return;
+  processQueuedPlotSnapshots();
+  if (plotAutoSaveJobId !== undefined) return;
+  plotAutoSaveJobId = system.runJob(processPlotAutoSaveJob(getNextPlayer, advanceCursor, perTick));
+}
+
+function* processPlotAutoSaveJob(getNextPlayer: () => Player | undefined, advanceCursor: () => void, perTick: number): Generator<void, void, void> {
+  for (let i = 0; i < perTick; i++) {
+    const player = getNextPlayer();
+    if (player) saveAssignedPlayerPlot(player);
+    advanceCursor();
+    yield;
+  }
+  plotAutoSaveJobId = undefined;
+}
+
+function processPlotTitleTick(): void {
+  if (!isFeatureEnabled("plots")) return;
+  if (!state.plots.config.autoBuild.showEnterTitle) return;
+  if (plotTitleJobId !== undefined) return;
+  const players = getCachedPlayers().slice();
+  if (players.length === 0) return;
+  plotTitleJobId = system.runJob(processPlotTitleJob(players));
+}
+
+function* processPlotTitleJob(players: Player[]): Generator<void, void, void> {
+  const radius = Math.max(1, state.plots.config.autoBuild.titleRadius);
+  const slots = getPlotSlotsList();
+  for (const player of players) {
+    if (player.dimension.id !== state.plots.config.dimensionId) {
+      yield;
+      continue;
+    }
+    const pid = getPlayerId(player);
+    const location = player.location;
+    const flooredLocation = {
+      x: Math.floor(location.x),
+      y: Math.floor(location.y),
+      z: Math.floor(location.z),
+      dimensionId: player.dimension.id,
+    };
+    const previousSample = lastPlotTitleSampleByPlayerId[pid];
+    if (
+      previousSample &&
+      previousSample.dimensionId === flooredLocation.dimensionId &&
+      previousSample.x === flooredLocation.x &&
+      previousSample.y === flooredLocation.y &&
+      previousSample.z === flooredLocation.z
+    ) {
+      yield;
+      continue;
+    }
+    lastPlotTitleSampleByPlayerId[pid] = flooredLocation;
+
+    const expanded = {
+      x: location.x,
+      y: location.y,
+      z: location.z,
+    };
+    const slot = slots.find((s) =>
+      expanded.x >= s.min.x - radius && expanded.x <= s.max.x + radius &&
+      expanded.y >= s.min.y - radius && expanded.y <= s.max.y + radius &&
+      expanded.z >= s.min.z - radius && expanded.z <= s.max.z + radius
+    ) ?? getPlotForLocation(player.location);
+
+    const currentId = slot?.id;
+    if (lastSeenPlotByPlayerId[pid] !== currentId) {
+      lastSeenPlotByPlayerId[pid] = currentId;
+      if (slot) {
+        player.onScreenDisplay.setTitle(getPlotTitle(slot), {
+          fadeInDuration: 5,
+          stayDuration: 25,
+          fadeOutDuration: 10,
+        });
+      }
+    }
+    yield;
+  }
+  plotTitleJobId = undefined;
+}
+
+function processModerationSnapshotTick(players: Player[], getNextPlayer: () => Player | undefined, advanceCursor: () => void, perTick: number): void {
+  if (!isFeatureEnabled("moderation")) return;
+  if (players.length === 0 || moderationSnapshotJobId !== undefined) return;
+  moderationSnapshotJobId = system.runJob(processModerationSnapshotJob(getNextPlayer, advanceCursor, perTick));
+}
+
+function* processModerationSnapshotJob(getNextPlayer: () => Player | undefined, advanceCursor: () => void, perTick: number): Generator<void, void, void> {
+  let changed = false;
+  for (let index = 0; index < perTick; index++) {
+    const player = getNextPlayer();
+    if (player && cacheModerationInspectionSnapshot(player)) changed = true;
+    advanceCursor();
+    yield;
+  }
+  if (changed) saveModeration();
+  moderationSnapshotJobId = undefined;
 }
 
 function resolveItemMenu(itemStack: ItemStack): string | undefined {
@@ -565,123 +711,55 @@ export function registerEventInterceptors() {
     if (handled.matched && handled.message) tell(player, handled.message);
   });
 
-  system.runInterval(() => {
+  registerStaggeredInterval(() => {
     processCombatTags();
-  }, 20);
+  }, 20, 1);
 
-  system.runInterval(() => {
+  registerStaggeredInterval(() => {
     processCustomAreas();
-  }, Math.max(1, state.customAreas.config.checkIntervalTicks));
+  }, Math.max(1, state.customAreas.config.checkIntervalTicks), 4);
 
-  system.runInterval(() => {
-    if (!isFeatureEnabled("stats")) return;
-    for (const player of getCachedPlayers()) {
-      const id = getPlayerId(player);
-      const prev = lastSampleByPlayerId[id];
-      const location = player.location;
-      if (prev) {
-        const dx = location.x - prev.x;
-        const dy = location.y - prev.y;
-        const dz = location.z - prev.z;
-        if (dx !== 0 || dy !== 0 || dz !== 0) {
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist > 0) incrementStat(player, "distanceTraveled", dist);
-        }
-      }
-      lastSampleByPlayerId[id] = { x: location.x, y: location.y, z: location.z };
-      incrementStat(player, "timePlayed", 1);
-    }
-  }, 20);
+  registerStaggeredInterval(processStatsSample, 20, 7);
 
   let plotSaveCursor = 0;
-  system.runInterval(() => {
-    if (!isFeatureEnabled("plots")) return;
-    processQueuedPlotSnapshots();
+  registerStaggeredInterval(() => {
     const players = getCachedPlayers();
-    if (players.length === 0) return;
-    const perTick = Math.max(1, Math.ceil(players.length / 10));
-    for (let i = 0; i < perTick; i++) {
-      const player = players[plotSaveCursor % players.length];
-      if (player) saveAssignedPlayerPlot(player);
-      plotSaveCursor++;
+    if (!isFeatureEnabled("plots")) return;
+    if (players.length === 0) {
+      processQueuedPlotSnapshots();
+      return;
     }
-  }, Math.max(1, state.plots.config.saveIntervalTicks));
+    const perTick = Math.max(1, Math.ceil(players.length / 10));
+    processPlotAutoSaveTick(
+      () => players[plotSaveCursor % players.length],
+      () => { plotSaveCursor++; },
+      perTick
+    );
+  }, Math.max(1, state.plots.config.saveIntervalTicks), 11);
 
   let moderationSnapshotCursor = 0;
-  system.runInterval(() => {
+  registerStaggeredInterval(() => {
     if (!isFeatureEnabled("moderation")) return;
     const players = getCachedPlayers();
     if (players.length === 0) return;
     const perTick = Math.max(1, Math.ceil(players.length / 20));
-    let changed = false;
-    for (let index = 0; index < perTick; index++) {
-      const player = players[moderationSnapshotCursor % players.length];
-      if (player && cacheModerationInspectionSnapshot(player)) changed = true;
-      moderationSnapshotCursor++;
-    }
-    if (changed) saveModeration();
-  }, 40);
+    processModerationSnapshotTick(
+      players,
+      () => players[moderationSnapshotCursor % players.length],
+      () => { moderationSnapshotCursor++; },
+      perTick
+    );
+  }, 40, 17);
 
-  system.runInterval(() => {
-    if (!isFeatureEnabled("plots")) return;
-    if (!state.plots.config.autoBuild.showEnterTitle) return;
+  registerStaggeredInterval(processPlotTitleTick, 20, 13);
 
-    const radius = Math.max(1, state.plots.config.autoBuild.titleRadius);
-    const slots = getPlotSlotsList();
-    for (const player of getCachedPlayers()) {
-      if (player.dimension.id !== state.plots.config.dimensionId) continue;
-      const pid = getPlayerId(player);
-      const location = player.location;
-      const flooredLocation = {
-        x: Math.floor(location.x),
-        y: Math.floor(location.y),
-        z: Math.floor(location.z),
-        dimensionId: player.dimension.id,
-      };
-      const previousSample = lastPlotTitleSampleByPlayerId[pid];
-      if (
-        previousSample &&
-        previousSample.dimensionId === flooredLocation.dimensionId &&
-        previousSample.x === flooredLocation.x &&
-        previousSample.y === flooredLocation.y &&
-        previousSample.z === flooredLocation.z
-      ) {
-        continue;
-      }
-      lastPlotTitleSampleByPlayerId[pid] = flooredLocation;
-
-      const expanded = {
-        x: location.x,
-        y: location.y,
-        z: location.z,
-      };
-      const slot = slots.find((s) =>
-        expanded.x >= s.min.x - radius && expanded.x <= s.max.x + radius &&
-        expanded.y >= s.min.y - radius && expanded.y <= s.max.y + radius &&
-        expanded.z >= s.min.z - radius && expanded.z <= s.max.z + radius
-      ) ?? getPlotForLocation(player.location);
-
-      const currentId = slot?.id;
-      if (lastSeenPlotByPlayerId[pid] !== currentId) {
-        lastSeenPlotByPlayerId[pid] = currentId;
-        if (slot) {
-          player.onScreenDisplay.setTitle(getPlotTitle(slot), {
-            fadeInDuration: 5,
-            stayDuration: 25,
-            fadeOutDuration: 10,
-          });
-        }
-      }
-    }
-  }, 20);
-
-  system.runInterval(() => {
+  registerStaggeredInterval(() => {
     if (!isFeatureEnabled("plots")) return;
     processQueuedPlotBuildJobs();
-  }, 20);
+  }, 20, 15);
 
-  system.runInterval(() => {
+  registerStaggeredInterval(() => {
     if (!isFeatureEnabled("generators")) return;
     processGenerators();
-  }, 20);
+  }, 20, 18);
 }
