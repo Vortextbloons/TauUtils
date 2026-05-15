@@ -1,5 +1,5 @@
 import { Player, world } from "@minecraft/server";
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import { TauUi } from "./tau-ui";
 import { ICONS } from "../types";
 import { isFeatureEnabled, isOperator, savePlots, state, tell } from "../storage";
 import { assignPlayerToSlot, autoBuildPlots, buildManualGridSlots, buildPlotGeometry, clearAllPlotSlots, forceReleasePlot, getAssignedSlotForOwner, getAssignedSlotForPlayer, getPlotStatusLines, repairPlotSystem, setPlotCount, setPlotOriginFromPlayer, setPlotSize, setPlotSpacing, setSlotManualBounds, teleportPlayerToSlot, updatePlotAutoBuildSettings, validatePlotLayout } from "../plots";
@@ -13,81 +13,75 @@ export async function showPlotManager(player: Player) {
 
   while (true) {
     const cfg = state.plots.config;
-    const form = new ActionFormData()
-      .title("§3Plot Manager§r")
+    const form = TauUi.action("§3Plot Manager§r")
       .body(`§7Enabled: §f${cfg.enabled ? "On" : "Off"}\n§7Count: §f${cfg.activePlotCount}\n§7Size: §f${cfg.size.x}x${cfg.size.y}x${cfg.size.z}\n§7Spacing: §f${cfg.spacing}\n§7Save Interval: §f${cfg.saveIntervalTicks} ticks\n§7Slots: §f${Object.keys(state.plots.slots).length}\n§7Borders: §f${cfg.autoBuild.addBorders ? "On" : "Off"}\n§7Title: §f${cfg.autoBuild.showEnterTitle ? "On" : "Off"}`)
-      .button(`Toggle Plots: ${cfg.enabled ? "On" : "Off"}`, ICONS.plot)
-      .button("Set Origin Here", ICONS.utility)
-      .button("Set Count", ICONS.edit)
-      .button("Set Size", ICONS.edit)
-      .button("Set Spacing", ICONS.edit)
-      .button("Set Save Interval", ICONS.edit)
-      .button("Build Manual Grid", ICONS.confirm)
-      .button("Build Geometry Only", ICONS.confirm)
-      .button("Rebuild Plots", ICONS.confirm)
-      .button("Auto Build Options", ICONS.utility)
-      .button("Edit Slot Bounds", ICONS.item)
-      .button("Validate Layout", ICONS.utility)
-      .button("Plot Occupancy", ICONS.menu)
-      .button("Fix Plots", ICONS.confirm)
-      .button("Force Release", ICONS.utility)
-      .button("Reassign Slot", ICONS.item)
-      .button("Teleport To Slot", ICONS.plot)
-      .button("Clean Up Plots", ICONS.utility)
-      .button("Back", ICONS.back);
+      .button("toggle", `Toggle Plots: ${cfg.enabled ? "On" : "Off"}`, { iconPath: ICONS.plot })
+      .button("origin", "Set Origin Here", { iconPath: ICONS.utility })
+      .button("count", "Set Count", { iconPath: ICONS.edit })
+      .button("size", "Set Size", { iconPath: ICONS.edit })
+      .button("spacing", "Set Spacing", { iconPath: ICONS.edit })
+      .button("saveInterval", "Set Save Interval", { iconPath: ICONS.edit })
+      .button("buildManual", "Build Manual Grid", { iconPath: ICONS.confirm })
+      .button("buildGeom", "Build Geometry Only", { iconPath: ICONS.confirm })
+      .button("rebuild", "Rebuild Plots", { iconPath: ICONS.confirm })
+      .button("autoBuildOpts", "Auto Build Options", { iconPath: ICONS.utility })
+      .button("editBounds", "Edit Slot Bounds", { iconPath: ICONS.item })
+      .button("validate", "Validate Layout", { iconPath: ICONS.utility })
+      .button("occupancy", "Plot Occupancy", { iconPath: ICONS.menu })
+      .button("fix", "Fix Plots", { iconPath: ICONS.confirm })
+      .button("forceRelease", "Force Release", { iconPath: ICONS.utility })
+      .button("reassign", "Reassign Slot", { iconPath: ICONS.item })
+      .button("tpSlot", "Teleport To Slot", { iconPath: ICONS.plot })
+      .button("cleanup", "Clean Up Plots", { iconPath: ICONS.utility })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await form.show(player);
+    if (response.canceled) return;
 
-    if (response.selection === 0) {
+    if (response.id === "toggle") {
       cfg.enabled = !cfg.enabled;
       state.plots.config.enabled = cfg.enabled;
       savePlots();
       continue;
     }
-    if (response.selection === 1) {
+    if (response.id === "origin") {
       setPlotOriginFromPlayer(player);
       tell(player, "Plot origin set to your current location.");
       continue;
     }
-    if (response.selection === 2) {
-      const modal = new ModalFormData().title("Set Plot Count").textField("Count", "10", { defaultValue: String(cfg.activePlotCount) }).submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const count = Math.floor(Number(result.formValues[0] ?? cfg.activePlotCount));
+    if (response.id === "count") {
+      const result = await TauUi.modal("Set Plot Count").text("count", "Count", { placeholder: "10", defaultValue: String(cfg.activePlotCount) }).submitButton("Save").show(player);
+      if (result.canceled) continue;
+      const count = Math.floor(Number(result.values.count ?? cfg.activePlotCount));
       if (Number.isFinite(count) && count > 0) setPlotCount(count);
       continue;
     }
-    if (response.selection === 3) {
-      const modal = new ModalFormData()
-        .title("Set Plot Size")
-        .textField("X", "20", { defaultValue: String(cfg.size.x) })
-        .textField("Y", "10", { defaultValue: String(cfg.size.y) })
-        .textField("Z", "20", { defaultValue: String(cfg.size.z) })
-        .submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const x = Math.floor(Number(result.formValues[0] ?? cfg.size.x));
-      const y = Math.floor(Number(result.formValues[1] ?? cfg.size.y));
-      const z = Math.floor(Number(result.formValues[2] ?? cfg.size.z));
+    if (response.id === "size") {
+      const result = await TauUi.modal("Set Plot Size")
+        .text("x", "X", { placeholder: "20", defaultValue: String(cfg.size.x) })
+        .text("y", "Y", { placeholder: "10", defaultValue: String(cfg.size.y) })
+        .text("z", "Z", { placeholder: "20", defaultValue: String(cfg.size.z) })
+        .submitButton("Save").show(player);
+      if (result.canceled) continue;
+      const x = Math.floor(Number(result.values.x ?? cfg.size.x));
+      const y = Math.floor(Number(result.values.y ?? cfg.size.y));
+      const z = Math.floor(Number(result.values.z ?? cfg.size.z));
       if (Number.isFinite(x) && x > 0 && Number.isFinite(y) && y > 0 && Number.isFinite(z) && z > 0) {
         setPlotSize(x, y, z);
       }
       continue;
     }
-    if (response.selection === 4) {
-      const modal = new ModalFormData().title("Set Plot Spacing").textField("Spacing", "4", { defaultValue: String(cfg.spacing) }).submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const spacing = Math.floor(Number(result.formValues[0] ?? cfg.spacing));
+    if (response.id === "spacing") {
+      const result = await TauUi.modal("Set Plot Spacing").text("spacing", "Spacing", { placeholder: "4", defaultValue: String(cfg.spacing) }).submitButton("Save").show(player);
+      if (result.canceled) continue;
+      const spacing = Math.floor(Number(result.values.spacing ?? cfg.spacing));
       if (Number.isFinite(spacing) && spacing >= 0) setPlotSpacing(spacing);
       continue;
     }
-    if (response.selection === 5) {
-      const modal = new ModalFormData().title("Set Save Interval (ticks)").textField("Ticks", "20", { defaultValue: String(cfg.saveIntervalTicks) }).submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const ticks = Math.max(1, Math.floor(Number(result.formValues[0] ?? cfg.saveIntervalTicks)));
+    if (response.id === "saveInterval") {
+      const result = await TauUi.modal("Set Save Interval (ticks)").text("ticks", "Ticks", { placeholder: "20", defaultValue: String(cfg.saveIntervalTicks) }).submitButton("Save").show(player);
+      if (result.canceled) continue;
+      const ticks = Math.max(1, Math.floor(Number(result.values.ticks ?? cfg.saveIntervalTicks)));
       if (Number.isFinite(ticks)) {
         state.plots.config.saveIntervalTicks = ticks;
         savePlots();
@@ -95,30 +89,30 @@ export async function showPlotManager(player: Player) {
       }
       continue;
     }
-    if (response.selection === 6) {
+    if (response.id === "buildManual") {
       const built = buildManualGridSlots();
       tell(player, built.message);
       continue;
     }
-    if (response.selection === 7) {
+    if (response.id === "buildGeom") {
       const built = buildPlotGeometry();
       tell(player, built.message);
       continue;
     }
-    if (response.selection === 8) {
+    if (response.id === "rebuild") {
       const built = autoBuildPlots();
       tell(player, built.message);
       continue;
     }
-    if (response.selection === 9) {
+    if (response.id === "autoBuildOpts") {
       await showPlotAutoBuildOptions(player);
       continue;
     }
-    if (response.selection === 10) {
+    if (response.id === "editBounds") {
       await showPlotSlotEditor(player);
       continue;
     }
-    if (response.selection === 11) {
+    if (response.id === "validate") {
       const result = validatePlotLayout();
       if (result.ok) tell(player, "Layout valid. No overlaps found.");
       else {
@@ -127,7 +121,7 @@ export async function showPlotManager(player: Player) {
       }
       continue;
     }
-    if (response.selection === 12) {
+    if (response.id === "occupancy") {
       const lines = getPlotStatusLines();
       if (lines.length === 0) tell(player, "No plot slots configured.");
       else {
@@ -136,24 +130,24 @@ export async function showPlotManager(player: Player) {
       }
       continue;
     }
-    if (response.selection === 13) {
+    if (response.id === "fix") {
       const result = repairPlotSystem();
       tell(player, result.message);
       continue;
     }
-    if (response.selection === 14) {
+    if (response.id === "forceRelease") {
       await showPlotForceRelease(player);
       continue;
     }
-    if (response.selection === 15) {
+    if (response.id === "reassign") {
       await showPlotReassign(player);
       continue;
     }
-    if (response.selection === 16) {
+    if (response.id === "tpSlot") {
       await showPlotTeleport(player);
       continue;
     }
-    if (response.selection === 17) {
+    if (response.id === "cleanup") {
       const result = clearAllPlotSlots();
       tell(player, result.message);
       continue;
@@ -169,30 +163,28 @@ export async function showPlotPlayerMenuFromCreator(player: Player) {
 async function showPlotAutoBuildOptions(player: Player) {
   while (true) {
     const auto = state.plots.config.autoBuild;
-    const form = new ModalFormData()
-      .title("Auto Build Options")
-      .toggle("Clear plot area before deploy", { defaultValue: auto.clearBase })
-      .toggle("Add borders between plots", { defaultValue: auto.addBorders })
-      .textField("Border block", "stone", { defaultValue: auto.borderBlock })
-      .textField("Border height", "1", { defaultValue: String(auto.borderHeight) })
-      .textField("Floor block (optional)", "grass_block", { defaultValue: auto.floorBlock ?? "" })
-      .toggle("Show plot title on enter/near", { defaultValue: auto.showEnterTitle })
-      .dropdown("Title mode", ["owner", "plot"], { defaultValueIndex: auto.titleMode === "owner" ? 0 : 1 })
-      .textField("Title radius", "5", { defaultValue: String(auto.titleRadius) })
-      .submitButton("Save");
+    const result = await TauUi.modal("Auto Build Options")
+      .toggle("clearBase", "Clear plot area before deploy", auto.clearBase)
+      .toggle("addBorders", "Add borders between plots", auto.addBorders)
+      .text("borderBlock", "Border block", { placeholder: "stone", defaultValue: auto.borderBlock })
+      .text("borderHeight", "Border height", { placeholder: "1", defaultValue: String(auto.borderHeight) })
+      .text("floorBlock", "Floor block (optional)", { placeholder: "grass_block", defaultValue: auto.floorBlock ?? "" })
+      .toggle("showEnterTitle", "Show plot title on enter/near", auto.showEnterTitle)
+      .dropdown("titleMode", "Title mode", ["owner", "plot"], auto.titleMode === "owner" ? 0 : 1)
+      .text("titleRadius", "Title radius", { placeholder: "5", defaultValue: String(auto.titleRadius) })
+      .submitButton("Save").show(player);
 
-    const result = await form.show(player).catch(() => undefined);
-    if (!result || result.canceled || !result.formValues) return;
+    if (result.canceled) return;
 
     updatePlotAutoBuildSettings({
-      clearBase: Boolean(result.formValues[0]),
-      addBorders: Boolean(result.formValues[1]),
-      borderBlock: String(result.formValues[2] ?? "stone").trim() || "stone",
-      borderHeight: Math.max(1, Math.floor(Number(result.formValues[3] ?? 1))),
-      floorBlock: String(result.formValues[4] ?? "").trim() || undefined,
-      showEnterTitle: Boolean(result.formValues[5]),
-      titleMode: Number(result.formValues[6] ?? 0) === 0 ? "owner" : "plot",
-      titleRadius: Math.max(1, Math.floor(Number(result.formValues[7] ?? 5))),
+      clearBase: Boolean(result.values.clearBase),
+      addBorders: Boolean(result.values.addBorders),
+      borderBlock: String(result.values.borderBlock ?? "stone").trim() || "stone",
+      borderHeight: Math.max(1, Math.floor(Number(result.values.borderHeight ?? 1))),
+      floorBlock: String(result.values.floorBlock ?? "").trim() || undefined,
+      showEnterTitle: Boolean(result.values.showEnterTitle),
+      titleMode: Number(result.values.titleMode ?? 0) === 0 ? "owner" : "plot",
+      titleRadius: Math.max(1, Math.floor(Number(result.values.titleRadius ?? 5))),
     });
     tell(player, "Auto build options saved.");
     return;
@@ -202,15 +194,14 @@ async function showPlotAutoBuildOptions(player: Player) {
 async function showPlotForceRelease(player: Player) {
   while (true) {
     const entries = Object.entries(state.plots.slots);
-    const form = new ActionFormData().title("Force Release").body("Select an occupied slot to release.");
+    const form = TauUi.action<{ slotId: string }>("Force Release").body("Select an occupied slot to release.");
     for (const [id, slot] of entries) {
-      form.button(`${id} (${slot.occupiedByPlayerId ?? "free"})`, ICONS.delete);
+      form.button("slot", `${id} (${slot.occupiedByPlayerId ?? "free"})`, { iconPath: ICONS.delete, value: { slotId: id } });
     }
-    form.button("Back", ICONS.back);
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= entries.length) return;
-    const [slotId] = entries[response.selection];
+    form.button("back", "Back", { iconPath: ICONS.back });
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back" || !response.value) return;
+    const { slotId } = response.value;
     const ok = forceReleasePlot(slotId);
     tell(player, ok ? `Released ${slotId}.` : `Failed to release ${slotId}.`);
   }
@@ -223,26 +214,25 @@ async function showPlotReassign(player: Player) {
     return;
   }
 
-  const pickPlayer = new ActionFormData().title("Pick Player");
-  for (const p of players) pickPlayer.button(p.name, ICONS.menu);
-  pickPlayer.button("Back", ICONS.back);
-  const pResp = await pickPlayer.show(player).catch(() => undefined);
-  if (!pResp || pResp.canceled || pResp.selection === undefined) return;
-  if (pResp.selection >= players.length) return;
-  const target = players[pResp.selection];
+  const pickPlayer = TauUi.action<{ name: string }>("Pick Player");
+  for (const p of players) pickPlayer.button("player", p.name, { iconPath: ICONS.menu, value: { name: p.name } });
+  pickPlayer.button("back", "Back", { iconPath: ICONS.back });
+  const pResp = await pickPlayer.show(player);
+  if (pResp.canceled || pResp.id === "back" || !pResp.value) return;
+  const targetName = pResp.value.name;
+  const target = players.find((p) => p.name === targetName);
+  if (!target) return;
 
   while (true) {
     const entries = Object.entries(state.plots.slots);
-    const form = new ActionFormData().title(`Assign ${target.name}`).body("Select a free slot.");
+    const form = TauUi.action<{ slotId: string }>(`Assign ${targetName}`).body("Select a free slot.");
     for (const [id, slot] of entries) {
-      form.button(`${id} (${slot.occupiedByPlayerId ?? "free"})`, ICONS.binding);
+      form.button("slot", `${id} (${slot.occupiedByPlayerId ?? "free"})`, { iconPath: ICONS.binding, value: { slotId: id } });
     }
-    form.button("Back", ICONS.back);
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= entries.length) return;
-    const [slotId] = entries[response.selection];
-    const result = assignPlayerToSlot(target, slotId);
+    form.button("back", "Back", { iconPath: ICONS.back });
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back" || !response.value) return;
+    const result = assignPlayerToSlot(target, response.value.slotId);
     tell(player, result.message);
     if (result.ok) return;
   }
@@ -251,15 +241,14 @@ async function showPlotReassign(player: Player) {
 async function showPlotTeleport(player: Player) {
   while (true) {
     const entries = Object.entries(state.plots.slots);
-    const form = new ActionFormData().title("Teleport To Slot").body("Select a slot to teleport to its corner.");
+    const form = TauUi.action<{ slotId: string }>("Teleport To Slot").body("Select a slot to teleport to its corner.");
     for (const [id, slot] of entries) {
-      form.button(`${id} (${slot.min.x},${slot.min.y},${slot.min.z})`, ICONS.sidebar);
+      form.button("slot", `${id} (${slot.min.x},${slot.min.y},${slot.min.z})`, { iconPath: ICONS.sidebar, value: { slotId: id } });
     }
-    form.button("Back", ICONS.back);
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= entries.length) return;
-    const [slotId] = entries[response.selection];
+    form.button("back", "Back", { iconPath: ICONS.back });
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back" || !response.value) return;
+    const { slotId } = response.value;
     const result = teleportPlayerToSlot(player, slotId);
     tell(player, result.message);
     if (result.ok) return;
@@ -269,27 +258,24 @@ async function showPlotTeleport(player: Player) {
 async function showPlotSlotEditor(player: Player) {
   while (true) {
     const entries = Object.entries(state.plots.slots);
-    const form = new ActionFormData().title("Plot Slots").body("Select a slot to set manual bounds from your current position.");
+    const form = TauUi.action<{ slotId: string }>("Plot Slots").body("Select a slot to set manual bounds from your current position.");
     for (const [id, slot] of entries) {
-      form.button(`${id} (${slot.min.x},${slot.min.y},${slot.min.z})`, ICONS.menu);
+      form.button("slot", `${id} (${slot.min.x},${slot.min.y},${slot.min.z})`, { iconPath: ICONS.menu, value: { slotId: id } });
     }
-    form.button("Back", ICONS.back);
+    form.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= entries.length) return;
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back" || !response.value) return;
 
-    const [slotId] = entries[response.selection];
-    const modal = new ModalFormData()
-      .title(`Manual Bounds: ${slotId}`)
-      .textField("Corner A (x y z)", "0 64 0")
-      .textField("Corner B (x y z)", "19 73 19")
-      .submitButton("Apply");
-    const result = await modal.show(player).catch(() => undefined);
-    if (!result || result.canceled || !result.formValues) continue;
+    const { slotId } = response.value;
+    const result = await TauUi.modal(`Manual Bounds: ${slotId}`)
+      .text("cornerA", "Corner A (x y z)", { placeholder: "0 64 0" })
+      .text("cornerB", "Corner B (x y z)", { placeholder: "19 73 19" })
+      .submitButton("Apply").show(player);
+    if (result.canceled) continue;
     const parse = (raw: string) => raw.trim().split(/\s+/).map((n) => Number(n));
-    const a = parse(String(result.formValues[0] ?? ""));
-    const b = parse(String(result.formValues[1] ?? ""));
+    const a = parse(String(result.values.cornerA ?? ""));
+    const b = parse(String(result.values.cornerB ?? ""));
     if (a.length !== 3 || b.length !== 3 || a.some((n) => !Number.isFinite(n)) || b.some((n) => !Number.isFinite(n))) {
       tell(player, "Invalid coordinates. Use: x y z");
       continue;
@@ -308,29 +294,27 @@ export async function showPlotPlayerMenu(player: Player) {
   const teamPlot = team && team.teamPlotEnabled ? getAssignedSlotForOwner(team.ownerPlayerId) : undefined;
   const mySlot = getAssignedSlotForPlayer(player);
 
-  const form = new ActionFormData()
-    .title("My Plot")
+  const form = TauUi.action("My Plot")
     .body(teamPlot && team ? `Team plot: ${team.name}` : mySlot ? `Your plot: ${mySlot.id}` : "You do not have a plot assigned.")
-    .button("Teleport To My Plot", ICONS.sidebar)
-    .button("Plot Info", ICONS.menu)
-    .button("Back", ICONS.back);
+    .button("tp", "Teleport To My Plot", { iconPath: ICONS.sidebar })
+    .button("info", "Plot Info", { iconPath: ICONS.menu })
+    .button("back", "Back", { iconPath: ICONS.back });
 
-  const response = await form.show(player).catch(() => undefined);
-  if (!response || response.canceled || response.selection === undefined) return;
-  if (response.selection === 2) return;
+  const response = await form.show(player);
+  if (response.canceled || response.id === "back") return;
 
   if (!mySlot && !teamPlot) {
     tell(player, "No plot assigned.");
     return;
   }
 
-  if (response.selection === 0) {
+  if (response.id === "tp") {
     const slot = teamPlot ?? mySlot;
     if (slot) tell(player, teleportPlayerToSlot(player, slot.id).message);
     return;
   }
 
-  if (response.selection === 1) {
+  if (response.id === "info") {
     const slot = teamPlot ?? mySlot;
     if (!slot) {
       tell(player, "No plot info available.");

@@ -1,5 +1,5 @@
 import { EntityComponentTypes, ItemStack, Player, world } from "@minecraft/server";
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import { TauUi } from "../ui";
 import { deserializeItemStack, serializeItemStack } from "../item-serialization";
 import { ICONS, type PlayerShop, type PlayerShopListing } from "../types";
 import { getInventoryContainer, getPlayerId, getScore, isOperator, savePlayerShops, setScore, state, tell } from "../storage";
@@ -295,18 +295,17 @@ async function openListingCreateFlow(player: Player, shop: PlayerShop): Promise<
     tell(player, "Your inventory is empty.");
     return;
   }
-  const picker = new ActionFormData().title("Create Listing").body("Select an item stack from your inventory.");
+  const picker = TauUi.action<{ index: number }>("Create Listing").body("Select an item stack from your inventory.");
   for (const entry of inventory.slice(0, 28)) {
     const stack = entry.stack;
-    picker.button(`Slot ${entry.slotIndex + 1}: ${stack.nameTag?.trim() || stack.typeId} x${stack.amount}`, ICONS.menu);
+    picker.button(`slot:${entry.slotIndex}`, `Slot ${entry.slotIndex + 1}: ${stack.nameTag?.trim() || stack.typeId} x${stack.amount}`, { iconPath: ICONS.menu, value: { index: entry.slotIndex } });
   }
-  picker.button("Back", ICONS.back);
+  picker.button("back", "Back", { iconPath: ICONS.back });
 
-  const chosen = await picker.show(player).catch(() => undefined);
-  if (!chosen || chosen.canceled || chosen.selection === undefined) return;
-  if (chosen.selection >= inventory.length) return;
+  const chosen = await picker.show(player);
+  if (chosen.canceled || chosen.id === "back") return;
 
-  const selectedEntry = inventory[chosen.selection];
+  const selectedEntry = inventory.find((e) => e.slotIndex === chosen.value?.index);
   if (!selectedEntry) return;
 
   if (!state.playerShops.config.allowCustomItems && hasCustomItemData(selectedEntry.stack)) {
@@ -314,21 +313,20 @@ async function openListingCreateFlow(player: Player, shop: PlayerShop): Promise<
     return;
   }
 
-  const modal = new ModalFormData()
-    .title("Create Listing")
-    .textField("Title", selectedEntry.stack.nameTag?.trim() || selectedEntry.stack.typeId, { defaultValue: selectedEntry.stack.nameTag?.trim() || selectedEntry.stack.typeId })
-    .textField("Category (optional)", "blocks", { defaultValue: "" })
-    .textField("Quantity to sell", String(selectedEntry.stack.amount), { defaultValue: String(selectedEntry.stack.amount) })
-    .textField("Price per unit", "100", { defaultValue: "100" })
+  const modal = TauUi.modal("Create Listing")
+    .text("title", "Title", { defaultValue: selectedEntry.stack.nameTag?.trim() || selectedEntry.stack.typeId })
+    .text("category", "Category (optional)", { placeholder: "blocks", defaultValue: "" })
+    .text("quantity", "Quantity to sell", { defaultValue: String(selectedEntry.stack.amount) })
+    .text("pricePerUnit", "Price per unit", { placeholder: "100", defaultValue: "100" })
     .submitButton("Create");
 
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await modal.show(player);
+  if (result.canceled) return;
 
-  const title = String(result.formValues[0] ?? "").trim() || selectedEntry.stack.typeId;
-  const category = String(result.formValues[1] ?? "").trim() || undefined;
-  const quantity = Math.max(1, Math.min(selectedEntry.stack.amount, Math.floor(Number(result.formValues[2] ?? selectedEntry.stack.amount))));
-  const rawPrice = Math.floor(Number(result.formValues[3] ?? 0));
+  const title = String(result.values.title ?? "").trim() || selectedEntry.stack.typeId;
+  const category = String(result.values.category ?? "").trim() || undefined;
+  const quantity = Math.max(1, Math.min(selectedEntry.stack.amount, Math.floor(Number(result.values.quantity ?? selectedEntry.stack.amount))));
+  const rawPrice = Math.floor(Number(result.values.pricePerUnit ?? 0));
   const pricePerUnit = Math.max(
     Math.max(1, state.playerShops.config.minPricePerUnit),
     Math.min(Math.max(1, state.playerShops.config.maxPricePerUnit), rawPrice)
@@ -384,19 +382,19 @@ async function openListingCancelFlow(player: Player, shop: PlayerShop): Promise<
     return;
   }
 
-  const menu = new ActionFormData().title("Cancel Listing");
+  const menu = TauUi.action<{ listingId: string }>("Cancel Listing");
   for (const listingId of shop.listingIds) {
     const listing = findListingById(listingId);
     if (!listing) continue;
-    menu.button(`${listing.title} (${listing.pricePerUnit} ${listing.currencyObjective})`, ICONS.delete);
+    menu.button(listingId, `${listing.title} (${listing.pricePerUnit} ${listing.currencyObjective})`, { iconPath: ICONS.delete, value: { listingId } });
   }
-  menu.button("Back", ICONS.back);
+  menu.button("back", "Back", { iconPath: ICONS.back });
 
-  const response = await menu.show(player).catch(() => undefined);
-  if (!response || response.canceled || response.selection === undefined) return;
-  if (response.selection >= shop.listingIds.length) return;
+  const response = await menu.show(player);
+  if (response.canceled || response.id === "back") return;
 
-  const listingId = shop.listingIds[response.selection];
+  const listingId = response.value?.listingId;
+  if (!listingId) return;
   const listing = findListingById(listingId);
   if (!listing) {
     tell(player, "Listing not found.");
@@ -418,20 +416,19 @@ async function openListingCancelFlow(player: Player, shop: PlayerShop): Promise<
 }
 
 async function openShopSettingsFlow(player: Player, shop: PlayerShop): Promise<void> {
-  const modal = new ModalFormData()
-    .title("My Shop Settings")
-    .textField("Title", "My Shop", { defaultValue: shop.title })
-    .textField("Description", "optional", { defaultValue: shop.description ?? "" })
-    .toggle("Public", { defaultValue: shop.visibility === "public" })
-    .textField("Currency objective", shop.currencyObjective, { defaultValue: shop.currencyObjective })
+  const modal = TauUi.modal("My Shop Settings")
+    .text("title", "Title", { placeholder: "My Shop", defaultValue: shop.title })
+    .text("description", "Description", { placeholder: "optional", defaultValue: shop.description ?? "" })
+    .toggle("isPublic", "Public", shop.visibility === "public")
+    .text("currencyObjective", "Currency objective", { defaultValue: shop.currencyObjective })
     .submitButton("Save");
 
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await modal.show(player);
+  if (result.canceled) return;
 
-  shop.title = String(result.formValues[0] ?? shop.title).trim() || shop.title;
-  shop.description = String(result.formValues[1] ?? "").trim() || undefined;
-  shop.visibility = Boolean(result.formValues[2]) ? "public" : "private";
+  shop.title = String(result.values.title ?? shop.title).trim() || shop.title;
+  shop.description = String(result.values.description ?? "").trim() || undefined;
+  shop.visibility = Boolean(result.values.isPublic) ? "public" : "private";
   shop.updatedAt = nowMs();
   savePlayerShops();
   tell(player, "Shop settings saved.");
@@ -449,8 +446,7 @@ export async function openMyPlayerShop(player: Player): Promise<void> {
     compactShopListings(shop);
     const pending = state.playerShops.earningsByPlayerId[getPlayerId(player)] ?? {};
     const pendingTotal = Object.values(pending).reduce((sum, value) => sum + Math.max(0, Math.floor(value)), 0);
-    const menu = new ActionFormData()
-      .title(shop.title)
+    const menu = TauUi.action(shop.title)
       .body(
         [
           `Listings: ${shop.listingIds.length}`,
@@ -460,34 +456,34 @@ export async function openMyPlayerShop(player: Player): Promise<void> {
           "Select an item stack from your inventory to create a listing.",
         ].join("\n")
       )
-      .button("Create Listing", ICONS.confirm)
-      .button("Cancel Listing", ICONS.delete)
-      .button("Shop Settings", ICONS.settings)
-      .button("Claim Earnings", ICONS.shop)
-      .button("Browse Marketplace", ICONS.menu)
-      .button("Back", ICONS.back);
+      .button("createListing", "Create Listing", { iconPath: ICONS.confirm })
+      .button("cancelListing", "Cancel Listing", { iconPath: ICONS.delete })
+      .button("settings", "Shop Settings", { iconPath: ICONS.settings })
+      .button("claimEarnings", "Claim Earnings", { iconPath: ICONS.shop })
+      .button("browseMarketplace", "Browse Marketplace", { iconPath: ICONS.menu })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
+    if (response.id === "createListing") {
       await openListingCreateFlow(player, shop);
       continue;
     }
-    if (response.selection === 1) {
+    if (response.id === "cancelListing") {
       await openListingCancelFlow(player, shop);
       continue;
     }
-    if (response.selection === 2) {
+    if (response.id === "settings") {
       await openShopSettingsFlow(player, shop);
       continue;
     }
-    if (response.selection === 3) {
+    if (response.id === "claimEarnings") {
       const result = claimPlayerShopEarnings(player);
       tell(player, result.ok ? result.message : `§e${result.message}`);
       continue;
     }
-    if (response.selection === 4) {
+    if (response.id === "browseMarketplace") {
       await openPlayerMarketplace(player);
       continue;
     }
@@ -503,20 +499,21 @@ export async function openPlayerMarketplace(player: Player): Promise<void> {
 
   while (true) {
     const listings = marketplaceListings();
-    const menu = new ActionFormData().title("Player Marketplace").body(`Listings: ${listings.length}`);
-    for (const listing of listings) {
-      menu.button(`${listing.title} x${listing.quantity} - ${listing.pricePerUnit} each`, ICONS.shop);
+    const menu = TauUi.action<{ index: number }>("Player Marketplace").body(`Listings: ${listings.length}`);
+    for (let i = 0; i < listings.length; i++) {
+      const listing = listings[i];
+      menu.button(`listing:${i}`, `${listing.title} x${listing.quantity} - ${listing.pricePerUnit} each`, { iconPath: ICONS.shop, value: { index: i } });
     }
-    menu.button("Back", ICONS.back);
+    menu.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= listings.length) return;
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
+    if (response.value?.index === undefined) return;
 
-    const listing = listings[response.selection];
+    const listing = listings[response.value.index];
+    if (!listing) return;
     const sellerName = resolvePlayerNameById(listing.sellerPlayerId, listing.sellerName);
-    const preview = new ActionFormData()
-      .title(listing.title)
+    const preview = TauUi.action(listing.title)
       .body(
         [
           `Seller: ${sellerName}`,
@@ -529,12 +526,11 @@ export async function openPlayerMarketplace(player: Player): Promise<void> {
           listing.item.lore && listing.item.lore.length > 0 ? `Lore: ${listing.item.lore.slice(0, 3).join(" | ")}` : "",
         ].filter((line) => line.length > 0).join("\n")
       )
-      .button("Buy Listing", ICONS.buy)
-      .button("Back", ICONS.back);
+      .button("buy", "Buy Listing", { iconPath: ICONS.buy })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const confirm = await preview.show(player).catch(() => undefined);
-    if (!confirm || confirm.canceled || confirm.selection === undefined) continue;
-    if (confirm.selection !== 0) continue;
+    const confirm = await preview.show(player);
+    if (confirm.canceled || confirm.id !== "buy") continue;
 
     const result = purchaseListing(player, listing);
     tell(player, result.ok ? result.message : `§c${result.message}`);
@@ -549,31 +545,30 @@ export async function openPlayerShopAdmin(player: Player): Promise<void> {
 
   while (true) {
     const config = state.playerShops.config;
-    const modal = new ModalFormData()
-      .title("Player Shop Settings")
-      .toggle("Enabled", { defaultValue: config.enabled })
-      .textField("Default currency objective", "money", { defaultValue: config.defaultCurrencyObjective })
-      .toggle("Allow custom items", { defaultValue: config.allowCustomItems })
-      .textField("Min price per unit", "1", { defaultValue: String(config.minPricePerUnit) })
-      .textField("Max price per unit", "1000000", { defaultValue: String(config.maxPricePerUnit) })
-      .textField("Tax percent", "0", { defaultValue: String(config.taxPercent) })
-      .textField("Max listings per shop", "32", { defaultValue: String(config.maxListingsPerShop) })
-      .toggle("Default public visibility", { defaultValue: config.defaultVisibility === "public" })
-      .toggle("Announce sales", { defaultValue: config.announceSales })
+    const modal = TauUi.modal("Player Shop Settings")
+      .toggle("enabled", "Enabled", config.enabled)
+      .text("defaultCurrencyObjective", "Default currency objective", { placeholder: "money", defaultValue: config.defaultCurrencyObjective })
+      .toggle("allowCustomItems", "Allow custom items", config.allowCustomItems)
+      .text("minPricePerUnit", "Min price per unit", { placeholder: "1", defaultValue: String(config.minPricePerUnit) })
+      .text("maxPricePerUnit", "Max price per unit", { placeholder: "1000000", defaultValue: String(config.maxPricePerUnit) })
+      .text("taxPercent", "Tax percent", { placeholder: "0", defaultValue: String(config.taxPercent) })
+      .text("maxListingsPerShop", "Max listings per shop", { placeholder: "32", defaultValue: String(config.maxListingsPerShop) })
+      .toggle("defaultPublicVisibility", "Default public visibility", config.defaultVisibility === "public")
+      .toggle("announceSales", "Announce sales", config.announceSales)
       .submitButton("Save");
 
-    const result = await modal.show(player).catch(() => undefined);
-    if (!result || result.canceled || !result.formValues) return;
+    const result = await modal.show(player);
+    if (result.canceled) return;
 
-    config.enabled = Boolean(result.formValues[0]);
-    config.defaultCurrencyObjective = String(result.formValues[1] ?? config.defaultCurrencyObjective).trim() || config.defaultCurrencyObjective;
-    config.allowCustomItems = Boolean(result.formValues[2]);
-    config.minPricePerUnit = Math.max(1, Math.floor(Number(result.formValues[3] ?? config.minPricePerUnit)));
-    config.maxPricePerUnit = Math.max(config.minPricePerUnit, Math.floor(Number(result.formValues[4] ?? config.maxPricePerUnit)));
-    config.taxPercent = Math.max(0, Math.floor(Number(result.formValues[5] ?? config.taxPercent)));
-    config.maxListingsPerShop = Math.max(1, Math.floor(Number(result.formValues[6] ?? config.maxListingsPerShop)));
-    config.defaultVisibility = Boolean(result.formValues[7]) ? "public" : "private";
-    config.announceSales = Boolean(result.formValues[8]);
+    config.enabled = Boolean(result.values.enabled);
+    config.defaultCurrencyObjective = String(result.values.defaultCurrencyObjective ?? config.defaultCurrencyObjective).trim() || config.defaultCurrencyObjective;
+    config.allowCustomItems = Boolean(result.values.allowCustomItems);
+    config.minPricePerUnit = Math.max(1, Math.floor(Number(result.values.minPricePerUnit ?? config.minPricePerUnit)));
+    config.maxPricePerUnit = Math.max(config.minPricePerUnit, Math.floor(Number(result.values.maxPricePerUnit ?? config.maxPricePerUnit)));
+    config.taxPercent = Math.max(0, Math.floor(Number(result.values.taxPercent ?? config.taxPercent)));
+    config.maxListingsPerShop = Math.max(1, Math.floor(Number(result.values.maxListingsPerShop ?? config.maxListingsPerShop)));
+    config.defaultVisibility = Boolean(result.values.defaultPublicVisibility) ? "public" : "private";
+    config.announceSales = Boolean(result.values.announceSales);
     savePlayerShops();
     tell(player, "Player shop config saved.");
     return;

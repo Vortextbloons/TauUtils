@@ -10,25 +10,36 @@ type AreaState = {
   areaIds: Set<string>;
 };
 
+type RuntimeArea = {
+  area: CustomAreaDefinition;
+  allowedRanks: Set<string>;
+};
+
+type AreaRuntimeCache = {
+  all: RuntimeArea[];
+  byDimension: Map<string, RuntimeArea[]>;
+};
+
 const playerAreaState = new Map<string, AreaState>();
 const lastRuleRunByPlayerArea = new Map<string, number>();
 const lastEffectRunByPlayerArea = new Map<string, number>();
 const combatDropsByPlayerArea = new Set<string>();
 const MAX_SAFE_AREA_COORD = 30000000;
+let enabledAreaCache: AreaRuntimeCache | undefined;
 
 function enabled(): boolean {
   return isFeatureEnabled("customAreas") && state.customAreas.config.enabled;
 }
 
-function normalizedRankList(area: CustomAreaDefinition): string[] {
-  return area.allowedRanks.map((rank) => rank.trim().toLowerCase()).filter((rank) => rank.length > 0);
+function normalizedRankSet(area: CustomAreaDefinition): Set<string> {
+  return new Set(area.allowedRanks.map((rank) => rank.trim().toLowerCase()).filter((rank) => rank.length > 0));
 }
 
-function playerAllowedByRank(player: Player, area: CustomAreaDefinition): boolean {
-  const ranks = normalizedRankList(area);
-  if (ranks.length === 0) return true;
+function playerAllowedByRank(player: Player, runtime: RuntimeArea): boolean {
+  const ranks = runtime.allowedRanks;
+  if (ranks.size === 0) return true;
   const rank = getPlayerRank(player.name);
-  return Boolean(rank && ranks.includes(rank.id.toLowerCase()));
+  return Boolean(rank && ranks.has(rank.id.toLowerCase()));
 }
 
 function pointInside(area: CustomAreaDefinition, location: Vector3, dimensionId: string): boolean {
@@ -38,19 +49,37 @@ function pointInside(area: CustomAreaDefinition, location: Vector3, dimensionId:
     location.z >= area.min.z && location.z <= area.max.z;
 }
 
-function getEnabledAreas(): CustomAreaDefinition[] {
+function getEnabledAreaCache(): AreaRuntimeCache {
+  if (!enabledAreaCache) {
+    const all = Object.values(state.customAreas.areas)
+      .filter((area) => area.enabled)
+      .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
+      .map((area) => ({ area, allowedRanks: normalizedRankSet(area) }));
+    const byDimension = new Map<string, RuntimeArea[]>();
+    for (const runtime of all) {
+      const areas = byDimension.get(runtime.area.dimensionId) ?? [];
+      areas.push(runtime);
+      byDimension.set(runtime.area.dimensionId, areas);
+    }
+    enabledAreaCache = { all, byDimension };
+  }
+  return enabledAreaCache;
+}
+
+function getEnabledAreaRuntime(dimensionId?: string): RuntimeArea[] {
   if (!enabled()) return [];
-  return Object.values(state.customAreas.areas)
-    .filter((area) => area.enabled)
-    .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+  const cache = getEnabledAreaCache();
+  return dimensionId ? (cache.byDimension.get(dimensionId) ?? []) : cache.all;
 }
 
 export function getAreasForLocation(location: Vector3, dimensionId: string): CustomAreaDefinition[] {
-  return getEnabledAreas().filter((area) => pointInside(area, location, dimensionId));
+  return getEnabledAreaRuntime(dimensionId)
+    .filter((runtime) => pointInside(runtime.area, location, dimensionId))
+    .map((runtime) => runtime.area);
 }
 
 function getAreaForPlayer(player: Player, location: Vector3 = player.location, dimensionId: string = player.dimension.id): CustomAreaDefinition | undefined {
-  return getAreasForLocation(location, dimensionId).find((area) => playerAllowedByRank(player, area));
+  return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId) && playerAllowedByRank(player, runtime))?.area;
 }
 
 function formatAreaMessage(raw: string, player: Player, area: CustomAreaDefinition): string {
@@ -127,15 +156,20 @@ function maybeDropCombatInventory(player: Player, area: CustomAreaDefinition): v
 
 export function processCustomAreas(): void {
   if (!enabled()) return;
-  const areas = getEnabledAreas();
-  if (areas.length === 0) return;
+  const allAreas = getEnabledAreaRuntime();
+  if (allAreas.length === 0) return;
   const now = Date.now();
   for (const player of world.getAllPlayers()) {
     const playerId = getPlayerId(player);
+    const location = player.location;
+    const dimensionId = player.dimension.id;
     const previous = playerAreaState.get(playerId)?.areaIds ?? new Set<string>();
-    const currentAreas = areas.filter((area) => pointInside(area, player.location, player.dimension.id) && playerAllowedByRank(player, area));
-    const current = new Set(currentAreas.map((area) => area.id));
-    for (const area of currentAreas) {
+    const current = new Set<string>();
+    for (const runtime of getEnabledAreaRuntime(dimensionId)) {
+      const area = runtime.area;
+      if (!pointInside(area, location, dimensionId)) continue;
+      if (!playerAllowedByRank(player, runtime)) continue;
+      current.add(area.id);
       if (!previous.has(area.id)) runEnter(area, player);
       maybeDropCombatInventory(player, area);
       for (let index = 0; index < area.effects.length; index++) {
@@ -232,6 +266,7 @@ function normalizeAreaDefinition(area: CustomAreaDefinition): CustomAreaDefiniti
 }
 
 export function invalidateCustomAreaRuntimeState(areaId?: string): void {
+  enabledAreaCache = undefined;
   playerAreaState.clear();
   if (!areaId) {
     lastRuleRunByPlayerArea.clear();

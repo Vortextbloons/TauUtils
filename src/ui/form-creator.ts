@@ -229,22 +229,25 @@ export async function showCreatorMenu(player: Player) {
       .button("Create Modal Form", ICONS.modalForm)
       .button("Edit Existing Form", ICONS.edit)
       .button("Shop Profiles", ICONS.shop)
-      .button("My Player Shop", ICONS.shop)
-      .button("Player Marketplace", ICONS.menu)
       .button("Player Shop Admin", ICONS.settings)
       .button("Sidebar Customizer", ICONS.sidebar)
       .button("Bindings", ICONS.binding)
       .button("Ranks", ICONS.rank)
       .button("Plots", ICONS.plot)
       .button("TauItems", ICONS.utility)
-      .button("Icon Dev", ICONS.menu)
       .button("Moderation", ICONS.utility)
       .button("Combat Settings", ICONS.settings)
       .button("Custom Areas", ICONS.sidebar)
+      .button("Prune Data", ICONS.delete)
+      .button("Generators", ICONS.shop)
+      .button("Crates", ICONS.shop)
+      .button("Loot Chests", ICONS.item)
+      .button("Config", ICONS.settings)
       .button("Close", ICONS.cancel);
 
     const response = await form.show(player).catch(() => undefined);
     if (!response || response.canceled || response.selection === undefined) return;
+    if (response.selection === 18) return;
 
     if (response.selection === 0) {
       await showCreateBaseForm(player, "action");
@@ -276,65 +279,76 @@ export async function showCreatorMenu(player: Player) {
       continue;
     }
     if (response.selection === 4) {
-      const { openMyPlayerShop } = await import("../player-shops");
-      await openMyPlayerShop(player);
-      continue;
-    }
-    if (response.selection === 5) {
-      const { openPlayerMarketplace } = await import("../player-shops");
-      await openPlayerMarketplace(player);
-      continue;
-    }
-    if (response.selection === 6) {
       const { openPlayerShopAdmin } = await import("../player-shops");
       await openPlayerShopAdmin(player);
       continue;
     }
-    if (response.selection === 7) {
+    if (response.selection === 5) {
       const { showSidebarEditor } = await import("../sidebar");
       await showSidebarEditor(player);
       continue;
     }
-    if (response.selection === 8) {
+    if (response.selection === 6) {
       const { showBindingsEditor } = await import("./admin-ui");
       await showBindingsEditor(player);
       continue;
     }
-    if (response.selection === 9) {
+    if (response.selection === 7) {
       const { showRankManager } = await import("./ranks-ui");
       await showRankManager(player);
       continue;
     }
-    if (response.selection === 10) {
+    if (response.selection === 8) {
       const { showPlotManager } = await import("./plots-ui");
       await showPlotManager(player);
       continue;
     }
-    if (response.selection === 11) {
+    if (response.selection === 9) {
       const { showTauItemsAdminMenu } = await import("./admin-ui");
       await showTauItemsAdminMenu(player);
       continue;
     }
-    if (response.selection === 12) {
-      const { showIconDevMenu } = await import("./admin-ui");
-      await showIconDevMenu(player);
-      continue;
-    }
-    if (response.selection === 13) {
+    if (response.selection === 10) {
       const { showModerationMenu } = await import("./admin-ui");
       await showModerationMenu(player);
       continue;
     }
-    if (response.selection === 14) {
+    if (response.selection === 11) {
       const { showCombatSettingsAdmin } = await import("./social-ui");
       await showCombatSettingsAdmin(player);
       continue;
     }
-    if (response.selection === 15) {
+    if (response.selection === 12) {
       const { showCustomAreasAdminMenu } = await import("./custom-areas-ui");
       await showCustomAreasAdminMenu(player);
       continue;
     }
+    if (response.selection === 13) {
+      const { showPruneDataMenu } = await import("./admin-ui");
+      await showPruneDataMenu(player);
+      continue;
+    }
+    if (response.selection === 14) {
+      const { showGeneratorAdminMenu } = await import("./admin-ui");
+      await showGeneratorAdminMenu(player);
+      continue;
+    }
+    if (response.selection === 15) {
+      const { showCrateAdminMenu } = await import("./admin-ui");
+      await showCrateAdminMenu(player);
+      continue;
+    }
+    if (response.selection === 16) {
+      const { showLootChestsAdminMenu } = await import("./loot-chests-ui");
+      await showLootChestsAdminMenu(player);
+      continue;
+    }
+    if (response.selection === 17) {
+      const { showConfigMenu } = await import("./admin-ui");
+      await showConfigMenu(player);
+      continue;
+    }
+
     return;
   }
 }

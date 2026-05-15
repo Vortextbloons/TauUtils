@@ -157,6 +157,26 @@ export function registerCustomCommands(
 
   registry.registerCommand(
     {
+      name: "tau:lootchests",
+      description: "Open loot chest admin menu.",
+      cheatsRequired: false,
+      permissionLevel: CommandPermissionLevel.Any,
+    },
+    (origin): CustomCommandResult => {
+      const player = commandOriginToPlayer(origin);
+      if (!player) return { status: 1, message: "This command can only be used by a player." };
+      if (!isOperator(player)) return { status: 1, message: "Operator required." };
+      if (!isFeatureEnabled("lootChests")) return { status: 1, message: "Loot chests are disabled." };
+      system.run(async () => {
+        const { showLootChestsAdminMenu } = await import("../forms-ui");
+        showLootChestsAdminMenu(player);
+      });
+      return { status: 0, message: "Opening loot chest admin menu." };
+    }
+  );
+
+  registry.registerCommand(
+    {
       name: "tau:dev_icon",
       description: "Open icon dev browser.",
       cheatsRequired: false,
@@ -868,23 +888,26 @@ export function registerCustomCommands(
           "§e/tau:market §7- Browse public player listings",
           "§e/tau:shopadmin §7- Player shop admin settings (op)",
           "§e/tau:shopclaim §7- Claim offline player-shop earnings",
+          "§e/tau:config §7- Open feature config (op)",
+          "§e/tau:creator §7- Open admin UI creator (op)",
+          "§e/tau:sidebar §7- Open sidebar editor (op)",
           "§e/tau:warp [name] §7- Teleport to warp or open menu",
           "§e/tau:warps §7- Open warp list",
           "§e/tau:warpsadmin §7- Open warp admin menu (op)",
           "§e/tau:plot §7- Open your plot info/teleport menu",
           "§e/tau:plots §7- Open plot admin menu (op)",
-          "§e/tau:creator §7- Open admin UI creator (op)",
-          "§e/tau:config §7- Open feature config (op)",
-          "§e/tau:sidebar §7- Open sidebar editor (op)",
           "§e/tau:generatorsadmin §7- Open generator admin (op)",
           "§e/tau:crate §7- Open crate admin (op)",
           "§e/tau:item §7- Open TauItems admin (op)",
+          "§e/tau:lootchests §7- Open loot chest admin (op)",
           "§e/tau:rank §7- Open rank manager (op)",
           "§e/tau:profile §7- Open profile browser",
+          "§e/tau:stats §7- View or edit stats",
           "§e/tau:richest §7- View richest players",
           "§e/tau:help [topic] §7- Show this help",
           "§e/tau:cleardata §7- Wipe all Tau data (op)",
           "§e/tau:debugscore <obj> §7- Debug scoreboard score",
+          "§e/tau:credits §7- Show credits",
         ],
         shop: [
           "§6--- Shop System ---",

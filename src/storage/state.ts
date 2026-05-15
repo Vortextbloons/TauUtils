@@ -11,6 +11,10 @@ import {
   type FormDefinition,
   type GeneratorStore,
   type HomeStore,
+  type LootChestLocation,
+  type LootChestPool,
+  type LootChestSnapshot,
+  type LootChestStore,
   type ModerationStore,
   type PayStore,
   type PlayerProfilesStore,
@@ -61,7 +65,22 @@ export function defaultConfig(): ConfigStore {
       combat: true,
       moderation: true,
       customAreas: true,
+      lootChests: true,
     },
+  };
+}
+
+export function defaultLootChestStore(): LootChestStore {
+  return {
+    config: {
+      enabled: true,
+      processIntervalTicks: 20,
+      maxRefillsPerTick: 4,
+      defaultRespawnTicks: 20 * 60 * 10,
+    },
+    pools: {},
+    snapshots: {},
+    chests: {},
   };
 }
 
@@ -367,6 +386,10 @@ export const PLAYER_SHOPS_LISTING_PREFIX = `${STORAGE_KEYS.playerShops}:listing:
 export const PLAYER_SHOPS_EARNINGS_PREFIX = `${STORAGE_KEYS.playerShops}:earn:`;
 export const CUSTOM_AREAS_CONFIG_KEY = `${STORAGE_KEYS.customAreas}:config`;
 export const CUSTOM_AREAS_AREA_PREFIX = `${STORAGE_KEYS.customAreas}:area:`;
+export const LOOT_CHESTS_CONFIG_KEY = `${STORAGE_KEYS.lootChests}:config`;
+export const LOOT_CHESTS_POOL_PREFIX = `${STORAGE_KEYS.lootChests}:pool:`;
+export const LOOT_CHESTS_SNAPSHOT_PREFIX = `${STORAGE_KEYS.lootChests}:snapshot:`;
+export const LOOT_CHESTS_CHEST_PREFIX = `${STORAGE_KEYS.lootChests}:chest:`;
 
 export const PLOTS_CONFIG_KEY = `${STORAGE_KEYS.plots}:config`;
 export const PLOTS_SLOT_PREFIX = `${STORAGE_KEYS.plots}:slot:`;
@@ -561,6 +584,54 @@ function loadCustomAreasFromSplitKeys(dynamicPropertyIds: string[]): { store: Cu
     if (!parsed?.id) continue;
     base.areas[parsed.id] = parsed;
     hasSplitData = true;
+  }
+  return { store: base, hasSplitData };
+}
+
+function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { store: LootChestStore; hasSplitData: boolean } {
+  const base = defaultLootChestStore();
+  let hasSplitData = false;
+  const configRaw = world.getDynamicProperty(LOOT_CHESTS_CONFIG_KEY) as string | undefined;
+  if (configRaw) {
+    base.config = { ...base.config, ...parseJSON<Partial<LootChestStore["config"]>>(configRaw, {}) };
+    hasSplitData = true;
+  }
+  for (const key of dynamicPropertyIds) {
+    if (key.startsWith(LOOT_CHESTS_POOL_PREFIX)) {
+      const raw = world.getDynamicProperty(key) as string | undefined;
+      const parsed = parseJSON<LootChestPool | undefined>(raw, undefined);
+      if (!parsed?.id) continue;
+      parsed.snapshotIds ??= [];
+      parsed.enabled ??= true;
+      base.pools[parsed.id] = parsed;
+      hasSplitData = true;
+      continue;
+    }
+    if (key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX)) {
+      const raw = world.getDynamicProperty(key) as string | undefined;
+      const parsed = parseJSON<LootChestSnapshot | undefined>(raw, undefined);
+      if (!parsed?.id || !parsed.poolId) continue;
+      parsed.items ??= [];
+      parsed.enabled ??= true;
+      base.snapshots[`${parsed.poolId}:${parsed.id}`] = parsed;
+      hasSplitData = true;
+      continue;
+    }
+    if (key.startsWith(LOOT_CHESTS_CHEST_PREFIX)) {
+      const raw = world.getDynamicProperty(key) as string | undefined;
+      const parsed = parseJSON<LootChestLocation | undefined>(raw, undefined);
+      if (!parsed?.id || !parsed.poolId) continue;
+      parsed.enabled ??= true;
+      parsed.refillMode ??= "empty_only";
+      parsed.preserveSlots ??= true;
+      parsed.refillMessageEnabled ??= false;
+      parsed.refillMessage ??= "§aLoot chest refilled at [x] [y] [z].";
+      parsed.broadcastRefillMessage ??= false;
+      parsed.refillCommandsEnabled ??= false;
+      parsed.refillCommands ??= [];
+      base.chests[parsed.id] = parsed;
+      hasSplitData = true;
+    }
   }
   return { store: base, hasSplitData };
 }
@@ -766,6 +837,32 @@ export function writeCustomAreasToSplitKeys(store: CustomAreaStore): boolean {
   return ok;
 }
 
+export function writeLootChestsToSplitKeys(store: LootChestStore): boolean {
+  let ok = safeSetDynamicJson(LOOT_CHESTS_CONFIG_KEY, store.config);
+  const wantedKeys = new Set<string>([LOOT_CHESTS_CONFIG_KEY]);
+  for (const [poolId, pool] of Object.entries(store.pools)) {
+    const key = `${LOOT_CHESTS_POOL_PREFIX}${poolId}`;
+    wantedKeys.add(key);
+    ok = safeSetDynamicJson(key, pool) && ok;
+  }
+  for (const snapshot of Object.values(store.snapshots)) {
+    const key = `${LOOT_CHESTS_SNAPSHOT_PREFIX}${snapshot.poolId}:${snapshot.id}`;
+    wantedKeys.add(key);
+    ok = safeSetDynamicJson(key, snapshot) && ok;
+  }
+  for (const [chestId, chest] of Object.entries(store.chests)) {
+    const key = `${LOOT_CHESTS_CHEST_PREFIX}${chestId}`;
+    wantedKeys.add(key);
+    ok = safeSetDynamicJson(key, chest) && ok;
+  }
+  for (const key of world.getDynamicPropertyIds()) {
+    if (key.startsWith(LOOT_CHESTS_POOL_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
+    if (key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
+    if (key.startsWith(LOOT_CHESTS_CHEST_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
+  }
+  return ok;
+}
+
 function rememberPlayerShopSplitKeys(store: PlayerShopStore): void {
   persistedPlayerShopJsonByKey.clear();
   const config = serializeDynamicJson(PLAYER_SHOPS_CONFIG_KEY, store.config);
@@ -861,6 +958,7 @@ export const state: {
   combat: CombatStore;
   playerShops: PlayerShopStore;
   customAreas: CustomAreaStore;
+  lootChests: LootChestStore;
 } = {
   forms: {},
   shops: {},
@@ -886,6 +984,7 @@ export const state: {
   combat: defaultCombatStore(),
   playerShops: defaultPlayerShopStore(),
   customAreas: defaultCustomAreaStore(),
+  lootChests: defaultLootChestStore(),
 };
 
 // ---------------------------------------------------------------------------
@@ -932,6 +1031,7 @@ export function loadState() {
   state.config.features.combat ??= defaultConfig().features.combat;
   state.config.features.moderation ??= defaultConfig().features.moderation;
   state.config.features.customAreas ??= defaultConfig().features.customAreas;
+  state.config.features.lootChests ??= defaultConfig().features.lootChests;
   state.ranks = parseJSON<RankStore>(
     world.getDynamicProperty(STORAGE_KEYS.ranks) as string | undefined,
     defaultRankStore()
@@ -1076,6 +1176,15 @@ export function loadState() {
     area.dropItemsIfInCombat ??= false;
   }
   state.plots = normalizePlotStore(state.plots);
+  const splitLootChests = loadLootChestsFromSplitKeys(dynamicPropertyIds);
+  state.lootChests = splitLootChests.hasSplitData
+    ? splitLootChests.store
+    : parseJSON<LootChestStore>(world.getDynamicProperty(STORAGE_KEYS.lootChests) as string | undefined, defaultLootChestStore());
+  state.lootChests.config = { ...defaultLootChestStore().config, ...(state.lootChests.config ?? {}) };
+  state.lootChests.pools ??= {};
+  state.lootChests.snapshots ??= {};
+  state.lootChests.chests ??= {};
+  world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
   state.plots.config.autoBuild ??= defaultPlotStore().config.autoBuild;
   state.plots.config.autoBuild.roofBlock ??= defaultPlotStore().config.autoBuild.roofBlock;
   state.plots.config.autoBuild.roofHeight ??= defaultPlotStore().config.autoBuild.roofHeight;

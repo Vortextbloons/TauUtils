@@ -5,3 +5,6 @@ export { showPlotManager, showPlotPlayerMenuFromCreator, showPlotPlayerMenu } fr
 export { showRankMenu, showRankEditor, showRankManager, showPlayerRankAssign, showChatConfig, showProfileBrowser, showPlayerProfileViewer, showPlayerProfileEditor } from "./ranks-ui";
 export { showConfigMenu, showPruneDataMenu, showBindingsEditor, showModerationMenu, showIconDevMenu, showGeneratorMenu, showGeneratorAdminMenu, showGeneratorSettingsMenu, showGeneratorUpgradeMenu, showTauItemsAdminMenu, showCrateAdminMenu } from "./admin-ui";
 export { showCustomAreasAdminMenu } from "./custom-areas-ui";
+export { showLootChestsAdminMenu } from "./loot-chests-ui";
+export { TauUi, TauActionForm, TauModalForm, TauMessageForm, action as tauAction, modal as tauModal, message as tauMessage, confirm as tauConfirm, paginate as tauPaginate } from "./tau-ui";
+export type { TauActionElement, TauActionResult, TauButton, TauMessageResult, TauModalField, TauModalResult, TauModalValue, TauPage, TauText } from "./tau-ui";

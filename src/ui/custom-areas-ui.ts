@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import { TauUi } from "./tau-ui";
 import { ICONS, type CustomAreaCommandRule, type CustomAreaDefinition, type CustomAreaEffect } from "../types";
 import { isOperator, normalizeKey, saveCustomAreas, state, tell } from "../storage";
 import { applyAreaTickingArea, commitCustomArea, invalidateCustomAreaRuntimeState, normalizeAreaBounds } from "../custom-areas";
@@ -68,16 +68,15 @@ async function createArea(player: Player): Promise<void> {
   }
   const loc = player.location;
   const defaultCoords = `${Math.floor(loc.x - 5)} ${Math.floor(loc.y - 2)} ${Math.floor(loc.z - 5)} ${Math.floor(loc.x + 5)} ${Math.floor(loc.y + 5)} ${Math.floor(loc.z + 5)}`;
-  const modal = new ModalFormData()
-    .title("Create Custom Area")
-    .textField("Area ID", "spawn_safezone")
-    .textField("Name", "Spawn Safezone")
-    .textField("Coords", "x1 y1 z1 x2 y2 z2", { defaultValue: defaultCoords })
-    .textField("Dimension ID", "minecraft:overworld", { defaultValue: player.dimension.id })
-    .submitButton("Create");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
-  const id = normalizeKey(String(result.formValues[0] ?? ""));
+  const result = await TauUi.modal("Create Custom Area")
+    .text("areaId", "Area ID", { placeholder: "spawn_safezone" })
+    .text("name", "Name", { placeholder: "Spawn Safezone" })
+    .text("coords", "Coords", { placeholder: "x1 y1 z1 x2 y2 z2", defaultValue: defaultCoords })
+    .text("dimensionId", "Dimension ID", { placeholder: "minecraft:overworld", defaultValue: player.dimension.id })
+    .submitButton("Create")
+    .show(player);
+  if (result.canceled) return;
+  const id = normalizeKey(String(result.values.areaId ?? ""));
   if (!id) {
     tell(player, "Area ID is required.");
     return;
@@ -86,63 +85,61 @@ async function createArea(player: Player): Promise<void> {
     tell(player, "That area ID already exists.");
     return;
   }
-  const parsed = parseCoords(String(result.formValues[2] ?? ""));
+  const parsed = parseCoords(String(result.values.coords ?? ""));
   if (!parsed.ok || !parsed.values) {
     tell(player, parsed.message);
     return;
   }
   const area = defaultArea(id, player, parsed.values);
-  area.name = String(result.formValues[1] ?? id).trim() || id;
-  area.dimensionId = String(result.formValues[3] ?? player.dimension.id).trim() || player.dimension.id;
+  area.name = String(result.values.name ?? id).trim() || id;
+  area.dimensionId = String(result.values.dimensionId ?? player.dimension.id).trim() || player.dimension.id;
   tellCommitResult(player, commitCustomArea(area));
 }
 
 async function editBasics(player: Player, areaId: string): Promise<void> {
   const area = getArea(player, areaId);
   if (!area) return;
-  const modal = new ModalFormData()
-    .title(`Area: ${area.id}`)
-    .textField("Name", "Spawn Safezone", { defaultValue: area.name })
-    .toggle("Enabled", { defaultValue: area.enabled })
-    .textField("Priority", "0", { defaultValue: String(area.priority) })
-    .textField("Dimension ID", "minecraft:overworld", { defaultValue: area.dimensionId })
-    .textField("Coords", "x1 y1 z1 x2 y2 z2", { defaultValue: coords(area) })
-    .textField("Allowed rank IDs (comma, blank all)", "vip,admin", { defaultValue: area.allowedRanks.join(",") })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
-  const parsed = parseCoords(String(result.formValues[4] ?? ""));
+  const result = await TauUi.modal(`Area: ${area.id}`)
+    .text("name", "Name", { placeholder: "Spawn Safezone", defaultValue: area.name })
+    .toggle("enabled", "Enabled", area.enabled)
+    .text("priority", "Priority", { placeholder: "0", defaultValue: String(area.priority) })
+    .text("dimensionId", "Dimension ID", { placeholder: "minecraft:overworld", defaultValue: area.dimensionId })
+    .text("coords", "Coords", { placeholder: "x1 y1 z1 x2 y2 z2", defaultValue: coords(area) })
+    .text("allowedRanks", "Allowed rank IDs (comma, blank all)", { placeholder: "vip,admin", defaultValue: area.allowedRanks.join(",") })
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
+  const parsed = parseCoords(String(result.values.coords ?? ""));
   if (!parsed.ok || !parsed.values) {
     tell(player, parsed.message);
     return;
   }
   const bounds = normalizeAreaBounds({ x: parsed.values[0]!, y: parsed.values[1]!, z: parsed.values[2]! }, { x: parsed.values[3]!, y: parsed.values[4]!, z: parsed.values[5]! });
   const next = copyArea(area);
-  next.name = String(result.formValues[0] ?? area.name).trim() || area.name;
-  next.enabled = Boolean(result.formValues[1]);
-  next.priority = Math.floor(Number(result.formValues[2] ?? 0)) || 0;
-  next.dimensionId = String(result.formValues[3] ?? area.dimensionId).trim() || area.dimensionId;
+  next.name = String(result.values.name ?? area.name).trim() || area.name;
+  next.enabled = Boolean(result.values.enabled);
+  next.priority = Math.floor(Number(result.values.priority ?? 0)) || 0;
+  next.dimensionId = String(result.values.dimensionId ?? area.dimensionId).trim() || area.dimensionId;
   next.min = bounds.min;
   next.max = bounds.max;
-  next.allowedRanks = String(result.formValues[5] ?? "").split(",").map((entry) => normalizeKey(entry.trim())).filter((entry) => entry.length > 0);
+  next.allowedRanks = String(result.values.allowedRanks ?? "").split(",").map((entry) => normalizeKey(entry.trim())).filter((entry) => entry.length > 0);
   tellCommitResult(player, commitCustomArea(next));
 }
 
 async function editMessages(player: Player, areaId: string): Promise<void> {
   const area = getArea(player, areaId);
   if (!area) return;
-  const modal = new ModalFormData()
-    .title(`Messages: ${area.name}`)
-    .textField("Enter message ({player}, [money], [area], [x])", "Entered [area]", { defaultValue: area.enterMessage ?? "" })
-    .textField("Leave message ({player}, [money], [area], [x])", "Left [area]", { defaultValue: area.leaveMessage ?? "" })
-    .toggle("Broadcast globally", { defaultValue: area.broadcastMessages })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await TauUi.modal(`Messages: ${area.name}`)
+    .text("enterMessage", "Enter message ({player}, [money], [area], [x])", { placeholder: "Entered [area]", defaultValue: area.enterMessage ?? "" })
+    .text("leaveMessage", "Leave message ({player}, [money], [area], [x])", { placeholder: "Left [area]", defaultValue: area.leaveMessage ?? "" })
+    .toggle("broadcastMessages", "Broadcast globally", area.broadcastMessages)
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
   const next = copyArea(getArea(player, areaId) ?? area);
-  next.enterMessage = String(result.formValues[0] ?? "").trim() || undefined;
-  next.leaveMessage = String(result.formValues[1] ?? "").trim() || undefined;
-  next.broadcastMessages = Boolean(result.formValues[2]);
+  next.enterMessage = String(result.values.enterMessage ?? "").trim() || undefined;
+  next.leaveMessage = String(result.values.leaveMessage ?? "").trim() || undefined;
+  next.broadcastMessages = Boolean(result.values.broadcastMessages);
   tellCommitResult(player, commitCustomArea(next));
 }
 
@@ -150,48 +147,46 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
   const area = getArea(player, areaId);
   if (!area) return;
   area.permissions ??= defaultPermissions();
-  const modal = new ModalFormData()
-    .title(`Permissions: ${area.name}`)
-    .toggle("Allow PvP", { defaultValue: area.permissions.pvp })
-    .toggle("Allow block breaking", { defaultValue: area.permissions.blockBreak })
-    .toggle("Allow block placing", { defaultValue: area.permissions.blockPlace })
-    .toggle("Allow item use", { defaultValue: area.permissions.itemUse })
-    .toggle("Allow entity interact", { defaultValue: area.permissions.entityInteract })
-    .toggle("Drop items if in combat", { defaultValue: area.dropItemsIfInCombat ?? false })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await TauUi.modal(`Permissions: ${area.name}`)
+    .toggle("pvp", "Allow PvP", area.permissions.pvp)
+    .toggle("blockBreak", "Allow block breaking", area.permissions.blockBreak)
+    .toggle("blockPlace", "Allow block placing", area.permissions.blockPlace)
+    .toggle("itemUse", "Allow item use", area.permissions.itemUse)
+    .toggle("entityInteract", "Allow entity interact", area.permissions.entityInteract)
+    .toggle("dropItemsIfInCombat", "Drop items if in combat", area.dropItemsIfInCombat ?? false)
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
   const next = copyArea(getArea(player, areaId) ?? area);
   next.permissions = {
-    pvp: Boolean(result.formValues[0]),
-    blockBreak: Boolean(result.formValues[1]),
-    blockPlace: Boolean(result.formValues[2]),
-    itemUse: Boolean(result.formValues[3]),
-    entityInteract: Boolean(result.formValues[4]),
+    pvp: Boolean(result.values.pvp),
+    blockBreak: Boolean(result.values.blockBreak),
+    blockPlace: Boolean(result.values.blockPlace),
+    itemUse: Boolean(result.values.itemUse),
+    entityInteract: Boolean(result.values.entityInteract),
   };
-  next.dropItemsIfInCombat = Boolean(result.formValues[5]);
+  next.dropItemsIfInCombat = Boolean(result.values.dropItemsIfInCombat);
   tellCommitResult(player, commitCustomArea(next));
 }
 
 async function addCommandRule(player: Player, area: CustomAreaDefinition, rule?: CustomAreaCommandRule): Promise<void> {
-  const modal = new ModalFormData()
-    .title(rule ? "Edit Command Rule" : "Add Command Rule")
-    .toggle("Enabled", { defaultValue: rule?.enabled ?? true })
-    .textField("Commands separated by ; ({player}, [money], [area], [x])", "say {player} is in [area]", { defaultValue: rule?.commands.join(";") ?? "" })
-    .textField("Interval ticks", "100", { defaultValue: String(rule?.intervalTicks ?? 100) })
-    .toggle("Run on enter", { defaultValue: rule?.runOnEnter ?? false })
-    .toggle("Run on leave", { defaultValue: rule?.runOnLeave ?? false })
-    .toggle("Run while inside", { defaultValue: rule?.runWhileInside ?? true })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await TauUi.modal(rule ? "Edit Command Rule" : "Add Command Rule")
+    .toggle("enabled", "Enabled", rule?.enabled ?? true)
+    .text("commands", "Commands separated by ; ({player}, [money], [area], [x])", { placeholder: "say {player} is in [area]", defaultValue: rule?.commands.join(";") ?? "" })
+    .text("intervalTicks", "Interval ticks", { placeholder: "100", defaultValue: String(rule?.intervalTicks ?? 100) })
+    .toggle("runOnEnter", "Run on enter", rule?.runOnEnter ?? false)
+    .toggle("runOnLeave", "Run on leave", rule?.runOnLeave ?? false)
+    .toggle("runWhileInside", "Run while inside", rule?.runWhileInside ?? true)
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
   const next: CustomAreaCommandRule = {
-    enabled: Boolean(result.formValues[0]),
-    commands: String(result.formValues[1] ?? "").split(";").map((entry) => entry.trim()).filter((entry) => entry.length > 0).slice(0, state.customAreas.config.maxCommandsPerArea),
-    intervalTicks: Math.max(1, Math.floor(Number(result.formValues[2] ?? 100))),
-    runOnEnter: Boolean(result.formValues[3]),
-    runOnLeave: Boolean(result.formValues[4]),
-    runWhileInside: Boolean(result.formValues[5]),
+    enabled: Boolean(result.values.enabled),
+    commands: String(result.values.commands ?? "").split(";").map((entry) => entry.trim()).filter((entry) => entry.length > 0).slice(0, state.customAreas.config.maxCommandsPerArea),
+    intervalTicks: Math.max(1, Math.floor(Number(result.values.intervalTicks ?? 100))),
+    runOnEnter: Boolean(result.values.runOnEnter),
+    runOnLeave: Boolean(result.values.runOnLeave),
+    runWhileInside: Boolean(result.values.runWhileInside),
   };
   if (next.commands.length === 0) return;
   const nextArea = copyArea(area);
@@ -202,24 +197,23 @@ async function addCommandRule(player: Player, area: CustomAreaDefinition, rule?:
 }
 
 async function addEffect(player: Player, area: CustomAreaDefinition, effect?: CustomAreaEffect): Promise<void> {
-  const modal = new ModalFormData()
-    .title(effect ? "Edit Effect" : "Add Effect")
-    .toggle("Enabled", { defaultValue: effect?.enabled ?? true })
-    .textField("Effect ID", "speed", { defaultValue: effect?.effectId ?? "speed" })
-    .textField("Amplifier", "0", { defaultValue: String(effect?.amplifier ?? 0) })
-    .textField("Duration seconds", "5", { defaultValue: String(effect?.durationSeconds ?? 5) })
-    .textField("Interval ticks", "80", { defaultValue: String(effect?.intervalTicks ?? 80) })
-    .toggle("Hide particles", { defaultValue: effect?.hideParticles ?? true })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await TauUi.modal(effect ? "Edit Effect" : "Add Effect")
+    .toggle("enabled", "Enabled", effect?.enabled ?? true)
+    .text("effectId", "Effect ID", { placeholder: "speed", defaultValue: effect?.effectId ?? "speed" })
+    .text("amplifier", "Amplifier", { placeholder: "0", defaultValue: String(effect?.amplifier ?? 0) })
+    .text("durationSeconds", "Duration seconds", { placeholder: "5", defaultValue: String(effect?.durationSeconds ?? 5) })
+    .text("intervalTicks", "Interval ticks", { placeholder: "80", defaultValue: String(effect?.intervalTicks ?? 80) })
+    .toggle("hideParticles", "Hide particles", effect?.hideParticles ?? true)
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
   const next: CustomAreaEffect = {
-    enabled: Boolean(result.formValues[0]),
-    effectId: String(result.formValues[1] ?? "speed").trim() || "speed",
-    amplifier: Math.max(0, Math.floor(Number(result.formValues[2] ?? 0))),
-    durationSeconds: Math.max(1, Math.floor(Number(result.formValues[3] ?? 5))),
-    intervalTicks: Math.max(1, Math.floor(Number(result.formValues[4] ?? 80))),
-    hideParticles: Boolean(result.formValues[5]),
+    enabled: Boolean(result.values.enabled),
+    effectId: String(result.values.effectId ?? "speed").trim() || "speed",
+    amplifier: Math.max(0, Math.floor(Number(result.values.amplifier ?? 0))),
+    durationSeconds: Math.max(1, Math.floor(Number(result.values.durationSeconds ?? 5))),
+    intervalTicks: Math.max(1, Math.floor(Number(result.values.intervalTicks ?? 80))),
+    hideParticles: Boolean(result.values.hideParticles),
   };
   const nextArea = copyArea(area);
   const index = effect ? area.effects.indexOf(effect) : -1;
@@ -231,18 +225,17 @@ async function addEffect(player: Player, area: CustomAreaDefinition, effect?: Cu
 async function listEditors<T>(player: Player, title: string, getItems: () => T[], label: (item: T) => string, edit: (item: T) => Promise<void>, add: () => Promise<void>, remove: (index: number) => void, save: () => void): Promise<void> {
   while (true) {
     const items = getItems();
-    const form = new ActionFormData().title(title).button("Add", ICONS.confirm);
-    for (const item of items) form.button(label(item), ICONS.edit);
-    form.button("Back", ICONS.back);
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection === 0) { await add(); continue; }
-    const index = response.selection - 1;
-    if (index >= items.length) return;
-    const manage = new ActionFormData().title("Manage").button("Edit", ICONS.edit).button("Delete", ICONS.delete).button("Back", ICONS.back);
-    const picked = await manage.show(player).catch(() => undefined);
-    if (!picked || picked.canceled || picked.selection === undefined || picked.selection === 2) continue;
-    if (picked.selection === 1) { remove(index); save(); continue; }
+    const form = TauUi.action<{ index: number }>(title).button("add", "Add", { iconPath: ICONS.confirm });
+    for (let i = 0; i < items.length; i++) form.button("item", label(items[i]!), { iconPath: ICONS.edit, value: { index: i } });
+    form.button("back", "Back", { iconPath: ICONS.back });
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
+    if (response.id === "add") { await add(); continue; }
+    const index = response.value!.index;
+    const manage = TauUi.action("Manage").button("edit", "Edit", { iconPath: ICONS.edit }).button("delete", "Delete", { iconPath: ICONS.delete }).button("back", "Back", { iconPath: ICONS.back });
+    const picked = await manage.show(player);
+    if (picked.canceled || picked.id === "back") continue;
+    if (picked.id === "delete") { remove(index); save(); continue; }
     await edit(items[index]!);
   }
 }
@@ -250,15 +243,14 @@ async function listEditors<T>(player: Player, title: string, getItems: () => T[]
 async function editTickingArea(player: Player, areaId: string): Promise<void> {
   const area = getArea(player, areaId);
   if (!area) return;
-  const modal = new ModalFormData()
-    .title(`Ticking Area: ${area.name}`)
-    .toggle("Enabled", { defaultValue: area.tickingArea?.enabled ?? false })
-    .textField("Ticking area name", area.id, { defaultValue: area.tickingArea?.name ?? area.id })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await TauUi.modal(`Ticking Area: ${area.name}`)
+    .toggle("enabled", "Enabled", area.tickingArea?.enabled ?? false)
+    .text("name", "Ticking area name", { placeholder: area.id, defaultValue: area.tickingArea?.name ?? area.id })
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
   const next = copyArea(getArea(player, areaId) ?? area);
-  next.tickingArea = { enabled: Boolean(result.formValues[0]), name: String(result.formValues[1] ?? area.id).trim() || area.id };
+  next.tickingArea = { enabled: Boolean(result.values.enabled), name: String(result.values.name ?? area.id).trim() || area.id };
   tellCommitResult(player, commitCustomArea(next));
 }
 
@@ -269,24 +261,23 @@ async function editArea(player: Player, areaId: string): Promise<void> {
       tell(player, "Area no longer exists.");
       return;
     }
-    const form = new ActionFormData()
-      .title(area.name)
+    const response = await TauUi.action(area.name)
       .body(`${area.enabled ? "§aEnabled" : "§cDisabled"}§r\n${coords(area)}\nPriority: ${area.priority}\nCombat drop: ${area.dropItemsIfInCombat ? "On" : "Off"}`)
-      .button("Basics / Rank Filter", ICONS.edit)
-      .button("Messages", ICONS.menu)
-      .button("Permissions", ICONS.settings)
-      .button("Commands", ICONS.binding)
-      .button("Effects", ICONS.utility)
-      .button("Ticking Area", ICONS.sidebar)
-      .button("Apply Ticking Area", ICONS.confirm)
-      .button("Delete", ICONS.delete)
-      .button("Back", ICONS.back);
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection === 0) await editBasics(player, area.id);
-    else if (response.selection === 1) await editMessages(player, area.id);
-    else if (response.selection === 2) await editPermissions(player, area.id);
-    else if (response.selection === 3) await listEditors(
+      .button("basics", "Basics / Rank Filter", { iconPath: ICONS.edit })
+      .button("messages", "Messages", { iconPath: ICONS.menu })
+      .button("permissions", "Permissions", { iconPath: ICONS.settings })
+      .button("commands", "Commands", { iconPath: ICONS.binding })
+      .button("effects", "Effects", { iconPath: ICONS.utility })
+      .button("tickingArea", "Ticking Area", { iconPath: ICONS.sidebar })
+      .button("applyTickingArea", "Apply Ticking Area", { iconPath: ICONS.confirm })
+      .button("delete", "Delete", { iconPath: ICONS.delete })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+    if (response.canceled || response.id === "back") return;
+    if (response.id === "basics") await editBasics(player, area.id);
+    else if (response.id === "messages") await editMessages(player, area.id);
+    else if (response.id === "permissions") await editPermissions(player, area.id);
+    else if (response.id === "commands") await listEditors(
       player,
       "Command Rules",
       () => getArea(player, area.id)?.commandRules ?? [],
@@ -311,7 +302,7 @@ async function editArea(player: Player, areaId: string): Promise<void> {
         if (current) tellCommitResult(player, commitCustomArea(current));
       }
     );
-    else if (response.selection === 4) await listEditors(
+    else if (response.id === "effects") await listEditors(
       player,
       "Effects",
       () => getArea(player, area.id)?.effects ?? [],
@@ -336,28 +327,27 @@ async function editArea(player: Player, areaId: string): Promise<void> {
         if (current) tellCommitResult(player, commitCustomArea(current));
       }
     );
-    else if (response.selection === 5) await editTickingArea(player, area.id);
-    else if (response.selection === 6) tell(player, applyAreaTickingArea(area).message);
-    else if (response.selection === 7) { delete state.customAreas.areas[area.id]; saveCustomAreas(); invalidateCustomAreaRuntimeState(area.id); tell(player, "Area deleted."); return; }
+    else if (response.id === "tickingArea") await editTickingArea(player, area.id);
+    else if (response.id === "applyTickingArea") tell(player, applyAreaTickingArea(area).message);
+    else if (response.id === "delete") { delete state.customAreas.areas[area.id]; saveCustomAreas(); invalidateCustomAreaRuntimeState(area.id); tell(player, "Area deleted."); return; }
     else return;
   }
 }
 
 async function globalSettings(player: Player): Promise<void> {
   const cfg = state.customAreas.config;
-  const modal = new ModalFormData()
-    .title("Custom Area Settings")
-    .toggle("Enabled", { defaultValue: cfg.enabled })
-    .textField("Check interval ticks", "10", { defaultValue: String(cfg.checkIntervalTicks) })
-    .textField("Max areas", "250", { defaultValue: String(cfg.maxAreas) })
-    .textField("Max commands per area", "10", { defaultValue: String(cfg.maxCommandsPerArea) })
-    .submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
-  cfg.enabled = Boolean(result.formValues[0]);
-  cfg.checkIntervalTicks = Math.max(1, Math.floor(Number(result.formValues[1] ?? 10)));
-  cfg.maxAreas = Math.max(1, Math.floor(Number(result.formValues[2] ?? 250)));
-  cfg.maxCommandsPerArea = Math.max(1, Math.floor(Number(result.formValues[3] ?? 10)));
+  const result = await TauUi.modal("Custom Area Settings")
+    .toggle("enabled", "Enabled", cfg.enabled)
+    .text("checkIntervalTicks", "Check interval ticks", { placeholder: "10", defaultValue: String(cfg.checkIntervalTicks) })
+    .text("maxAreas", "Max areas", { placeholder: "250", defaultValue: String(cfg.maxAreas) })
+    .text("maxCommandsPerArea", "Max commands per area", { placeholder: "10", defaultValue: String(cfg.maxCommandsPerArea) })
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled) return;
+  cfg.enabled = Boolean(result.values.enabled);
+  cfg.checkIntervalTicks = Math.max(1, Math.floor(Number(result.values.checkIntervalTicks ?? 10)));
+  cfg.maxAreas = Math.max(1, Math.floor(Number(result.values.maxAreas ?? 250)));
+  cfg.maxCommandsPerArea = Math.max(1, Math.floor(Number(result.values.maxCommandsPerArea ?? 10)));
   saveCustomAreas();
   invalidateCustomAreaRuntimeState();
 }
@@ -369,18 +359,17 @@ export async function showCustomAreasAdminMenu(player: Player): Promise<void> {
   }
   while (true) {
     const areas = Object.values(state.customAreas.areas).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
-    const form = new ActionFormData()
-      .title("Custom Areas")
+    const form = TauUi.action<{ areaId: string }>("Custom Areas")
       .body(`Enabled: ${state.customAreas.config.enabled ? "Yes" : "No"}\nAreas: ${areas.length}`)
-      .button("Global Settings", ICONS.settings)
-      .button("Create Area", ICONS.confirm);
-    for (const area of areas) form.button(`${area.enabled ? "§aON" : "§cOFF"}§r ${area.name} §7(${area.id})`, ICONS.sidebar);
-    form.button("Back", ICONS.back);
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection === 0) { await globalSettings(player); continue; }
-    if (response.selection === 1) { await createArea(player); continue; }
-    const area = areas[response.selection - 2];
+      .button("globalSettings", "Global Settings", { iconPath: ICONS.settings })
+      .button("createArea", "Create Area", { iconPath: ICONS.confirm });
+    for (const area of areas) form.button("area", `${area.enabled ? "§aON" : "§cOFF"}§r ${area.name} §7(${area.id})`, { iconPath: ICONS.sidebar, value: { areaId: area.id } });
+    form.button("back", "Back", { iconPath: ICONS.back });
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
+    if (response.id === "globalSettings") { await globalSettings(player); continue; }
+    if (response.id === "createArea") { await createArea(player); continue; }
+    const area = areas.find((a) => a.id === response.value!.areaId);
     if (!area) return;
     await editArea(player, area.id);
   }

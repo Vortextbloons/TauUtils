@@ -1,8 +1,7 @@
 import { Player, world } from "@minecraft/server";
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { CODE_TO_COLOR_NAME, ICONS, RANK_COLORS, RANK_COLOR_CODES } from "../types";
 import { assignRank, getPlayerId, getPlayerRank, getPlayerStats, getPlayerStatsById, isOperator, normalizeKey, removeRank, saveChat, saveProfiles, saveRanks, setDefaultRank, state, tell } from "../storage";
-import { iconForAction } from "../tau-ui";
+import { TauUi } from "./tau-ui";
 
 export async function showRankMenu(player: Player) {
   if (!isOperator(player)) {
@@ -10,26 +9,25 @@ export async function showRankMenu(player: Player) {
     return;
   }
   while (true) {
-    const form = new ActionFormData()
-      .title("Ranks")
+    const res = await TauUi.action("Ranks")
       .body("Manage and assign ranks.")
-      .button("Manage Ranks", ICONS.settings)
-      .button("Assign Ranks", ICONS.binding)
-      .button("Chat Format", ICONS.menu)
-      .button("Back", ICONS.back);
+      .button("manage", "Manage Ranks", { iconPath: ICONS.settings })
+      .button("assign", "Assign Ranks", { iconPath: ICONS.binding })
+      .button("chat", "Chat Format", { iconPath: ICONS.menu })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    if (res.canceled || res.id === "back") return;
 
-    if (response.selection === 0) {
+    if (res.id === "manage") {
       await showRankManager(player);
       continue;
     }
-    if (response.selection === 1) {
+    if (res.id === "assign") {
       await showPlayerRankAssign(player);
       continue;
     }
-    if (response.selection === 2) {
+    if (res.id === "chat") {
       await showChatConfig(player);
       continue;
     }
@@ -52,29 +50,28 @@ export async function showRankEditor(player: Player, rankId: string) {
   const colorIndex = RANK_COLORS.indexOf(colorName as typeof RANK_COLORS[number]);
   const colorOptions = RANK_COLORS.map((name) => `${RANK_COLOR_CODES[name]}${name}`);
 
-  const form = new ModalFormData()
-    .title(`Edit Rank: ${rank.name}`)
-    .textField("Name", "Member", { defaultValue: rank.name })
-    .dropdown("Color", colorOptions, { defaultValueIndex: colorIndex >= 0 ? colorIndex : 15 })
-    .textField("Prefix", "[VIP]", { defaultValue: rank.prefix ?? "" })
-    .textField("Suffix", "", { defaultValue: rank.suffix ?? "" })
-    .slider("Priority", 0, 100, { defaultValue: rank.priority, valueStep: 1 })
-    .textField("Permissions (comma-separated)", "tau.*, give", { defaultValue: rank.permissions.join(", ") })
-    .textField("Chat Format (blank = global)", "[name]: [rank] [message]", { defaultValue: rank.chatFormat ?? "" })
-    .submitButton("Save");
+  const result = await TauUi.modal(`Edit Rank: ${rank.name}`)
+    .text("name", "Name", { placeholder: "Member", defaultValue: rank.name })
+    .dropdown("color", "Color", colorOptions, colorIndex >= 0 ? colorIndex : 15)
+    .text("prefix", "Prefix", { placeholder: "[VIP]", defaultValue: rank.prefix ?? "" })
+    .text("suffix", "Suffix", { placeholder: "", defaultValue: rank.suffix ?? "" })
+    .slider("priority", "Priority", 0, 100, { step: 1, defaultValue: rank.priority })
+    .text("permissions", "Permissions (comma-separated)", { placeholder: "tau.*, give", defaultValue: rank.permissions.join(", ") })
+    .text("chatFormat", "Chat Format (blank = global)", { placeholder: "[name]: [rank] [message]", defaultValue: rank.chatFormat ?? "" })
+    .submitButton("Save")
+    .show(player);
 
-  const result = await form.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  if (result.canceled) return;
 
-  rank.name = String(result.formValues[0] ?? "").trim() || rank.name;
-  const selectedColorName = RANK_COLORS[Number(result.formValues[1] ?? 15)] ?? "White";
+  rank.name = String(result.values.name ?? "").trim() || rank.name;
+  const selectedColorName = RANK_COLORS[Number(result.values.color ?? 15)] ?? "White";
   rank.color = RANK_COLOR_CODES[selectedColorName] ?? "§f";
-  rank.prefix = String(result.formValues[2] ?? "").trim() || undefined;
-  rank.suffix = String(result.formValues[3] ?? "").trim() || undefined;
-  rank.priority = Number(result.formValues[4] ?? 0);
-  const permText = String(result.formValues[5] ?? "").trim();
+  rank.prefix = String(result.values.prefix ?? "").trim() || undefined;
+  rank.suffix = String(result.values.suffix ?? "").trim() || undefined;
+  rank.priority = Number(result.values.priority ?? 0);
+  const permText = String(result.values.permissions ?? "").trim();
   rank.permissions = permText ? permText.split(",").map((p: string) => p.trim()).filter(Boolean) : [];
-  const chatFmt = String(result.formValues[6] ?? "").trim();
+  const chatFmt = String(result.values.chatFormat ?? "").trim();
   rank.chatFormat = chatFmt || undefined;
 
   saveRanks();
@@ -92,67 +89,62 @@ export async function showRankManager(player: Player) {
     const defaultId = state.ranks.defaultRankId;
     const defaultLabel = defaultId ? `Default: ${state.ranks.ranks[defaultId]?.name || defaultId}` : "No default";
 
-    const form = new ActionFormData()
-      .title("Rank Manager")
+    const form = TauUi.action("Rank Manager")
       .body(`Manage ranks for your server.\n${defaultLabel}`);
 
     for (const key of rankKeys) {
       const rank = state.ranks.ranks[key];
       const isDefault = key === defaultId ? " §a(default)" : "";
-      form.button(`${rank.color}${rank.name}§r (priority: ${rank.priority})${isDefault}`, ICONS.settings);
+      form.button(`rank_${key}`, `${rank.color}${rank.name}§r (priority: ${rank.priority})${isDefault}`, { iconPath: ICONS.settings });
     }
 
-    form.button("§a+ Create New Rank", ICONS.confirm);
-    form.button("Set Default Rank", ICONS.settings);
-    form.button("Back", ICONS.back);
+    form.button("create", "§a+ Create New Rank", { iconPath: ICONS.confirm });
+    form.button("setDefault", "Set Default Rank", { iconPath: ICONS.settings });
+    form.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await form.show(player);
+    if (response.canceled) return;
 
-    if (response.selection === rankKeys.length) {
+    if (response.id === "create") {
       await showCreateRankForm(player);
       continue;
     }
 
-    if (response.selection === rankKeys.length + 1) {
-      const pickForm = new ActionFormData()
-        .title("Set Default Rank")
+    if (response.id === "setDefault") {
+      const pickForm = TauUi.action("Set Default Rank")
         .body("Select the default rank for players without an assigned rank.");
       for (const key of rankKeys) {
         const rank = state.ranks.ranks[key];
         const isDefault = key === defaultId ? " §a(current)" : "";
-        pickForm.button(`${rank.color}${rank.name}§r${isDefault}`);
+        pickForm.button(`rank_${key}`, `${rank.color}${rank.name}§r${isDefault}`);
       }
-      pickForm.button("Back", ICONS.back);
+      pickForm.button("back", "Back", { iconPath: ICONS.back });
 
-      const pickResponse = await pickForm.show(player).catch(() => undefined);
-      if (!pickResponse || pickResponse.canceled || pickResponse.selection === undefined) continue;
-      if (pickResponse.selection < rankKeys.length) {
-        const newDefault = rankKeys[pickResponse.selection];
-        setDefaultRank(newDefault);
-        tell(player, `Default rank set to "${state.ranks.ranks[newDefault]?.name}".`);
-      }
+      const pickResponse = await pickForm.show(player);
+      if (pickResponse.canceled || pickResponse.id === "back") continue;
+      const newDefault = pickResponse.id.replace("rank_", "");
+      setDefaultRank(newDefault);
+      tell(player, `Default rank set to "${state.ranks.ranks[newDefault]?.name}".`);
       continue;
     }
 
-    if (response.selection === rankKeys.length + 2) return;
+    if (response.id === "back") return;
 
-    const selectedRank = state.ranks.ranks[rankKeys[response.selection]];
+    const selectedRank = state.ranks.ranks[response.id.replace("rank_", "")];
     if (!selectedRank) continue;
 
-    const editForm = new ActionFormData()
-      .title(`Rank: ${selectedRank.name}`)
+    const editForm = TauUi.action(`Rank: ${selectedRank.name}`)
       .body(`ID: ${selectedRank.id}\nPriority: ${selectedRank.id}\nPermissions: ${selectedRank.permissions.join(", ") || "none"}`)
-      .button("Edit", ICONS.edit)
-      .button("Delete", ICONS.delete)
-      .button("Back", ICONS.back);
+      .button("edit", "Edit", { iconPath: ICONS.edit })
+      .button("delete", "Delete", { iconPath: ICONS.delete })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const editResponse = await editForm.show(player).catch(() => undefined);
-    if (!editResponse || editResponse.canceled || editResponse.selection === undefined) continue;
+    const editResponse = await editForm.show(player);
+    if (editResponse.canceled || editResponse.id === "back") continue;
 
-    if (editResponse.selection === 0) {
+    if (editResponse.id === "edit") {
       await showRankEditor(player, selectedRank.id);
-    } else if (editResponse.selection === 1) {
+    } else if (editResponse.id === "delete") {
       delete state.ranks.ranks[selectedRank.id];
       for (const [pname, rid] of Object.entries(state.ranks.playerRanks)) {
         if (rid === selectedRank.id) delete state.ranks.playerRanks[pname];
@@ -170,22 +162,21 @@ async function showCreateRankForm(player: Player) {
   }
   const colorOptions = RANK_COLORS.map((name) => `${RANK_COLOR_CODES[name]}${name}`);
 
-  const form = new ModalFormData()
-    .title("Create New Rank")
-    .textField("ID (no spaces)", "member")
-    .textField("Name", "Member")
-    .dropdown("Color", colorOptions, { defaultValueIndex: 15 })
-    .textField("Prefix (optional)", "[VIP]")
-    .textField("Suffix (optional)", "")
-    .slider("Priority", 0, 100, { defaultValue: 0, valueStep: 1 })
-    .textField("Permissions (comma-separated)", "tau.*, give")
-    .textField("Chat Format (blank = global)", "[name]: [rank] [message]")
-    .submitButton("Create");
+  const result = await TauUi.modal("Create New Rank")
+    .text("id", "ID (no spaces)", { placeholder: "member" })
+    .text("name", "Name", { placeholder: "Member" })
+    .dropdown("color", "Color", colorOptions, 15)
+    .text("prefix", "Prefix (optional)", { placeholder: "[VIP]" })
+    .text("suffix", "Suffix (optional)", { placeholder: "" })
+    .slider("priority", "Priority", 0, 100, { step: 1, defaultValue: 0 })
+    .text("permissions", "Permissions (comma-separated)", { placeholder: "tau.*, give" })
+    .text("chatFormat", "Chat Format (blank = global)", { placeholder: "[name]: [rank] [message]" })
+    .submitButton("Create")
+    .show(player);
 
-  const result = await form.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  if (result.canceled) return;
 
-  const id = String(result.formValues[0] ?? "").trim().toLowerCase();
+  const id = String(result.values.id ?? "").trim().toLowerCase();
   if (!id) {
     tell(player, "Rank ID cannot be empty.");
     return;
@@ -195,16 +186,16 @@ async function showCreateRankForm(player: Player) {
     return;
   }
 
-  const permText = String(result.formValues[6] ?? "").trim();
-  const chatFmt = String(result.formValues[7] ?? "").trim();
+  const permText = String(result.values.permissions ?? "").trim();
+  const chatFmt = String(result.values.chatFormat ?? "").trim();
 
   state.ranks.ranks[id] = {
     id,
-    name: String(result.formValues[1] ?? "").trim() || id,
-    color: RANK_COLOR_CODES[RANK_COLORS[Number(result.formValues[2] ?? 15)] ?? "White"] ?? "§f",
-    prefix: String(result.formValues[3] ?? "").trim() || undefined,
-    suffix: String(result.formValues[4] ?? "").trim() || undefined,
-    priority: Number(result.formValues[5] ?? 0),
+    name: String(result.values.name ?? "").trim() || id,
+    color: RANK_COLOR_CODES[RANK_COLORS[Number(result.values.color ?? 15)] ?? "White"] ?? "§f",
+    prefix: String(result.values.prefix ?? "").trim() || undefined,
+    suffix: String(result.values.suffix ?? "").trim() || undefined,
+    priority: Number(result.values.priority ?? 0),
     permissions: permText ? permText.split(",").map((p: string) => p.trim()).filter(Boolean) : [],
     chatFormat: chatFmt || undefined,
   };
@@ -227,50 +218,46 @@ export async function showPlayerRankAssign(player: Player) {
       return;
     }
 
-    const form = new ActionFormData()
-      .title("Assign Rank")
+    const form = TauUi.action("Assign Rank")
       .body("Select a player to assign a rank to.");
 
     for (const p of onlinePlayers) {
       const currentRank = state.ranks.playerRanks[p.name];
       const rankName = currentRank ? state.ranks.ranks[currentRank]?.name : "None";
-      form.button(`${p.name} (${rankName})`);
+      form.button(`player_${p.name}`, `${p.name} (${rankName})`);
     }
 
-    form.button("Back", ICONS.back);
+    form.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === onlinePlayers.length) return;
-
-    const selectedPlayer = onlinePlayers[response.selection];
+    const selectedPlayerName = response.id.replace("player_", "");
+    const selectedPlayer = onlinePlayers.find((p) => p.name === selectedPlayerName);
     if (!selectedPlayer) continue;
 
-    const rankForm = new ActionFormData()
-      .title(`Assign Rank to ${selectedPlayer.name}`)
+    const rankForm = TauUi.action(`Assign Rank to ${selectedPlayer.name}`)
       .body("Select a rank to assign.");
 
     for (const key of rankKeys) {
       const rank = state.ranks.ranks[key];
-      rankForm.button(`${rank.color}${rank.name}§r`);
+      rankForm.button(`rank_${key}`, `${rank.color}${rank.name}§r`);
     }
 
-    rankForm.button("Remove Rank", ICONS.delete);
-    rankForm.button("Back", ICONS.back);
+    rankForm.button("remove", "Remove Rank", { iconPath: ICONS.delete });
+    rankForm.button("back", "Back", { iconPath: ICONS.back });
 
-    const rankResponse = await rankForm.show(player).catch(() => undefined);
-    if (!rankResponse || rankResponse.canceled || rankResponse.selection === undefined) continue;
+    const rankResponse = await rankForm.show(player);
+    if (rankResponse.canceled || rankResponse.id === "back") continue;
 
-    if (rankResponse.selection === rankKeys.length) {
+    if (rankResponse.id === "remove") {
       removeRank(selectedPlayer.name);
       tell(player, `Removed rank from ${selectedPlayer.name}.`);
       continue;
     }
 
-    if (rankResponse.selection === rankKeys.length + 1) continue;
-
-    const selectedRank = state.ranks.ranks[rankKeys[rankResponse.selection]];
+    const selectedRankKey = rankResponse.id.replace("rank_", "");
+    const selectedRank = state.ranks.ranks[selectedRankKey];
     if (!selectedRank) continue;
 
     assignRank(selectedPlayer.name, selectedRank.id);
@@ -280,17 +267,16 @@ export async function showPlayerRankAssign(player: Player) {
 
 export async function showChatConfig(player: Player) {
   while (true) {
-    const form = new ModalFormData()
-      .title("Chat Format Config")
-      .toggle("Enable Chat Formatting", { defaultValue: state.chat.enabled })
-      .textField("Template", "[name]: [rank] [message]", { defaultValue: state.chat.template })
-      .submitButton("Save");
+    const result = await TauUi.modal("Chat Format Config")
+      .toggle("enabled", "Enable Chat Formatting", state.chat.enabled)
+      .text("template", "Template", { placeholder: "[name]: [rank] [message]", defaultValue: state.chat.template })
+      .submitButton("Save")
+      .show(player);
 
-    const result = await form.show(player).catch(() => undefined);
-    if (!result || result.canceled || result.formValues === undefined) return;
+    if (result.canceled) return;
 
-    state.chat.enabled = Boolean(result.formValues[0]);
-    state.chat.template = String(result.formValues[1] ?? "").trim() || "[name]: [rank] [message]";
+    state.chat.enabled = Boolean(result.values.enabled);
+    state.chat.template = String(result.values.template ?? "").trim() || "[name]: [rank] [message]";
     saveChat();
 
     const preview = state.chat.template
@@ -305,21 +291,20 @@ export async function showChatConfig(player: Player) {
 
 export async function showProfileBrowser(player: Player) {
   while (true) {
-    const form = new ActionFormData()
-      .title("Player Profiles")
+    const players = world.getAllPlayers();
+    const form = TauUi.action("Player Profiles")
       .body("Select an online player to view their profile.");
 
-    for (const online of world.getAllPlayers()) {
-      form.button(online.name, ICONS.menu);
+    for (const online of players) {
+      form.button(`player_${online.name}`, online.name, { iconPath: ICONS.menu });
     }
 
-    form.button("Back", ICONS.back);
+    form.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= world.getAllPlayers().length) return;
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    const selected = world.getAllPlayers()[response.selection];
+    const selected = players.find((p) => p.name === response.id.replace("player_", ""));
     if (!selected) continue;
     await showPlayerProfileViewer(player, selected.name);
   }
@@ -355,11 +340,10 @@ export async function showPlayerProfileViewer(player: Player | undefined, target
   }
 
   if (player) {
-    const form = new ActionFormData()
-      .title(`Profile: ${target?.name ?? targetName}`)
+    await TauUi.action(`Profile: ${target?.name ?? targetName}`)
       .body(lines.join("\n") || "No profile data.")
-      .button("Close", ICONS.back);
-    await form.show(player).catch(() => undefined);
+      .button("close", "Close", { iconPath: ICONS.back })
+      .show(player);
   }
 }
 
@@ -374,36 +358,35 @@ export async function showPlayerProfileEditor(player: Player, targetName: string
   const existing = state.profiles.configs[profileId] ?? { enabled: true, sections: ["summary", "stats", "rank"], customFields: [] };
 
   while (true) {
-    const form = new ActionFormData()
-      .title(`Edit Profile: ${target.name}`)
+    const form = TauUi.action(`Edit Profile: ${target.name}`)
       .body("Choose what this player profile shows.")
-      .button(`Summary: ${existing.sections.includes("summary") ? "On" : "Off"}`)
-      .button(`Stats: ${existing.sections.includes("stats") ? "On" : "Off"}`)
-      .button(`Rank: ${existing.sections.includes("rank") ? "On" : "Off"}`)
-      .button(`Custom: ${existing.sections.includes("custom") ? "On" : "Off"}`)
-      .button("Save", ICONS.confirm)
-      .button("Back", ICONS.back);
+      .button("summary", `Summary: ${existing.sections.includes("summary") ? "On" : "Off"}`)
+      .button("stats", `Stats: ${existing.sections.includes("stats") ? "On" : "Off"}`)
+      .button("rank", `Rank: ${existing.sections.includes("rank") ? "On" : "Off"}`)
+      .button("custom", `Custom: ${existing.sections.includes("custom") ? "On" : "Off"}`)
+      .button("save", "Save", { iconPath: ICONS.confirm })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
+    if (response.id === "summary") {
       toggleSection(existing, "summary");
       continue;
     }
-    if (response.selection === 1) {
+    if (response.id === "stats") {
       toggleSection(existing, "stats");
       continue;
     }
-    if (response.selection === 2) {
+    if (response.id === "rank") {
       toggleSection(existing, "rank");
       continue;
     }
-    if (response.selection === 3) {
+    if (response.id === "custom") {
       toggleSection(existing, "custom");
       continue;
     }
-    if (response.selection === 4) {
+    if (response.id === "save") {
       state.profiles.configs[profileId] = existing;
       saveProfiles();
       tell(player, `Profile settings saved for ${target.name}.`);

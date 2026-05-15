@@ -1,5 +1,5 @@
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, EnchantmentTypes } from "@minecraft/server";
+import { TauUi } from "../ui";
 import { canonicalShopId, findShopProfile, getInventoryContainer, getScore, normalizeCategory, getProfileCategories, setScore, state, saveShops, tell } from "../storage";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import {
@@ -149,30 +149,28 @@ function applySellAllPlan(player: Player, entries: SellAllPlanEntry[]): boolean 
 
 async function moveCategoryToProfile(player: Player, sourceProfile: ShopProfile, category: string): Promise<void> {
   const profiles = Object.values(state.shops).filter((profile) => profile.id !== sourceProfile.id).sort((a, b) => a.id.localeCompare(b.id));
-  const menu = new ActionFormData()
-    .title(`Move Category: ${category}`)
+  const menu = TauUi.action(`Move Category: ${category}`)
     .body("Choose a destination profile.")
-    .button("Create new profile", ICONS.confirm);
+    .button("createProfile", "Create new profile", { iconPath: ICONS.confirm });
 
-  for (const profile of profiles) menu.button(profile.id, ICONS.shop);
-  menu.button("Cancel", ICONS.back);
+  for (const profile of profiles) menu.button(profile.id, profile.id, { iconPath: ICONS.shop });
+  menu.button("cancel", "Cancel", { iconPath: ICONS.back });
 
-  const response = await menu.show(player).catch(() => undefined);
-  if (!response || response.canceled || response.selection === undefined) return;
+  const response = await menu.show(player);
+  if (response.canceled || response.id === "cancel") return;
 
-  if (response.selection === 0) {
-    const modal = new ModalFormData()
-      .title("New Shop Profile")
-      .textField("Profile ID", "gens")
-      .textField("Currency objective", sourceProfile.currencyObjective, { defaultValue: sourceProfile.currencyObjective })
-      .textField("Destination category name", category, { defaultValue: category })
+  if (response.id === "createProfile") {
+    const modal = TauUi.modal("New Shop Profile")
+      .text("profileId", "Profile ID", { placeholder: "gens" })
+      .text("currencyObjective", "Currency objective", { placeholder: sourceProfile.currencyObjective, defaultValue: sourceProfile.currencyObjective })
+      .text("destinationCategory", "Destination category name", { placeholder: category, defaultValue: category })
       .submitButton("Create and Move");
-    const result = await modal.show(player).catch(() => undefined);
-    if (!result || result.canceled || !result.formValues) return;
+    const result = await modal.show(player);
+    if (result.canceled) return;
 
-    const profileId = String(result.formValues[0] ?? "").trim();
-    const objective = String(result.formValues[1] ?? "").trim() || sourceProfile.currencyObjective;
-    const destinationCategory = String(result.formValues[2] ?? "").trim() || category;
+    const profileId = String(result.values.profileId ?? "").trim();
+    const objective = String(result.values.currencyObjective ?? "").trim() || sourceProfile.currencyObjective;
+    const destinationCategory = String(result.values.destinationCategory ?? "").trim() || category;
     if (!profileId) {
       tell(player, "Profile ID is required.");
       return;
@@ -191,18 +189,15 @@ async function moveCategoryToProfile(player: Player, sourceProfile: ShopProfile,
     return;
   }
 
-  const profileIndex = response.selection - 1;
-  if (profileIndex < 0 || profileIndex >= profiles.length) return;
-
-  const targetProfile = profiles[profileIndex];
-  const modal = new ModalFormData()
-    .title("Move Category")
-    .textField("Destination category name", category, { defaultValue: category })
+  const targetProfile = profiles.find((p) => p.id === response.id);
+  if (!targetProfile) return;
+  const modal = TauUi.modal("Move Category")
+    .text("destinationCategory", "Destination category name", { placeholder: category, defaultValue: category })
     .submitButton("Move");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await modal.show(player);
+  if (result.canceled) return;
 
-  const destinationCategory = String(result.formValues[0] ?? "").trim() || category;
+  const destinationCategory = String(result.values.destinationCategory ?? "").trim() || category;
   moveCategoryItems(sourceProfile, category, targetProfile, destinationCategory);
   tell(player, `Moved category ${category} to ${targetProfile.id}.`);
 }
@@ -210,25 +205,23 @@ async function moveCategoryToProfile(player: Player, sourceProfile: ShopProfile,
 async function showCategoryManager(player: Player, profile: ShopProfile) {
   while (true) {
     const categories = categoryList(profile);
-    const menu = new ActionFormData()
-      .title(`Categories: ${profile.id}`)
+    const menu = TauUi.action(`Categories: ${profile.id}`)
       .body(`Count: ${categories.length}`)
-      .button("Add category", ICONS.confirm);
+      .button("addCategory", "Add category", { iconPath: ICONS.confirm });
 
-    for (const category of categories) menu.button(category, ICONS.menu);
-    menu.button("Back", ICONS.back);
+    for (const category of categories) menu.button(category, category, { iconPath: ICONS.menu });
+    menu.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
-      const modal = new ModalFormData()
-        .title("Add Category")
-        .textField("Name", "Tools")
+    if (response.id === "addCategory") {
+      const modal = TauUi.modal("Add Category")
+        .text("name", "Name", { placeholder: "Tools" })
         .submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const name = String(result.formValues[0] ?? "").trim();
+      const result = await modal.show(player);
+      if (result.canceled) continue;
+      const name = String(result.values.name ?? "").trim();
       if (!name) continue;
       profile.categories ??= [];
       if (!profile.categories.includes(name)) profile.categories.push(name);
@@ -237,9 +230,8 @@ async function showCategoryManager(player: Player, profile: ShopProfile) {
       continue;
     }
 
-    const index = response.selection - 1;
-    if (index >= 0 && index < categories.length) {
-      await showCategoryEditor(player, profile, categories[index]);
+    if (categories.includes(response.id)) {
+      await showCategoryEditor(player, profile, response.id);
       continue;
     }
 
@@ -250,26 +242,27 @@ async function showCategoryManager(player: Player, profile: ShopProfile) {
 async function showCategoryEditor(player: Player, profile: ShopProfile, category: string) {
   while (true) {
     const items = itemsInCategory(profile, category);
-    const menu = new ActionFormData()
-      .title(`${profile.id} / ${category}`)
+    const menu = TauUi.action<{ index: number }>(`${profile.id} / ${category}`)
       .body(`Items: ${items.length}`)
-      .button("Rename category", ICONS.edit)
-      .button("Move category", ICONS.shop)
-      .button("Delete category", ICONS.delete)
-      .button("Add held item", ICONS.binding)
-      .button("Add item", ICONS.confirm);
+      .button("rename", "Rename category", { iconPath: ICONS.edit })
+      .button("move", "Move category", { iconPath: ICONS.shop })
+      .button("delete", "Delete category", { iconPath: ICONS.delete })
+      .button("addHeldItem", "Add held item", { iconPath: ICONS.binding })
+      .button("addItem", "Add item", { iconPath: ICONS.confirm });
 
-    for (const item of items) menu.button(`${shopLabel(item)} (${item.buyPrice}/${item.sellPrice})`, iconForShopItem(item));
-    menu.button("Back", ICONS.back);
+    for (const item of items) menu.button(`item:${shopItemKey(item)}`, `${shopLabel(item)} (${item.buyPrice}/${item.sellPrice})`, { iconPath: iconForShopItem(item), value: { index: profile.items.indexOf(items[items.indexOf(item)]) } });
+    menu.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
-      const modal = new ModalFormData().title("Rename Category").textField("Name", category).submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const nextName = String(result.formValues[0] ?? "").trim();
+    if (response.id === "rename") {
+      const modal = TauUi.modal("Rename Category")
+        .text("name", "Name", { placeholder: category, defaultValue: category })
+        .submitButton("Save");
+      const result = await modal.show(player);
+      if (result.canceled) continue;
+      const nextName = String(result.values.name ?? "").trim();
       if (!nextName) continue;
       for (const item of profile.items) {
         if (normalizeCategory(item.category) === category) item.category = nextName;
@@ -282,12 +275,12 @@ async function showCategoryEditor(player: Player, profile: ShopProfile, category
       continue;
     }
 
-    if (response.selection === 1) {
+    if (response.id === "move") {
       await moveCategoryToProfile(player, profile, category);
       return;
     }
 
-    if (response.selection === 2) {
+    if (response.id === "delete") {
       for (const item of profile.items) {
         if (normalizeCategory(item.category) === category) item.category = undefined;
       }
@@ -297,20 +290,22 @@ async function showCategoryEditor(player: Player, profile: ShopProfile, category
       return;
     }
 
-    if (response.selection === 3) {
+    if (response.id === "addHeldItem") {
       await addHeldItemFlow(player, profile, category);
       continue;
     }
 
-    if (response.selection === 4) {
+    if (response.id === "addItem") {
       await addShopItemFlow(player, profile, category);
       continue;
     }
 
-    const index = response.selection - 5;
-    if (index >= 0 && index < items.length) {
-      await showShopItemActions(player, profile, profile.items.indexOf(items[index]));
-      continue;
+    if (response.value && typeof response.value === "object" && "index" in response.value) {
+      const idx = (response.value as { index: number }).index;
+      if (idx >= 0 && idx < profile.items.length) {
+        await showShopItemActions(player, profile, idx);
+        continue;
+      }
     }
 
     return;
@@ -318,29 +313,28 @@ async function showCategoryEditor(player: Player, profile: ShopProfile, category
 }
 
 async function addShopItemFlow(player: Player, profile: ShopProfile, category?: string) {
-  const modal = new ModalFormData()
-    .title("Add Shop Item")
-    .textField("Item ID", "minecraft:iron_ingot")
-    .textField("Display name (optional)", "Iron Ingot")
-    .textField("Category (optional)", category ?? "Tools")
-    .toggle("Can be bought", { defaultValue: true })
-    .textField("Buy price", "30", { defaultValue: "30" })
-    .toggle("Can be sold", { defaultValue: true })
-    .textField("Sell price", "15", { defaultValue: "15" })
-    .textField("Quantities (comma-separated)", "1,16,64", { defaultValue: "1,16,64" })
+  const modal = TauUi.modal("Add Shop Item")
+    .text("itemId", "Item ID", { placeholder: "minecraft:iron_ingot" })
+    .text("displayName", "Display name (optional)", { placeholder: "Iron Ingot" })
+    .text("category", "Category (optional)", { placeholder: category ?? "Tools" })
+    .toggle("canBuy", "Can be bought", true)
+    .text("buyPrice", "Buy price", { placeholder: "30", defaultValue: "30" })
+    .toggle("canSell", "Can be sold", true)
+    .text("sellPrice", "Sell price", { placeholder: "15", defaultValue: "15" })
+    .text("quantities", "Quantities (comma-separated)", { placeholder: "1,16,64", defaultValue: "1,16,64" })
     .submitButton("Add");
 
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await modal.show(player);
+  if (result.canceled) return;
 
-  const itemId = String(result.formValues[0] ?? "").trim();
-  const displayName = String(result.formValues[1] ?? "").trim();
-  const cat = String(result.formValues[2] ?? "").trim();
-  const canBuy = Boolean(result.formValues[3]);
-  const buyPrice = Math.max(0, Math.floor(Number(result.formValues[4] ?? 0)));
-  const canSell = Boolean(result.formValues[5]);
-  const sellPrice = Math.max(0, Math.floor(Number(result.formValues[6] ?? 0)));
-  const quantities = cleanQuantities(String(result.formValues[7] ?? "1"));
+  const itemId = String(result.values.itemId ?? "").trim();
+  const displayName = String(result.values.displayName ?? "").trim();
+  const cat = String(result.values.category ?? "").trim();
+  const canBuy = Boolean(result.values.canBuy);
+  const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+  const canSell = Boolean(result.values.canSell);
+  const sellPrice = Math.max(0, Math.floor(Number(result.values.sellPrice ?? 0)));
+  const quantities = cleanQuantities(String(result.values.quantities ?? "1"));
 
   if (!itemId) {
     tell(player, "Item ID is required.");
@@ -368,14 +362,13 @@ async function addHeldItemFlow(player: Player, profile: ShopProfile, category?: 
     return;
   }
 
-  const modal = promptHeldItemPricing(player, held, {
+  const result = await promptHeldItemPricing(player, held, {
     category,
     quantities: [Math.max(1, held.amount)],
-  });
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  }).show(player);
+  if (result.canceled) return;
 
-  profile.items.push(normalizeHeldShopItemResult(held, result, category));
+  profile.items.push(normalizeHeldShopItemResult(held, result.values, category));
   saveShops();
   tell(player, `Added held item ${held.typeId}.`);
 }
@@ -412,21 +405,20 @@ async function promptKitDetails(player: Player, current: {
   buyPrice: number;
   quantities: number[];
 }) {
-  const modal = new ModalFormData()
-    .title("Kit Details")
-    .textField("Kit name", "PvP Kit", { defaultValue: current.displayName })
-    .textField("Category", "Kits", { defaultValue: current.category })
-    .textField("Buy price", "100", { defaultValue: String(current.buyPrice) })
-    .textField("Quantities", "1", { defaultValue: current.quantities.join(",") })
+  const modal = TauUi.modal("Kit Details")
+    .text("displayName", "Kit name", { placeholder: "PvP Kit", defaultValue: current.displayName })
+    .text("category", "Category", { placeholder: "Kits", defaultValue: current.category })
+    .text("buyPrice", "Buy price", { placeholder: "100", defaultValue: String(current.buyPrice) })
+    .text("quantities", "Quantities", { placeholder: "1", defaultValue: current.quantities.join(",") })
     .submitButton("Save");
 
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return undefined;
+  const result = await modal.show(player);
+  if (result.canceled) return undefined;
 
-  const displayName = String(result.formValues[0] ?? "").trim();
-  const category = String(result.formValues[1] ?? "").trim();
-  const buyPrice = Math.max(0, Math.floor(Number(result.formValues[2] ?? 0)));
-  const quantities = cleanQuantities(String(result.formValues[3] ?? "1"));
+  const displayName = String(result.values.displayName ?? "").trim();
+  const category = String(result.values.category ?? "").trim();
+  const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+  const quantities = cleanQuantities(String(result.values.quantities ?? "1"));
   if (!displayName) return undefined;
 
   return {
@@ -463,8 +455,7 @@ async function kitBuilderFlow(player: Player, profile: ShopProfile, existing?: S
   };
 
   while (true) {
-    const menu = new ActionFormData()
-      .title(existing ? `Edit Kit: ${draft.displayName || existing.itemId}` : "Add Kit")
+    const menu = TauUi.action(existing ? `Edit Kit: ${draft.displayName || existing.itemId}` : "Add Kit")
       .body(
         [
           `Items: ${draft.bundle.length}`,
@@ -478,18 +469,18 @@ async function kitBuilderFlow(player: Player, profile: ShopProfile, existing?: S
           summarizeKitBundle(draft.bundle),
         ].join("\n")
       )
-      .button("Add held item", ICONS.binding)
-      .button("Edit details", ICONS.edit)
-      .button("Toggle buy/sell", ICONS.settings)
-      .button("Remove last", ICONS.delete)
-      .button("Clear items", ICONS.cancel)
-      .button("Submit", ICONS.confirm)
-      .button("Cancel", ICONS.back);
+      .button("addHeldItem", "Add held item", { iconPath: ICONS.binding })
+      .button("editDetails", "Edit details", { iconPath: ICONS.edit })
+      .button("toggleBuySell", "Toggle buy/sell", { iconPath: ICONS.settings })
+      .button("removeLast", "Remove last", { iconPath: ICONS.delete })
+      .button("clearItems", "Clear items", { iconPath: ICONS.cancel })
+      .button("submit", "Submit", { iconPath: ICONS.confirm })
+      .button("cancel", "Cancel", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "cancel") return;
 
-    if (response.selection === 0) {
+    if (response.id === "addHeldItem") {
       const held = getHeldItem(player);
       if (!held) {
         tell(player, "Hold an item first.");
@@ -501,7 +492,7 @@ async function kitBuilderFlow(player: Player, profile: ShopProfile, existing?: S
       continue;
     }
 
-    if (response.selection === 1) {
+    if (response.id === "editDetails") {
       const details = await promptKitDetails(player, draft);
       if (!details) continue;
       draft.displayName = details.displayName;
@@ -512,26 +503,26 @@ async function kitBuilderFlow(player: Player, profile: ShopProfile, existing?: S
       continue;
     }
 
-    if (response.selection === 2) {
+    if (response.id === "toggleBuySell") {
       draftFlags.canBuy = !draftFlags.canBuy;
       draftFlags.canSell = !draftFlags.canSell;
       continue;
     }
 
-    if (response.selection === 3) {
+    if (response.id === "removeLast") {
       if (draft.bundle.length === 0) continue;
       draft.bundle.pop();
       saveKitDraft(profile, draft);
       continue;
     }
 
-    if (response.selection === 4) {
+    if (response.id === "clearItems") {
       draft.bundle = [];
       saveKitDraft(profile, draft);
       continue;
     }
 
-    if (response.selection === 5) {
+    if (response.id === "submit") {
       if (!draft.displayName.trim()) {
         tell(player, "Kit name is required.");
         continue;
@@ -543,6 +534,7 @@ async function kitBuilderFlow(player: Player, profile: ShopProfile, existing?: S
 
       const itemId = existing?.itemId ?? `kit:${draft.displayName.toLowerCase().replace(/\s+/g, "_")}`;
       const nextItem: ShopItemDefinition = {
+        ...existing,
         itemId,
         displayName: draft.displayName,
         category: draft.category || "Kits",
@@ -566,12 +558,6 @@ async function kitBuilderFlow(player: Player, profile: ShopProfile, existing?: S
 
       saveShops();
       tell(player, `${existing ? "Saved" : "Added"} kit ${draft.displayName}.`);
-      return;
-    }
-
-    if (response.selection === 6) {
-      delete profile.kitDraft;
-      saveShops();
       return;
     }
 
@@ -613,29 +599,18 @@ function cleanQuantities(raw: string): number[] {
 
 function normalizeHeldShopItemResult(
   held: ItemStack,
-  result: { formValues?: (string | number | boolean | undefined)[] },
+  values: Record<string, string | number | boolean | undefined>,
   fallbackCategory?: string
 ) {
-  if (!result.formValues) {
-    return {
-      itemId: held.typeId,
-      label: held.typeId,
-      displayName: undefined,
-      category: fallbackCategory || undefined,
-      buyPrice: 0,
-      sellPrice: 0,
-      quantities: [Math.max(1, held.amount)],
-    };
-  }
-  const label = String(result.formValues[0] ?? "").trim();
-  const displayName = String(result.formValues[1] ?? "").trim();
-  const category = String(result.formValues[2] ?? "").trim();
-  const amount = Math.max(1, Math.floor(Number(result.formValues[3] ?? held.amount ?? 1)));
-  const canBuy = Boolean(result.formValues[4]);
-  const buyPrice = Math.max(0, Math.floor(Number(result.formValues[5] ?? 0)));
-  const canSell = Boolean(result.formValues[6]);
-  const sellPrice = Math.max(0, Math.floor(Number(result.formValues[7] ?? 0)));
-  const extras = cleanQuantities(String(result.formValues[8] ?? ""));
+  const label = String(values.label ?? "").trim();
+  const displayName = String(values.displayName ?? "").trim();
+  const category = String(values.category ?? "").trim();
+  const amount = Math.max(1, Math.floor(Number(values.amount ?? held.amount ?? 1)));
+  const canBuy = Boolean(values.canBuy);
+  const buyPrice = Math.max(0, Math.floor(Number(values.buyPrice ?? 0)));
+  const canSell = Boolean(values.canSell);
+  const sellPrice = Math.max(0, Math.floor(Number(values.sellPrice ?? 0)));
+  const extras = cleanQuantities(String(values.quantities ?? ""));
 
   return {
     itemId: held.typeId,
@@ -660,20 +635,23 @@ async function showCategoryItems(
 ) {
   while (true) {
     const items = itemsInCategory(profile, category);
-    const menu = new ActionFormData()
-      .title(`${profile.id} / ${category}`)
+    const menu = TauUi.action<{ index: number }>(`${profile.id} / ${category}`)
       .body(`Items: ${items.length}`);
 
-    for (const item of items) {
-      menu.button(`${shopLabel(item)} (${item.buyPrice}/${item.sellPrice})`, ICONS.shop);
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      menu.button(`item:${i}`, `${shopLabel(item)} (${item.buyPrice}/${item.sellPrice})`, { iconPath: ICONS.shop, value: { index: i } });
     }
-    menu.button("Back", ICONS.back);
+    menu.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection >= items.length) return;
-    const item = items[response.selection];
-    await openShopTransaction(player, `${profile.id}|key:${shopItemKey(item)}`);
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
+    if (response.value && typeof response.value === "object" && "index" in response.value) {
+      const idx = (response.value as { index: number }).index;
+      if (idx >= 0 && idx < items.length) {
+        await openShopTransaction(player, `${profile.id}|key:${shopItemKey(items[idx])}`);
+      }
+    }
   }
 }
 
@@ -687,30 +665,28 @@ async function showShopFront(player: Player, profileId: string) {
 
   while (true) {
     const categories = categoryList(profile);
-    const menu = new ActionFormData()
-      .title(`Shop: ${profile.id}`)
+    const menu = TauUi.action(`Shop: ${profile.id}`)
       .body(`Currency: ${profile.currencyObjective}\nCategories: ${categories.length}`);
 
-    menu.button("All Items", ICONS.shop);
-    menu.button("Sell All Sellable", ICONS.sellAll);
-    for (const category of categories) menu.button(category, ICONS.menu);
-    menu.button("Back", ICONS.back);
+    menu.button("allItems", "All Items", { iconPath: ICONS.shop });
+    menu.button("sellAll", "Sell All Sellable", { iconPath: ICONS.sellAll });
+    for (const category of categories) menu.button(category, category, { iconPath: ICONS.menu });
+    menu.button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
+    if (response.id === "allItems") {
       await showCategoryItems(player, profile, "Uncategorized");
       continue;
     }
-    if (response.selection === 1) {
+    if (response.id === "sellAll") {
       await sellAllSellableItems(player, profile.id);
       continue;
     }
 
-    const categoryIndex = response.selection - 2;
-    if (categoryIndex >= 0 && categoryIndex < categories.length) {
-      await showCategoryItems(player, profile, categories[categoryIndex]);
+    if (categories.includes(response.id)) {
+      await showCategoryItems(player, profile, response.id);
       continue;
     }
 
@@ -730,6 +706,7 @@ async function applyHeldItemAsShopItem(player: Player, profile: ShopProfile, ite
   const lore = held.getLore();
 
   const newItem: ShopItemDefinition = {
+    ...existing,
     itemId: held.typeId,
     displayName: held.nameTag?.trim() || undefined,
     category: existing?.category ?? undefined,
@@ -755,54 +732,43 @@ async function editShopItem(player: Player, profile: ShopProfile, itemIndex: num
   const item = profile.items[itemIndex];
   if (!item) return;
   if (item.bundle && item.bundle.length > 0) {
-    const mode = await new ActionFormData()
-      .title(`Edit Kit: ${shopLabel(item)}`)
+    const mode = await TauUi.action(`Edit Kit: ${shopLabel(item)}`)
       .body(`Buy enabled: ${item.canBuy !== false}\nSell enabled: ${item.canSell !== false}`)
-      .button("Toggle buy", ICONS.settings)
-      .button("Toggle sell", ICONS.settings)
-      .button("Back", ICONS.back)
-      .show(player)
-      .catch(() => undefined);
-    if (!mode || mode.canceled || mode.selection === undefined) return;
-    if (mode.selection === 0) item.canBuy = !(item.canBuy !== false);
-    if (mode.selection === 1) item.canSell = !(item.canSell !== false);
+      .button("toggleBuy", "Toggle buy", { iconPath: ICONS.settings })
+      .button("toggleSell", "Toggle sell", { iconPath: ICONS.settings })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+    if (mode.canceled || mode.id === "back") return;
+    if (mode.id === "toggleBuy") item.canBuy = !(item.canBuy !== false);
+    if (mode.id === "toggleSell") item.canSell = !(item.canSell !== false);
     saveShops();
     return;
   }
 
-  const modal = new ModalFormData()
-    .title(`Edit Item: ${item.itemId}`)
-    .textField("Item ID", "minecraft:iron_ingot", { defaultValue: item.itemId })
-    .textField("Shop label", "Iron Ingot", {
-      defaultValue: item.label ?? item.itemId,
-    })
-    .textField("Item display name (optional)", "Shown on given item", {
-      defaultValue: item.displayName ?? "",
-    })
-    .textField("Category (optional)", "Tools", {
-      defaultValue: item.category ?? "",
-    })
-    .toggle("Can be bought", { defaultValue: item.canBuy !== false })
-    .textField("Buy price", "30", { defaultValue: String(item.buyPrice) })
-    .toggle("Can be sold", { defaultValue: item.canSell !== false })
-    .textField("Sell price", "15", { defaultValue: String(item.sellPrice) })
-    .textField("Quantities (comma-separated)", "1,16,64", {
-      defaultValue: item.quantities.join(","),
-    })
+  const modal = TauUi.modal(`Edit Item: ${item.itemId}`)
+    .text("itemId", "Item ID", { placeholder: "minecraft:iron_ingot", defaultValue: item.itemId })
+    .text("label", "Shop label", { placeholder: "Iron Ingot", defaultValue: item.label ?? item.itemId })
+    .text("displayName", "Item display name (optional)", { placeholder: "Shown on given item", defaultValue: item.displayName ?? "" })
+    .text("category", "Category (optional)", { placeholder: "Tools", defaultValue: item.category ?? "" })
+    .toggle("canBuy", "Can be bought", item.canBuy !== false)
+    .text("buyPrice", "Buy price", { placeholder: "30", defaultValue: String(item.buyPrice) })
+    .toggle("canSell", "Can be sold", item.canSell !== false)
+    .text("sellPrice", "Sell price", { placeholder: "15", defaultValue: String(item.sellPrice) })
+    .text("quantities", "Quantities (comma-separated)", { placeholder: "1,16,64", defaultValue: item.quantities.join(",") })
     .submitButton("Save");
 
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const result = await modal.show(player);
+  if (result.canceled) return;
 
-  const itemId = String(result.formValues[0] ?? "").trim();
-  const label = String(result.formValues[1] ?? "").trim();
-  const displayName = String(result.formValues[2] ?? "").trim();
-  const category = String(result.formValues[3] ?? "").trim();
-  const canBuy = Boolean(result.formValues[4]);
-  const buyPrice = Math.max(0, Math.floor(Number(result.formValues[5] ?? 0)));
-  const canSell = Boolean(result.formValues[6]);
-  const sellPrice = Math.max(0, Math.floor(Number(result.formValues[7] ?? 0)));
-  const quantities = String(result.formValues[8] ?? "1")
+  const itemId = String(result.values.itemId ?? "").trim();
+  const label = String(result.values.label ?? "").trim();
+  const displayName = String(result.values.displayName ?? "").trim();
+  const category = String(result.values.category ?? "").trim();
+  const canBuy = Boolean(result.values.canBuy);
+  const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+  const canSell = Boolean(result.values.canSell);
+  const sellPrice = Math.max(0, Math.floor(Number(result.values.sellPrice ?? 0)));
+  const quantities = String(result.values.quantities ?? "1")
     .split(",")
     .map((v) => Math.max(1, Math.floor(Number(v.trim()))))
     .filter((v, i, a) => a.indexOf(v) === i)
@@ -814,6 +780,7 @@ async function editShopItem(player: Player, profile: ShopProfile, itemIndex: num
   }
 
   profile.items[itemIndex] = {
+    ...item,
     itemId,
     label: label || itemId,
     displayName: displayName || undefined,
@@ -845,19 +812,21 @@ async function moveShopItemToCategory(player: Player, profile: ShopProfile, item
   const item = profile.items[itemIndex];
   if (!item) return;
   const categories = categoryList(profile);
-  const menu = new ActionFormData().title(`Move: ${shopLabel(item)}`);
-  for (const category of categories) menu.button(category, ICONS.menu);
-  menu.button("New category", ICONS.confirm);
-  menu.button("Cancel", ICONS.cancel);
-  const response = await menu.show(player).catch(() => undefined);
-  if (!response || response.canceled || response.selection === undefined) return;
+  const menu = TauUi.action(`Move: ${shopLabel(item)}`);
+  for (const category of categories) menu.button(category, category, { iconPath: ICONS.menu });
+  menu.button("newCategory", "New category", { iconPath: ICONS.confirm });
+  menu.button("cancel", "Cancel", { iconPath: ICONS.cancel });
+  const response = await menu.show(player);
+  if (response.canceled || response.id === "cancel") return;
   let target = "";
-  if (response.selection < categories.length) target = categories[response.selection];
-  else if (response.selection === categories.length) {
-    const modal = new ModalFormData().title("New Category").textField("Name", "Tools").submitButton("Save");
-    const result = await modal.show(player).catch(() => undefined);
-    if (!result || result.canceled || !result.formValues) return;
-    target = String(result.formValues[0] ?? "").trim();
+  if (categories.includes(response.id)) target = response.id;
+  else if (response.id === "newCategory") {
+    const modal = TauUi.modal("New Category")
+      .text("name", "Name", { placeholder: "Tools" })
+      .submitButton("Save");
+    const result = await modal.show(player);
+    if (result.canceled) return;
+    target = String(result.values.name ?? "").trim();
   } else return;
   if (!target) return;
   item.category = target;
@@ -869,8 +838,7 @@ async function showShopItemActions(player: Player, profile: ShopProfile, itemInd
   const item = profile.items[itemIndex];
   if (!item) return;
   while (true) {
-    const menu = new ActionFormData()
-      .title(shopLabel(item))
+    const menu = TauUi.action(shopLabel(item))
       .body(
         [
           `Mode: ${item.bundle && item.bundle.length > 0 ? "kit" : "item"}`,
@@ -881,32 +849,32 @@ async function showShopItemActions(player: Player, profile: ShopProfile, itemInd
           item.exactDurability ? "§aExact durability match" : "",
         ].filter(Boolean).join("\n")
       )
-      .button("Edit", ICONS.edit)
-      .button("Move category", ICONS.menu)
-      .button("Duplicate", ICONS.confirm)
-      .button("Advanced Properties", ICONS.settings)
-      .button("Delete", ICONS.delete)
-      .button("Back", ICONS.back);
-    const response = await menu.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection === 0) {
+      .button("edit", "Edit", { iconPath: ICONS.edit })
+      .button("moveCategory", "Move category", { iconPath: ICONS.menu })
+      .button("duplicate", "Duplicate", { iconPath: ICONS.confirm })
+      .button("advancedProps", "Advanced Properties", { iconPath: ICONS.settings })
+      .button("delete", "Delete", { iconPath: ICONS.delete })
+      .button("back", "Back", { iconPath: ICONS.back });
+    const response = await menu.show(player);
+    if (response.canceled || response.id === "back") return;
+    if (response.id === "edit") {
       if (item.bundle && item.bundle.length > 0) await editKitItemFlow(player, profile, itemIndex);
       else await editShopItem(player, profile, itemIndex);
       return;
     }
-    if (response.selection === 1) {
+    if (response.id === "moveCategory") {
       await moveShopItemToCategory(player, profile, itemIndex);
       return;
     }
-    if (response.selection === 2) {
+    if (response.id === "duplicate") {
       await duplicateShopItem(player, profile, itemIndex);
       return;
     }
-    if (response.selection === 3) {
+    if (response.id === "advancedProps") {
       await showAdvancedProperties(player, profile, itemIndex);
       continue;
     }
-    if (response.selection === 4) {
+    if (response.id === "delete") {
       profile.items.splice(itemIndex, 1);
       saveShops();
       tell(player, `Deleted ${item.itemId}.`);
@@ -926,8 +894,7 @@ async function showAdvancedProperties(player: Player, profile: ShopProfile, item
   const durText = durComp ? `${item.durability}/${item.maxDurability ?? "?"}` : "Not set";
 
   while (true) {
-    const form = new ActionFormData()
-      .title("Advanced Properties")
+    const form = TauUi.action("Advanced Properties")
       .body(
         [
           `Durability: ${durText}`,
@@ -936,32 +903,31 @@ async function showAdvancedProperties(player: Player, profile: ShopProfile, item
           `Custom Data: ${item.customData ? "Set" : "None"}`,
         ].join("\n")
       )
-      .button("Toggle Exact Durability", ICONS.settings)
-      .button("Toggle Show Enchants", ICONS.settings)
-      .button("Edit Custom Data", ICONS.edit)
-      .button("Back", ICONS.back);
+      .button("toggleExactDurability", "Toggle Exact Durability", { iconPath: ICONS.settings })
+      .button("toggleShowEnchants", "Toggle Show Enchants", { iconPath: ICONS.settings })
+      .button("editCustomData", "Edit Custom Data", { iconPath: ICONS.edit })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
+    if (response.id === "toggleExactDurability") {
       item.exactDurability = !item.exactDurability;
       saveShops();
       continue;
     }
-    if (response.selection === 1) {
+    if (response.id === "toggleShowEnchants") {
       item.showEnchantsInPreview = !item.showEnchantsInPreview;
       saveShops();
       continue;
     }
-    if (response.selection === 2) {
-      const modal = new ModalFormData()
-        .title("Custom Data (JSON)")
-        .textField("Data", '{"canPlaceOn": [], "canDestroy": []}', { defaultValue: item.customData ?? "" })
+    if (response.id === "editCustomData") {
+      const modal = TauUi.modal("Custom Data (JSON)")
+        .text("data", "Data", { placeholder: '{"canPlaceOn": [], "canDestroy": []}', defaultValue: item.customData ?? "" })
         .submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const data = String(result.formValues[0] ?? "").trim();
+      const result = await modal.show(player);
+      if (result.canceled) continue;
+      const data = String(result.values.data ?? "").trim();
       if (data) {
         try {
           JSON.parse(data);
@@ -1021,16 +987,15 @@ export async function sellAllSellableItems(player: Player, profileId: string) {
   lines.push(`§aTotal: +${totalGain} ${profile.currencyObjective}`);
 
   while (true) {
-    const confirmForm = new ActionFormData()
-      .title("Sell All")
+    const confirmForm = TauUi.action("Sell All")
       .body(`Sell these items?\n\n${lines.join("\n")}`)
-      .button("§aConfirm Sell", ICONS.sellAll)
-      .button("Cancel", ICONS.cancel);
+      .button("confirmSell", "§aConfirm Sell", { iconPath: ICONS.sellAll })
+      .button("cancel", "Cancel", { iconPath: ICONS.cancel });
 
-    const response = await confirmForm.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await confirmForm.show(player);
+    if (response.canceled || response.id === "cancel") return;
 
-    if (response.selection === 0) {
+    if (response.id === "confirmSell") {
       const latest = buildSellAllPlan(player, profile);
       if (latest.entries.length === 0) {
         tell(player, "Nothing sellable was found.");
@@ -1084,8 +1049,7 @@ export async function openShopTransaction(
   }
 
   const title = shopLabel(item);
-  const actionForm = new ActionFormData()
-    .title(`§l${title}§r`)
+  const actionForm = TauUi.action<{ mode: "buy" | "sell" | "sell_all_item"; qty: number }>(`§l${title}§r`)
     .body(
       [
         `Currency: ${profile.currencyObjective}`,
@@ -1095,34 +1059,28 @@ export async function openShopTransaction(
       ].join("\n")
     );
 
-  const operations: { mode: "buy" | "sell" | "sell_all_item"; qty: number }[] =
-    [];
   for (const qty of item.quantities) {
     const buyCost = item.buyPrice * qty;
     if (item.canBuy !== false && item.buyPrice > 0) {
-      actionForm.button(`Buy ${qty} (-${buyCost})`, ICONS.buy);
-      operations.push({ mode: "buy", qty });
+      actionForm.button(`buy:${qty}`, `Buy ${qty} (-${buyCost})`, { iconPath: ICONS.buy, value: { mode: "buy", qty } });
     }
     if (item.bundle && item.bundle.length > 0) {
       continue;
     }
     if (item.canSell !== false && item.sellPrice > 0) {
       const sellGain = item.sellPrice * qty;
-      actionForm.button(`Sell ${qty} (+${sellGain})`, ICONS.sell);
-      operations.push({ mode: "sell", qty });
+      actionForm.button(`sell:${qty}`, `Sell ${qty} (+${sellGain})`, { iconPath: ICONS.sell, value: { mode: "sell", qty } });
     }
   }
   if (item.canSell !== false && item.sellPrice > 0 && !(item.bundle && item.bundle.length > 0)) {
-    actionForm.button("Sell All This Item", ICONS.sellAll);
-    operations.push({ mode: "sell_all_item", qty: 0 });
+    actionForm.button("sell_all_item", "Sell All This Item", { iconPath: ICONS.sellAll, value: { mode: "sell_all_item", qty: 0 } });
   }
-  actionForm.button("Close", ICONS.cancel);
+  actionForm.button("close", "Close", { iconPath: ICONS.cancel });
 
-  const response = await actionForm.show(player).catch(() => undefined);
-  if (!response || response.canceled || response.selection === undefined) return;
-  if (response.selection >= operations.length) return;
+  const response = await actionForm.show(player);
+  if (response.canceled || response.id === "close" || !response.value) return;
 
-  const op = operations[response.selection];
+  const op = response.value;
   if (op.mode === "buy") {
     const current = getScore(player, profile.currencyObjective);
     if (current === undefined) {
@@ -1221,29 +1179,27 @@ export async function openShopTransaction(
 export async function showShopProfilesEditor(player: Player) {
   while (true) {
     const ids = Object.keys(state.shops);
-    const form = new ActionFormData()
-      .title("Shop Profiles")
+    const form = TauUi.action<{ profileId: string }>("Shop Profiles")
       .body(`Profiles: ${ids.length}`)
-      .button("Create new profile", ICONS.confirm)
-      .button("Delete profile", ICONS.delete)
-      .button("Back", ICONS.back);
+      .button("createProfile", "Create new profile", { iconPath: ICONS.confirm })
+      .button("deleteProfile", "Delete profile", { iconPath: ICONS.delete })
+      .button("back", "Back", { iconPath: ICONS.back });
 
     for (const id of ids) {
-      form.button(id, ICONS.shop);
+      form.button(id, id, { iconPath: ICONS.shop, value: { profileId: id } });
     }
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await form.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
-      const modal = new ModalFormData()
-        .title("Create Shop Profile")
-        .textField("Profile ID", "default", { defaultValue: "default" })
-        .textField("Currency objective", "money", { defaultValue: "money" })
+    if (response.id === "createProfile") {
+      const modal = TauUi.modal("Create Shop Profile")
+        .text("profileId", "Profile ID", { placeholder: "default", defaultValue: "default" })
+        .text("currencyObjective", "Currency objective", { placeholder: "money", defaultValue: "money" })
         .submitButton("Create");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const id = String(result.formValues[0] ?? "").trim();
-      const objective = String(result.formValues[1] ?? "").trim();
+      const result = await modal.show(player);
+      if (result.canceled) continue;
+      const id = String(result.values.profileId ?? "").trim();
+      const objective = String(result.values.currencyObjective ?? "").trim();
       if (!id || !objective) continue;
       state.shops[id] = state.shops[id] ?? {
         id,
@@ -1257,28 +1213,30 @@ export async function showShopProfilesEditor(player: Player) {
       continue;
     }
 
-    if (response.selection === 1) {
+    if (response.id === "deleteProfile") {
       if (ids.length === 0) {
         tell(player, "No profiles to delete.");
         continue;
       }
-      const picker = new ActionFormData().title("Delete Shop Profile");
-      for (const id of ids) picker.button(id, ICONS.delete);
-      picker.button("Cancel", ICONS.cancel);
-      const pick = await picker.show(player).catch(() => undefined);
-      if (!pick || pick.canceled || pick.selection === undefined) continue;
-      if (pick.selection >= ids.length) continue;
-      const id = ids[pick.selection];
+      const picker = TauUi.action<{ profileId: string }>("Delete Shop Profile");
+      for (const id of ids) picker.button(id, id, { iconPath: ICONS.delete, value: { profileId: id } });
+      picker.button("cancel", "Cancel", { iconPath: ICONS.cancel });
+      const pick = await picker.show(player);
+      if (pick.canceled || pick.id === "cancel") continue;
+      const id = pick.value && typeof pick.value === "object" && "profileId" in pick.value ? (pick.value as { profileId: string }).profileId : pick.id;
+      if (!ids.includes(id)) continue;
       delete state.shops[id];
       saveShops();
       tell(player, `Deleted profile "${id}".`);
       continue;
     }
 
-    const profileIndex = response.selection - 3;
-    if (profileIndex >= 0 && profileIndex < ids.length) {
-      await showShopItemEditor(player, ids[profileIndex]);
-      continue;
+    if (response.value && typeof response.value === "object" && "profileId" in response.value) {
+      const pid = (response.value as { profileId: string }).profileId;
+      if (ids.includes(pid)) {
+        await showShopItemEditor(player, pid);
+        continue;
+      }
     }
 
     return;
@@ -1302,31 +1260,27 @@ async function showShopItemEditor(player: Player, profileId: string) {
       sellPrice: "Sell Price (Low)",
       category: "Category (A-Z)",
     };
-    const picker = new ActionFormData()
-      .title(`Shop Profile: ${profile.id}`)
+    const picker = TauUi.action(`Shop Profile: ${profile.id}`)
       .body(`Currency: ${profile.currencyObjective}\nSort: ${sortLabels[sortMode]}\nCategories: ${categories.length}`)
-      .button("Set currency objective", ICONS.settings)
-      .button("Categories", ICONS.menu)
-      .button(`Sort: ${sortLabels[sortMode]}`, ICONS.settings)
-      .button("Add item", ICONS.confirm)
-      .button("Add kit", ICONS.shop)
-      .button("Add held item", ICONS.binding)
-      .button("Sell all sellable", ICONS.sellAll)
-      .button("Back", ICONS.back);
+      .button("setCurrency", "Set currency objective", { iconPath: ICONS.settings })
+      .button("categories", "Categories", { iconPath: ICONS.menu })
+      .button("sort", `Sort: ${sortLabels[sortMode]}`, { iconPath: ICONS.settings })
+      .button("addItem", "Add item", { iconPath: ICONS.confirm })
+      .button("addKit", "Add kit", { iconPath: ICONS.shop })
+      .button("addHeldItem", "Add held item", { iconPath: ICONS.binding })
+      .button("sellAll", "Sell all sellable", { iconPath: ICONS.sellAll })
+      .button("back", "Back", { iconPath: ICONS.back });
 
-    const response = await picker.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    const response = await picker.show(player);
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
-      const modal = new ModalFormData()
-        .title("Set Currency Objective")
-        .textField("Objective", "money", {
-          defaultValue: profile.currencyObjective,
-        })
+    if (response.id === "setCurrency") {
+      const modal = TauUi.modal("Set Currency Objective")
+        .text("objective", "Objective", { placeholder: "money", defaultValue: profile.currencyObjective })
         .submitButton("Save");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
-      const objective = String(result.formValues[0] ?? "").trim();
+      const result = await modal.show(player);
+      if (result.canceled) continue;
+      const objective = String(result.values.objective ?? "").trim();
       if (!objective) continue;
       profile.currencyObjective = objective;
       saveShops();
@@ -1334,62 +1288,63 @@ async function showShopItemEditor(player: Player, profileId: string) {
       continue;
     }
 
-    if (response.selection === 1) {
+    if (response.id === "categories") {
       await showCategoryManager(player, profile);
       continue;
     }
 
-    if (response.selection === 2) {
-      const sortForm = new ActionFormData()
-        .title("Sort Mode")
+    if (response.id === "sort") {
+      const sortForm = TauUi.action<{ mode: ShopSortMode }>("Sort Mode")
         .body("Choose how items are sorted in this shop.");
       for (const mode of sortModes) {
         const checked = mode === sortMode ? "§a✓ " : "  ";
-        sortForm.button(`${checked}${sortLabels[mode]}`, ICONS.settings);
+        sortForm.button(mode, `${checked}${sortLabels[mode]}`, { iconPath: ICONS.settings, value: { mode } });
       }
-      sortForm.button("Back", ICONS.back);
+      sortForm.button("back", "Back", { iconPath: ICONS.back });
 
-      const sortResponse = await sortForm.show(player).catch(() => undefined);
-      if (!sortResponse || sortResponse.canceled || sortResponse.selection === undefined) continue;
-      if (sortResponse.selection < sortModes.length) {
-        profile.sortMode = sortModes[sortResponse.selection];
-        saveShops();
-        tell(player, `Sort mode set to "${sortLabels[profile.sortMode]}".`);
+      const sortResponse = await sortForm.show(player);
+      if (sortResponse.canceled || sortResponse.id === "back") continue;
+      if (sortResponse.value && typeof sortResponse.value === "object" && "mode" in sortResponse.value) {
+        const selectedMode = (sortResponse.value as { mode: ShopSortMode }).mode;
+        if (sortModes.includes(selectedMode)) {
+          profile.sortMode = selectedMode;
+          saveShops();
+          tell(player, `Sort mode set to "${sortLabels[profile.sortMode]}".`);
+        }
       }
       continue;
     }
 
-    if (response.selection === 3) {
-      const modal = new ModalFormData()
-        .title("Add Shop Item")
-        .textField("Item ID", "minecraft:iron_ingot")
-        .textField("Shop label", "Iron Ingot")
-        .textField("Item display name (optional)", "Shown on given item")
-        .textField("Category (optional)", "Tools")
-        .toggle("Can be bought", { defaultValue: true })
-        .textField("Buy price", "30", { defaultValue: "30" })
-        .toggle("Can be sold", { defaultValue: true })
-        .textField("Sell price", "15", { defaultValue: "15" })
-        .textField("Quantities (comma-separated)", "1,16,64", { defaultValue: "1,16,64" })
-        .textField("Kit items (optional)", "", { defaultValue: "" })
+    if (response.id === "addItem") {
+      const modal = TauUi.modal("Add Shop Item")
+        .text("itemId", "Item ID", { placeholder: "minecraft:iron_ingot" })
+        .text("label", "Shop label", { placeholder: "Iron Ingot" })
+        .text("displayName", "Item display name (optional)", { placeholder: "Shown on given item" })
+        .text("category", "Category (optional)", { placeholder: "Tools" })
+        .toggle("canBuy", "Can be bought", true)
+        .text("buyPrice", "Buy price", { placeholder: "30", defaultValue: "30" })
+        .toggle("canSell", "Can be sold", true)
+        .text("sellPrice", "Sell price", { placeholder: "15", defaultValue: "15" })
+        .text("quantities", "Quantities (comma-separated)", { placeholder: "1,16,64", defaultValue: "1,16,64" })
+        .text("kitItems", "Kit items (optional)", { placeholder: "", defaultValue: "" })
         .submitButton("Add");
-      const result = await modal.show(player).catch(() => undefined);
-      if (!result || result.canceled || !result.formValues) continue;
+      const result = await modal.show(player);
+      if (result.canceled) continue;
 
-      const itemId = String(result.formValues[0] ?? "").trim();
-      const label = String(result.formValues[1] ?? "").trim();
-      const displayName = String(result.formValues[2] ?? "").trim();
-      const category = String(result.formValues[3] ?? "").trim();
-      const canBuy = Boolean(result.formValues[4]);
-      const buyPrice = Math.max(0, Math.floor(Number(result.formValues[5] ?? 0)));
-      const canSell = Boolean(result.formValues[6]);
-      const sellPrice = Math.max(0, Math.floor(Number(result.formValues[7] ?? 0)));
-      const quantities = (String(result.formValues[8] ?? "1"))
+      const itemId = String(result.values.itemId ?? "").trim();
+      const label = String(result.values.label ?? "").trim();
+      const displayName = String(result.values.displayName ?? "").trim();
+      const category = String(result.values.category ?? "").trim();
+      const canBuy = Boolean(result.values.canBuy);
+      const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+      const canSell = Boolean(result.values.canSell);
+      const sellPrice = Math.max(0, Math.floor(Number(result.values.sellPrice ?? 0)));
+      const quantities = (String(result.values.quantities ?? "1"))
         .split(",")
         .map((v: string) => Math.max(1, Math.floor(Number(v.trim()))))
         .filter((v: number, i: number, a: number[]) => a.indexOf(v) === i)
         .sort((a: number, b: number) => a - b);
-      const bundle = splitList(String(result.formValues[9] ?? "")).map(parseItemStackDefinitionLine).filter((entry): entry is ShopItemStackDefinition => Boolean(entry));
+      const bundle = splitList(String(result.values.kitItems ?? "")).map(parseItemStackDefinitionLine).filter((entry): entry is ShopItemStackDefinition => Boolean(entry));
 
       if (!itemId) {
         tell(player, "Item ID is required.");
@@ -1416,17 +1371,17 @@ async function showShopItemEditor(player: Player, profileId: string) {
       continue;
     }
 
-    if (response.selection === 4) {
+    if (response.id === "addKit") {
       await kitBuilderFlow(player, profile);
       continue;
     }
 
-    if (response.selection === 5) {
+    if (response.id === "addHeldItem") {
       await addHeldItemFlow(player, profile);
       continue;
     }
 
-    if (response.selection === 6) {
+    if (response.id === "sellAll") {
       await sellAllSellableItems(player, profile.id);
       continue;
     }

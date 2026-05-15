@@ -1,5 +1,5 @@
 import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, EnchantmentTypes } from "@minecraft/server";
-import { ModalFormData } from "@minecraft/server-ui";
+import { TauUi } from "../ui";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import { getInventoryContainer, normalizeCategory, getProfileCategories, saveShops } from "../storage";
 
@@ -356,17 +356,16 @@ export function removeItemInstance(player: Player, item: ShopItemDefinition, qua
 }
 
 export function promptHeldItemPricing(player: Player, held: ItemStack, preset?: Partial<ShopProfile["items"][number]>) {
-  return new ModalFormData()
-    .title(`Use Held Item: ${held.typeId}`)
-    .textField("Shop label", held.typeId, { defaultValue: preset?.label ?? held.typeId })
-    .textField("Display name (optional)", "Shown on item", { defaultValue: preset?.displayName ?? held.nameTag ?? "" })
-    .textField("Category", "Tools", { defaultValue: preset?.category ?? "" })
-    .textField("Amount to use", "1", { defaultValue: String(preset?.quantities?.[0] ?? Math.max(1, held.amount)) })
-    .toggle("Can be bought", { defaultValue: (preset?.buyPrice ?? 0) > 0 })
-    .textField("Buy price", "0", { defaultValue: String(preset?.buyPrice ?? 0) })
-    .toggle("Can be sold", { defaultValue: (preset?.sellPrice ?? 0) > 0 })
-    .textField("Sell price", "0", { defaultValue: String(preset?.sellPrice ?? 0) })
-    .textField("Extra quantities (comma-separated)", "1,16,64", { defaultValue: preset?.quantities?.join(",") ?? "1,16,64" })
+  return TauUi.modal(`Use Held Item: ${held.typeId}`)
+    .text("label", "Shop label", { placeholder: held.typeId, defaultValue: preset?.label ?? held.typeId })
+    .text("displayName", "Display name (optional)", { placeholder: "Shown on item", defaultValue: preset?.displayName ?? held.nameTag ?? "" })
+    .text("category", "Category", { placeholder: "Tools", defaultValue: preset?.category ?? "" })
+    .text("amount", "Amount to use", { placeholder: "1", defaultValue: String(preset?.quantities?.[0] ?? Math.max(1, held.amount)) })
+    .toggle("canBuy", "Can be bought", (preset?.buyPrice ?? 0) > 0)
+    .text("buyPrice", "Buy price", { placeholder: "0", defaultValue: String(preset?.buyPrice ?? 0) })
+    .toggle("canSell", "Can be sold", (preset?.sellPrice ?? 0) > 0)
+    .text("sellPrice", "Sell price", { placeholder: "0", defaultValue: String(preset?.sellPrice ?? 0) })
+    .text("quantities", "Extra quantities (comma-separated)", { placeholder: "1,16,64", defaultValue: preset?.quantities?.join(",") ?? "1,16,64" })
     .submitButton("Save");
 }
 

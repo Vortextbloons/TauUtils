@@ -35,7 +35,9 @@ type CombatKillContext = {
 
 const combatSnapshotsByPlayerId = new Map<string, CombatLootSnapshot>();
 const pendingCombatLogouts: PendingCombatLogout[] = [];
+const lastCombatSnapshotAtByPlayerId = new Map<string, number>();
 const PENALTY_KEY_PREFIX = "tau:combat:penalty:";
+const COMBAT_SNAPSHOT_INTERVAL_MS = 3000;
 const EQUIPMENT_SLOTS: EquipmentSlot[] = [
   EquipmentSlot.Head,
   EquipmentSlot.Chest,
@@ -68,6 +70,7 @@ function isCombatSystemEnabled(): boolean {
 function clearCombatTag(player: Player, playerId: string, notify: boolean): void {
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
+  lastCombatSnapshotAtByPlayerId.delete(playerId);
   if (!notify) return;
   tell(player, state.combat.config.exitMessage);
 }
@@ -82,7 +85,10 @@ function isTagged(player: Player, playerId: string): boolean {
 
 function hasActiveTag(playerId: string): boolean {
   const active = hasActiveCombatTag(playerId, nowMs());
-  if (!active) combatSnapshotsByPlayerId.delete(playerId);
+  if (!active) {
+    combatSnapshotsByPlayerId.delete(playerId);
+    lastCombatSnapshotAtByPlayerId.delete(playerId);
+  }
   return active;
 }
 
@@ -91,6 +97,7 @@ function setCombatTag(player: Player): void {
   const tagged = isTagged(player, id);
   combatTagsByPlayerId.set(id, { expiresAt: nowMs() + getCombatDurationMs() });
   combatSnapshotsByPlayerId.set(id, captureCombatLoot(player));
+  lastCombatSnapshotAtByPlayerId.set(id, nowMs());
   if (!tagged) tell(player, state.combat.config.enterMessage);
 }
 
@@ -198,6 +205,7 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
   if (snapshot.inventory.length + snapshot.equipment.length === 0) {
     combatTagsByPlayerId.delete(playerId);
     combatSnapshotsByPlayerId.delete(playerId);
+    lastCombatSnapshotAtByPlayerId.delete(playerId);
     return false;
   }
 
@@ -218,6 +226,7 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
   }
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
+  lastCombatSnapshotAtByPlayerId.delete(playerId);
   return true;
 }
 
@@ -253,6 +262,7 @@ export function handleCombatJoin(player: Player): void {
   if (!penaltyRaw) return;
   world.setDynamicProperty(key, undefined);
   combatSnapshotsByPlayerId.delete(playerId);
+  lastCombatSnapshotAtByPlayerId.delete(playerId);
   clearInventoryAndEquipment(player);
   tell(player, state.combat.config.rejoinPenaltyMessage);
 }
@@ -261,6 +271,8 @@ export function handleCombatLeave(player: Player): void {
   const playerId = getPlayerId(player);
   if (!isCombatSystemEnabled()) {
     combatTagsByPlayerId.delete(playerId);
+    combatSnapshotsByPlayerId.delete(playerId);
+    lastCombatSnapshotAtByPlayerId.delete(playerId);
     return;
   }
 
@@ -293,6 +305,7 @@ export function handleCombatLeave(player: Player): void {
 
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
+  lastCombatSnapshotAtByPlayerId.delete(playerId);
   system.run(() => {
     processPendingCombatLogouts();
   });
@@ -302,6 +315,7 @@ export function handleCombatDeath(player: Player): void {
   const id = getPlayerId(player);
   combatTagsByPlayerId.delete(id);
   combatSnapshotsByPlayerId.delete(id);
+  lastCombatSnapshotAtByPlayerId.delete(id);
 }
 
 export function resolveCombatAttacker(damageSource: EntityDamageSource): Player | undefined {
@@ -440,28 +454,38 @@ export function processCombatTags(): void {
   if (!isCombatSystemEnabled()) {
     combatTagsByPlayerId.clear();
     combatSnapshotsByPlayerId.clear();
+    lastCombatSnapshotAtByPlayerId.clear();
     pendingCombatLogouts.length = 0;
     return;
   }
 
   processPendingCombatLogouts();
+  if (combatTagsByPlayerId.size === 0) return;
 
+  const now = nowMs();
   const onlineById = new Map<string, Player>();
   for (const player of world.getAllPlayers()) {
     onlineById.set(getPlayerId(player), player);
   }
 
   for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
-    if (entry.expiresAt <= nowMs()) continue;
+    if (entry.expiresAt <= now) continue;
+    if (now - (lastCombatSnapshotAtByPlayerId.get(playerId) ?? 0) < COMBAT_SNAPSHOT_INTERVAL_MS) continue;
     const player = onlineById.get(playerId);
-    if (player) combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
+    if (player) {
+      combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
+      lastCombatSnapshotAtByPlayerId.set(playerId, now);
+    }
   }
 
-  const now = nowMs();
   for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
     if (entry.expiresAt > now) continue;
     const player = onlineById.get(playerId);
     if (player) clearCombatTag(player, playerId, true);
-    else combatTagsByPlayerId.delete(playerId);
+    else {
+      combatTagsByPlayerId.delete(playerId);
+      combatSnapshotsByPlayerId.delete(playerId);
+      lastCombatSnapshotAtByPlayerId.delete(playerId);
+    }
   }
 }

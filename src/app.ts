@@ -3,6 +3,7 @@ import { loadState, saveShops, state } from "./storage";
 import { initializeOnlinePlayersAfterReload, registerEventInterceptors } from "./events";
 import { registerCustomCommands } from "./commands";
 import { registerSidebarSystem } from "./sidebar";
+import { registerLootChestSystem } from "./loot-chests";
 import { reconcileAllPlotState } from "./plots";
 import { reconcileTeamAssignments } from "./teams";
 import { formatTauUtilsLoadedMessage } from "./version";
@@ -65,6 +66,7 @@ function bootstrap() {
     reconcileAllPlotState("startup_phase_2");
     registerEventInterceptors();
     registerSidebarSystem();
+    registerLootChestSystem();
   }, 2);
 
   system.runTimeout(() => {

@@ -1,10 +1,9 @@
 import { Player, system, world } from "@minecraft/server";
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ICONS, type SidebarDefinition } from "./tau-models";
+import { TauUi } from "./ui";
 import { isOperator, saveSidebars, state, tell } from "./storage";
 import { renderTemplate } from "./templates";
 
-let sidebarTick = 0;
 let tpsSampleTick = 0;
 let tpsSampleTime = Date.now();
 let cachedTps = "20.0";
@@ -12,10 +11,22 @@ let cachedTps = "20.0";
 type SidebarRenderCache = {
   sidebarId?: string;
   lastRenderTick: number;
+  lastSendTick: number;
   lastText: string;
 };
 
-let enabledSidebarCache: SidebarDefinition[] | undefined;
+type SidebarRuntime = {
+  sidebar: SidebarDefinition;
+  lines: string[];
+  updateInterval: number;
+};
+
+type SidebarRuntimeCache = {
+  ordered: SidebarRuntime[];
+  byId: Map<string, SidebarRuntime>;
+};
+
+let enabledSidebarCache: SidebarRuntimeCache | undefined;
 const playerRenderCache = new Map<string, SidebarRenderCache>();
 
 const DEFAULT_SIDEBAR: SidebarDefinition = {
@@ -82,28 +93,40 @@ function getServerTps(): string {
   return cachedTps;
 }
 
-function getEnabledSidebars(): SidebarDefinition[] {
+function getEnabledSidebarCache(): SidebarRuntimeCache {
   if (!enabledSidebarCache) {
-    enabledSidebarCache = Object.values(state.sidebars.sidebars)
+    const ordered = Object.values(state.sidebars.sidebars)
       .filter((sidebar) => sidebar.enabled)
-      .sort((a, b) => b.priority - a.priority);
+      .sort((a, b) => b.priority - a.priority)
+      .map((sidebar) => ({
+        sidebar,
+        lines: sidebar.lines.map((line) => line.trim()).filter((line) => line.length > 0).slice(0, 15),
+        updateInterval: Math.max(1, Math.floor(sidebar.updateInterval || 20)),
+      }));
+    enabledSidebarCache = {
+      ordered,
+      byId: new Map(ordered.map((runtime) => [runtime.sidebar.id, runtime])),
+    };
   }
   return enabledSidebarCache;
 }
 
-function pickSidebarForPlayer(player: Player): SidebarDefinition | undefined {
+function getEnabledSidebars(): SidebarRuntime[] {
+  return getEnabledSidebarCache().ordered;
+}
+
+function pickSidebarForPlayer(player: Player): SidebarRuntime | undefined {
   if (!state.sidebars.enabled) return undefined;
 
   const candidates = getEnabledSidebars();
   if (candidates.length === 0) return undefined;
+  const byId = getEnabledSidebarCache().byId;
 
-  const tagged = new Set<string>();
   for (const tag of player.getTags()) {
-    if (tag.startsWith("sidebar:")) tagged.add(tag.slice("sidebar:".length));
-  }
-
-  for (const sidebar of candidates) {
-    if (tagged.has(sidebar.id)) return sidebar;
+    if (!tag.startsWith("sidebar:")) continue;
+    const id = tag.slice("sidebar:".length);
+    const tagged = byId.get(id);
+    if (tagged) return tagged;
   }
   return candidates[0];
 }
@@ -112,19 +135,13 @@ function renderSidebarTemplate(player: Player, sidebar: SidebarDefinition, line:
   return renderTemplate(line, { player, moneyObjective: sidebar.moneyObjective, extra: { tps: getServerTps() } });
 }
 
-function buildSidebarLines(player: Player, sidebar: SidebarDefinition): string[] {
-  const lines: string[] = [];
-  for (const line of sidebar.lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    lines.push(trimmed);
-    if (lines.length >= 15) break;
-  }
+function buildSidebarLines(player: Player, runtime: SidebarRuntime): string[] {
+  const { sidebar, lines } = runtime;
   if (!sidebar.scroll || lines.length <= 1) {
     return lines.map((line) => renderSidebarTemplate(player, sidebar, line));
   }
-  const interval = Math.max(1, sidebar.updateInterval);
-  const offset = Math.floor(sidebarTick / interval) % lines.length;
+  const interval = runtime.updateInterval;
+  const offset = Math.floor(system.currentTick / interval) % lines.length;
   const rotated = [...lines.slice(offset), ...lines.slice(0, offset)];
   return rotated.map((line) => renderSidebarTemplate(player, sidebar, line));
 }
@@ -134,9 +151,10 @@ function truncateLine(line: string, max = 80): string {
   return line.slice(0, max - 1) + "…";
 }
 
-function buildSidebarText(player: Player, sidebar: SidebarDefinition): string {
+function buildSidebarText(player: Player, runtime: SidebarRuntime): string {
+  const { sidebar } = runtime;
   const title = truncateLine(renderSidebarTemplate(player, sidebar, sidebar.title), 80);
-  const lines = buildSidebarLines(player, sidebar).map((line) => truncateLine(line));
+  const lines = buildSidebarLines(player, runtime).map((line) => truncateLine(line));
   return [title, ...lines].filter((line) => line.length > 0).join("\n");
 }
 
@@ -144,23 +162,26 @@ function getPlayerCacheKey(player: Player): string {
   return player.id || player.name;
 }
 
-function applySidebarForPlayer(player: Player, sidebar: SidebarDefinition) {
+function applySidebarForPlayer(player: Player, runtime: SidebarRuntime) {
+  const { sidebar } = runtime;
   const key = getPlayerCacheKey(player);
   const cache = playerRenderCache.get(key);
-  const interval = Math.max(1, Math.floor(sidebar.updateInterval || 20));
+  const interval = runtime.updateInterval;
   const changedSidebar = cache?.sidebarId !== sidebar.id;
-  if (!changedSidebar && cache && sidebarTick - cache.lastRenderTick < interval) {
-    player.onScreenDisplay.setActionBar(cache.lastText || "§r");
+  if (!changedSidebar && cache && system.currentTick - cache.lastRenderTick < interval) {
+    if (system.currentTick - cache.lastSendTick >= 20) {
+      player.onScreenDisplay.setActionBar(cache.lastText || "§r");
+      cache.lastSendTick = system.currentTick;
+    }
     return;
   }
 
-  const text = buildSidebarText(player, sidebar);
+  const text = buildSidebarText(player, runtime);
   player.onScreenDisplay.setActionBar(text || "§r");
-  playerRenderCache.set(key, { sidebarId: sidebar.id, lastRenderTick: sidebarTick, lastText: text });
+  playerRenderCache.set(key, { sidebarId: sidebar.id, lastRenderTick: system.currentTick, lastSendTick: system.currentTick, lastText: text });
 }
 
 function renderSidebarTick() {
-  sidebarTick++;
   for (const player of world.getPlayers()) {
     const sidebar = pickSidebarForPlayer(player);
     if (!sidebar) continue;
@@ -190,21 +211,20 @@ export function registerSidebarSystem() {
 
 async function createOrEditSidebar(player: Player, sidebarId?: string) {
   const current = sidebarId ? state.sidebars.sidebars[sidebarId] : undefined;
-  const modal = new ModalFormData()
-    .title(current ? `Edit Sidebar: ${current.id}` : "Create Sidebar")
-    .textField("Sidebar ID", "main_hud", { defaultValue: current?.id ?? "" })
-    .textField("Title", "§l§bMY SERVER§r", { defaultValue: current?.title ?? "§l§bMY SERVER§r" })
-    .textField("Update interval (ticks)", "20", { defaultValue: String(current?.updateInterval ?? 20) })
-    .textField("Priority", "10", { defaultValue: String(current?.priority ?? 10) })
-    .textField("Money objective", "money", { defaultValue: current?.moneyObjective ?? "money" })
-    .toggle("Enabled", { defaultValue: current?.enabled ?? true })
-    .toggle("Scroll lines", { defaultValue: current?.scroll ?? false })
-    .submitButton("Save");
+  const result = await TauUi.modal(current ? `Edit Sidebar: ${current.id}` : "Create Sidebar")
+    .text("sidebarId", "Sidebar ID", { placeholder: "main_hud", defaultValue: current?.id ?? "" })
+    .text("title", "Title", { placeholder: "§l§bMY SERVER§r", defaultValue: current?.title ?? "§l§bMY SERVER§r" })
+    .text("updateInterval", "Update interval (ticks)", { placeholder: "20", defaultValue: String(current?.updateInterval ?? 20) })
+    .text("priority", "Priority", { placeholder: "10", defaultValue: String(current?.priority ?? 10) })
+    .text("moneyObjective", "Money objective", { placeholder: "money", defaultValue: current?.moneyObjective ?? "money" })
+    .toggle("enabled", "Enabled", current?.enabled ?? true)
+    .toggle("scroll", "Scroll lines", current?.scroll ?? false)
+    .submitButton("Save")
+    .show(player);
 
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  if (result.canceled) return;
 
-  const id = String(result.formValues[0] ?? "").trim();
+  const id = String(result.values.sidebarId ?? "").trim();
   if (!id) {
     tell(player, "Sidebar ID is required.");
     return;
@@ -220,12 +240,12 @@ async function createOrEditSidebar(player: Player, sidebarId?: string) {
   };
 
   existing.id = id;
-  existing.title = String(result.formValues[1] ?? "").trim() || "Sidebar";
-  existing.updateInterval = Math.max(1, Math.floor(Number(result.formValues[2] ?? 20)));
-  existing.priority = Math.floor(Number(result.formValues[3] ?? 10));
-  existing.moneyObjective = String(result.formValues[4] ?? "money").trim() || "money";
-  existing.enabled = Boolean(result.formValues[5]);
-  existing.scroll = Boolean(result.formValues[6]);
+  existing.title = String(result.values.title ?? "").trim() || "Sidebar";
+  existing.updateInterval = Math.max(1, Math.floor(Number(result.values.updateInterval ?? 20)));
+  existing.priority = Math.floor(Number(result.values.priority ?? 10));
+  existing.moneyObjective = String(result.values.moneyObjective ?? "money").trim() || "money";
+  existing.enabled = Boolean(result.values.enabled);
+  existing.scroll = Boolean(result.values.scroll);
   existing.lines = existing.lines
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
@@ -239,18 +259,13 @@ async function createOrEditSidebar(player: Player, sidebarId?: string) {
 }
 
 async function editSidebarLines(player: Player, sidebar: SidebarDefinition) {
-  const modal = new ModalFormData().title(`Lines: ${sidebar.id}`);
-  for (let i = 0; i < 15; i++) {
-    modal.textField(`Line ${i + 1}`, "", { defaultValue: sidebar.lines[i] ?? "" });
-  }
-  modal.submitButton("Save");
-  const result = await modal.show(player).catch(() => undefined);
-  if (!result || result.canceled || !result.formValues) return;
+  const form = TauUi.modal(`Lines: ${sidebar.id}`);
+  for (let i = 0; i < 15; i++) form.text(`line${i}`, `Line ${i + 1}`, { defaultValue: sidebar.lines[i] ?? "" });
+  form.submitButton("Save");
+  const result = await form.show(player);
+  if (result.canceled) return;
 
-  const cleaned = result.formValues
-    .map((v) => String(v ?? "").trim())
-    .filter((line) => line.length > 0)
-    .slice(0, 15);
+  const cleaned = result.rawValues.map((v) => String(v ?? "").trim()).filter((line) => line.length > 0).slice(0, 15);
   sidebar.lines = cleaned.length > 0 ? cleaned : ["Player: [name]"];
   saveSidebarsAndInvalidate();
   tell(player, `Updated lines for ${sidebar.id}.`);
@@ -262,15 +277,14 @@ async function setSidebarDefault(player: Player) {
     tell(player, "No sidebars exist.");
     return;
   }
-  const picker = new ActionFormData().title("Set Default Sidebar");
-  for (const id of ids) picker.button(id, ICONS.sidebar);
-  picker.button("Cancel", ICONS.cancel);
-  const response = await picker.show(player).catch(() => undefined);
-  if (!response || response.canceled || response.selection === undefined) return;
-  if (response.selection >= ids.length) return;
-  state.sidebars.defaultSidebarId = ids[response.selection];
+  const picker = TauUi.action<{ id: string }>("Set Default Sidebar");
+  for (const id of ids) picker.button("sidebar", id, { iconPath: ICONS.sidebar, value: { id } });
+  picker.button("cancel", "Cancel", { iconPath: ICONS.cancel });
+  const response = await picker.show(player);
+  if (response.canceled || response.id === "cancel" || !response.value) return;
+  state.sidebars.defaultSidebarId = response.value.id;
   saveSidebarsAndInvalidate();
-  tell(player, `Default sidebar set to ${ids[response.selection]}.`);
+  tell(player, `Default sidebar set to ${response.value.id}.`);
 }
 
 export async function showSidebarEditor(player: Player) {
@@ -281,49 +295,46 @@ export async function showSidebarEditor(player: Player) {
 
   while (true) {
     const ids = Object.keys(state.sidebars.sidebars);
-    const form = new ActionFormData()
-      .title("Sidebar Customizer")
+    const response = await TauUi.action("Sidebar Customizer")
       .body(`Enabled: ${state.sidebars.enabled ? "Yes" : "No"}\nSidebars: ${ids.length}`)
-      .button("Toggle ON/OFF", ICONS.settings)
-      .button("Create Sidebar", ICONS.confirm)
-      .button("Edit Sidebar", ICONS.edit)
-      .button("Edit Lines", ICONS.menu)
-      .button("Set Default", ICONS.sidebar)
-      .button("Back", ICONS.back);
+      .button("toggle", "Toggle ON/OFF", { iconPath: ICONS.settings })
+      .button("create", "Create Sidebar", { iconPath: ICONS.confirm })
+      .button("edit", "Edit Sidebar", { iconPath: ICONS.edit })
+      .button("editLines", "Edit Lines", { iconPath: ICONS.menu })
+      .button("setDefault", "Set Default", { iconPath: ICONS.sidebar })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
+    if (response.canceled || response.id === "back") return;
 
-    if (response.selection === 0) {
+    if (response.id === "toggle") {
       state.sidebars.enabled = !state.sidebars.enabled;
       saveSidebarsAndInvalidate();
       tell(player, `Sidebar system ${state.sidebars.enabled ? "enabled" : "disabled"}.`);
       continue;
     }
 
-    if (response.selection === 1) {
+    if (response.id === "create") {
       await createOrEditSidebar(player);
       continue;
     }
 
-    if (response.selection === 2 || response.selection === 3) {
+    if (response.id === "edit" || response.id === "editLines") {
       if (ids.length === 0) {
         tell(player, "No sidebars exist.");
         continue;
       }
-      const picker = new ActionFormData().title("Pick Sidebar");
-      for (const id of ids) picker.button(id, ICONS.sidebar);
-      picker.button("Cancel", ICONS.cancel);
-      const pick = await picker.show(player).catch(() => undefined);
-      if (!pick || pick.canceled || pick.selection === undefined) continue;
-      if (pick.selection >= ids.length) continue;
-      const id = ids[pick.selection];
-      if (response.selection === 2) await createOrEditSidebar(player, id);
-      else await editSidebarLines(player, state.sidebars.sidebars[id]);
+      const picker = TauUi.action<{ id: string }>("Pick Sidebar");
+      for (const id of ids) picker.button("sidebar", id, { iconPath: ICONS.sidebar, value: { id } });
+      picker.button("cancel", "Cancel", { iconPath: ICONS.cancel });
+      const pick = await picker.show(player);
+      if (pick.canceled || pick.id === "cancel" || !pick.value) continue;
+      if (response.id === "edit") await createOrEditSidebar(player, pick.value.id);
+      else await editSidebarLines(player, state.sidebars.sidebars[pick.value.id]);
       continue;
     }
 
-    if (response.selection === 4) {
+    if (response.id === "setDefault") {
       await setSidebarDefault(player);
       continue;
     }

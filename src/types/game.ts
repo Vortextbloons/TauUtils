@@ -1,3 +1,5 @@
+import type { SerializedItemStack } from "./shop";
+
 export type KillConditionScoreAction = {
   type: "score";
   target: "killer" | "victim";
@@ -207,6 +209,70 @@ export type CrateStore = {
   };
   crates: Record<string, CrateDefinition>;
   locations: Record<string, { crateId: string; dimensionId: string; x: number; y: number; z: number }>;
+};
+
+export type LootChestRefillMode = "empty_only" | "always";
+
+export type LootChestSnapshotItem = {
+  slot: number;
+  item: SerializedItemStack;
+};
+
+export type LootChestSnapshot = {
+  id: string;
+  poolId: string;
+  name: string;
+  weight: number;
+  enabled: boolean;
+  containerSize: number;
+  capturedAt: number;
+  source?: {
+    dimensionId: string;
+    x: number;
+    y: number;
+    z: number;
+  };
+  items: LootChestSnapshotItem[];
+};
+
+export type LootChestPool = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  snapshotIds: string[];
+};
+
+export type LootChestLocation = {
+  id: string;
+  poolId: string;
+  dimensionId: string;
+  x: number;
+  y: number;
+  z: number;
+  enabled: boolean;
+  respawnTicks: number;
+  nextRefillAt: number;
+  refillMode: LootChestRefillMode;
+  preserveSlots: boolean;
+  refillMessageEnabled?: boolean;
+  refillMessage?: string;
+  broadcastRefillMessage?: boolean;
+  refillCommandsEnabled?: boolean;
+  refillCommands?: string[];
+};
+
+export type LootChestConfig = {
+  enabled: boolean;
+  processIntervalTicks: number;
+  maxRefillsPerTick: number;
+  defaultRespawnTicks: number;
+};
+
+export type LootChestStore = {
+  config: LootChestConfig;
+  pools: Record<string, LootChestPool>;
+  snapshots: Record<string, LootChestSnapshot>;
+  chests: Record<string, LootChestLocation>;
 };
 
 export type GeneratorTierDefinition = {

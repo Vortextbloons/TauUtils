@@ -12,6 +12,7 @@ type GeneratorIndexes = {
   byOwnerId: Map<string, PlacedGenerator[]>;
   bySlotId: Map<string, PlacedGenerator[]>;
   dueSorted: PlacedGenerator[];
+  earliestDueAt: number;
 };
 
 let generatorIndexes: GeneratorIndexes | undefined;
@@ -25,6 +26,7 @@ function buildGeneratorIndexes(): GeneratorIndexes {
   const byOwnerId = new Map<string, PlacedGenerator[]>();
   const bySlotId = new Map<string, PlacedGenerator[]>();
   const dueSorted = Object.values(state.generators.placed).slice().sort((a, b) => a.nextSpawnAt - b.nextSpawnAt || a.id.localeCompare(b.id));
+  const earliestDueAt = dueSorted[0]?.nextSpawnAt ?? Number.POSITIVE_INFINITY;
 
   for (const placed of dueSorted) {
     const ownerGenerators = byOwnerId.get(placed.ownerPlayerId) ?? [];
@@ -39,7 +41,7 @@ function buildGeneratorIndexes(): GeneratorIndexes {
     }
   }
 
-  return { byOwnerId, bySlotId, dueSorted };
+  return { byOwnerId, bySlotId, dueSorted, earliestDueAt };
 }
 
 function getGeneratorIndexes(): GeneratorIndexes {
@@ -501,12 +503,21 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
 
 export function processGenerators(): void {
   const now = Date.now();
+  const indexes = getGeneratorIndexes();
+  if (indexes.dueSorted.length === 0) {
+    generatorProcessCursor = 0;
+    return;
+  }
+  if (now < indexes.earliestDueAt) return;
+
   const onlinePlayers = world.getAllPlayers();
+  if (onlinePlayers.length === 0) return;
   const onlineIds = new Set<string>();
   const onlinePlayersById = new Map<string, Player>();
   for (const player of onlinePlayers) {
-    onlineIds.add(getPlayerId(player));
-    onlinePlayersById.set(getPlayerId(player), player);
+    const playerId = getPlayerId(player);
+    onlineIds.add(playerId);
+    onlinePlayersById.set(playerId, player);
   }
 
   const activeTeamOwnerIds = new Set<string>();
@@ -517,11 +528,7 @@ export function processGenerators(): void {
     }
   }
 
-  const placedGenerators = getGeneratorIndexes().dueSorted;
-  if (placedGenerators.length === 0) {
-    generatorProcessCursor = 0;
-    return;
-  }
+  const placedGenerators = indexes.dueSorted;
 
   let changedSchedule = false;
   const processBudget = Math.min(placedGenerators.length, Math.max(64, onlinePlayers.length * 16));

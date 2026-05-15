@@ -10,6 +10,7 @@ import {
   PLOTS_MIGRATION_MARKER_KEY,
   writePlayerShopsIncrementalToSplitKeys,
   writeCustomAreasToSplitKeys,
+  writeLootChestsToSplitKeys,
 } from "./state";
 
 const pendingDynamicSaves = new Map<string, () => void>();
@@ -123,6 +124,12 @@ export function saveCombat() {
 export function saveCustomAreas(): boolean {
   const ok = writeCustomAreasToSplitKeys(state.customAreas);
   world.setDynamicProperty(STORAGE_KEYS.customAreas, undefined);
+  return ok;
+}
+
+export function saveLootChests(): boolean {
+  const ok = writeLootChestsToSplitKeys(state.lootChests);
+  world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
   return ok;
 }
 

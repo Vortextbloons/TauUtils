@@ -1,192 +1,205 @@
+# TauUtils
+
 <p align="center">
   <img src="resource_pack/pack_icon.png" alt="TauUtils" width="128" height="128">
 </p>
 
-<h1 align="center">TauUtils</h1>
-
 <p align="center">
-  <b>A comprehensive Minecraft Bedrock add-on for server management</b>
+  <b>Minecraft Bedrock server tools, menus, economy, gameplay systems, and moderation in one add-on.</b>
 </p>
 
 <p align="center">
-  Creator UI · Forms · Shops · Sidebars · Bindings · Ranks · Stats · Profiles<br>
-  Plots · TPA · Homes · Pay · Teams · Warps · Prune · Generators<br>
-  Crates · Custom Items · Combat · Kill Conditions · Custom Areas · Moderation
-</p>
-
-<br>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/version-1.9.7--Beta-gold?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.0--Beta-gold?style=for-the-badge" alt="Version">
   <img src="https://img.shields.io/badge/Minecraft-1.26.20%2B-blue?style=for-the-badge" alt="Minecraft">
   <img src="https://img.shields.io/badge/status-active-success?style=for-the-badge" alt="Status">
 </p>
 
 ---
 
-## Table of Contents
+## Overview
 
-- [Admin & Creator Tools](#admin--creator-tools)
-- [Ranks, Stats & Profiles](#ranks-stats--profiles)
-- [Shops & Economy](#shops--economy)
-- [Plots & Land Management](#plots--land-management)
-- [Teleportation & Social](#teleportation--social)
-- [Gameplay Enhancements](#gameplay-enhancements)
-- [Maintenance & Moderation](#maintenance--moderation)
-- [Commands](#commands)
-- [Sidebar Placeholders](#sidebar-placeholders)
-- [Installation](#installation)
-- [Credits](#credits)
+TauUtils is a modular Bedrock add-on for running a server or world with less command spam and more in-game control. It combines creator tools, player systems, economy, land management, combat, moderation, and utility menus into one package.
 
----
+### What It Covers
 
-## Admin & Creator Tools
-
-<div align="center">
-
-| Feature | Description |
-|:--------|:------------|
-| **Creator** | A visual drag-and-drop form editor. Build custom menus with buttons, toggles, sliders, dropdowns, inputs, labels, and dividers. Assign icons, set actions, and reorder elements freely. |
-| **Bindings** | Bind any menu to a held item, item lore, or entity interaction. Trigger menus seamlessly from gameplay. |
-| **Config** | Every feature can be toggled on or off individually through the admin config menu. Full control over what's active. |
-
-</div>
+- Creator UI and bindings
+- Configurable forms and menus
+- Shops, player shops, market, and pay
+- Ranks, chat formatting, stats, and profiles
+- Sidebars and placeholder-driven HUD text
+- Plots, custom areas, and loot chests
+- TPA, homes, warps, teams, and player settings
+- Generators, crates, Tau items, combat, and kill conditions
+- Prune and moderation tools
 
 ---
 
-## Ranks, Stats & Profiles
+## Highlights
 
-| Feature | Description |
-|:--------|:------------|
-| **Ranks** | A full rank system with permissions, chat formatting, and color support. Assign or remove ranks through an intuitive UI. |
-| **Profiles** | Player profile cards with customizable visible sections. Browse and edit profiles in-game. |
-| **Stats** | Track detailed player statistics: kills, deaths, blocks broken and placed, time played, and distance traveled. |
-| **Chat Formatting** | Configure chat message format with rank prefixes, colors, and full placeholder support. Everything is customizable. |
-
----
-
-## Shops & Economy
-
-> **Info** — Shops support both admin-configured and player-run setups.
-
-| Feature | Description |
-|:--------|:------------|
-| **Shops** | Admin-configured shop profiles with categories, buy/sell/kill/buy-kill modes, quantity selection, kit items, and enchantment parsing. |
-| **Player Shops** | Players create their own shops by setting up a shop block, listing items from their inventory, and earning money through escrow-based purchases. Browse the marketplace and claim earnings anytime. |
-| **Pay** | Players can send money to each other with configurable tax. Simple and straightforward. |
+| Area | What it does |
+|:--|:--|
+| **Creator** | Build menus visually with buttons, toggles, sliders, dropdowns, inputs, labels, and dividers. |
+| **Bindings** | Bind menus to held items, item lore, entity interactions, or scriptevents. |
+| **Help System** | In-game help topics for commands, shops, sidebars, ranks, stats, plots, generators, crates, items, and more. |
+| **Shops** | Admin shop profiles plus player-run shops and a public marketplace. |
+| **Land Systems** | Plot grids, custom areas, and loot chest management. |
+| **Progression** | Ranks, stats, profiles, teams, and player settings. |
+| **Gameplay** | Generators, crates, custom Tau items, combat tagging, and kill conditions. |
+| **Ops Tools** | Prune, config menus, moderation controls, and admin utilities. |
 
 ---
 
-## Plots & Land Management
+## Feature Guide
 
-| Feature | Description |
-|:--------|:------------|
-| **Plots** | A complete plot system with configurable grid layout, auto-building with borders/floor/roof, queued fill jobs, plot snapshots that save and restore structures and generators, slime chunk loading, and team-based ownership sharing. |
-| **Custom Areas** | Define 3D regions with enter/leave messages (chat or global), permission overrides for PvP, block breaking, block placing, item use, and entity interaction. Add periodic effects, periodic commands, and ticking area support. |
+### Creator And Admin Tools
+
+- Build menus in-game with the Creator UI.
+- Bind menus to items, lore, or entity tags.
+- Toggle individual systems from the config menu.
+- Manage ranks, shops, generators, crates, custom areas, loot chests, and more from the admin UI.
+
+### Shops And Economy
+
+- Admin-configured shop profiles with categories and buy/sell modes.
+- Player shops with escrow-based earnings.
+- Public marketplace browsing.
+- Player-to-player payments with configurable tax.
+
+### Ranks, Profiles, Stats
+
+- Rank prefixes, suffixes, colors, and permissions.
+- Chat formatting with placeholders.
+- Custom profile cards.
+- Stats for kills, deaths, blocks, play time, distance, and more.
+
+### Plots, Areas, Loot Chests
+
+- Plot grids with auto-build support.
+- Plot snapshots that save and restore builds.
+- Team-based plot sharing.
+- Custom 3D areas with permission overrides and timed effects.
+- Loot chest pools, bindings, settings, and refill systems.
+
+### Social And Travel
+
+- TPA requests.
+- Homes.
+- Warps with categories and cross-dimension teleportation.
+- Teams with invites, joins, kicks, friendly fire, and plot sharing.
+- Player settings for social preferences.
+
+### Gameplay Systems
+
+- Generators with tiers and auto-breakers.
+- Crates with weighted rewards and reveal presets.
+- Tau items with triggers, costs, cooldowns, and effects.
+- Combat tagging and logout punishment.
+- Kill conditions based on rank and stat filters.
+
+### Maintenance And Moderation
+
+- Data pruning for inactive players.
+- Item restriction tools.
+- Inventory inspection snapshots for rollback support.
 
 ---
 
-## Teleportation & Social
+## Help
 
-<div align="center">
+Use the built-in help menu anytime:
 
-| Feature | Description |
-|:--------|:------------|
-| **TPA** | Send, accept, and deny teleport requests between players. Simple request-based teleportation. |
-| **Homes** | Set named home locations, list all your homes, delete homes, and teleport back to them. |
-| **Warps** | Create server warps with categories and cross-dimension teleportation support. |
-| **Teams** | Create teams, invite and manage members, toggle friendly fire, share plot ownership with personal plot suspension and restoration. |
+```text
+/tau:help
+/tau:help <topic>
+```
 
-</div>
+### Help Topics
 
----
-
-## Gameplay Enhancements
-
-| Feature | Description |
-|:--------|:------------|
-| **Generators** | Placeable block generators that produce items automatically. Supports tiered upgrades, auto-breakers, and custom info lines. |
-| **Crates** | Crate key system with weighted rewards — items, scoreboard scores, tags, commands. Four animated reveal presets: Arcane, Ember, Frost, and Void. Particle effects and rare win broadcasts. |
-| **Custom Items** | Create Tau items with triggers (use in air, use on block, melee hit, mine block), actions (commands, sounds, particles, effects, projectiles, AOE), costs (money, XP, health), cooldowns, and max uses. |
-| **Combat** | Combat tagging with duration, logout loot dropping, command blocking while tagged, killstreak tracking, and kill conditions with rank/stat filters that run scoreboard operations or commands. |
-| **Sidebars** | Configurable HUD actionbar text with placeholders, scrolling, priority, and per-player tag support. |
-
----
-
-## Maintenance & Moderation
-
-| Feature | Description |
-|:--------|:------------|
-| **Prune** | Automatically remove stale player data — stats, profiles, teams, plots, homes, and settings — based on inactivity period (default 30 days). |
-| **Moderation** | Ban specific items from being used. Take inventory inspection snapshots for rollback support. |
+| Topic | Covers |
+|:--|:--|
+| `commands` | Full command list |
+| `shop` | Shop setup and player shops |
+| `sidebar` | Sidebar setup and placeholders |
+| `menus` | Form and menu building |
+| `bindings` | Item, lore, entity, and scriptevent bindings |
+| `ranks` | Rank and chat formatting |
+| `stats` | Stats and profiles |
+| `social` | TPA, homes, pay, and settings |
+| `teams` | Team management |
+| `warps` | Warp setup and usage |
+| `plots` | Plot system overview |
+| `generators` | Generator setup and upgrades |
+| `crates` | Crate setup and rewards |
+| `items` | Tau item creation |
+| `prune` | Data pruning |
+| `areas` | Custom areas |
+| `placeholders` | Available placeholders |
 
 ---
 
 ## Commands
 
-<details>
-<summary><b>Click to expand full command list</b></summary>
-
-<br>
-
 | Command | Description |
-|:--------|:------------|
-| `tau:help` | Show help information |
-| `tau:open` | Open a menu by ID |
-| `tau:crate` | Open crate admin menu |
-| `tau:item` | Open Tau items admin menu |
-| `tau:generatorsadmin` | Open generator admin menu |
-| `tau:warps` | Open warp menu |
-| `tau:warpsadmin` | Open warp admin menu |
-| `tau:warp` | Quick teleport to a warp |
-| `tau:plot` | Open plot player menu |
-| `tau:plots` | Open plot manager |
-| `tau:prune` | Open prune data menu |
-| `tau:team` | Open team menu |
+|:--|:--|
+| `tau:help` | Open the help system |
+| `tau:open` | Open a saved menu by ID |
+| `tau:creator` | Open the form creator |
+| `tau:config` | Open feature settings |
+| `tau:sidebar` | Open the sidebar editor |
+| `tau:shop` | Open a shop profile |
+| `tau:myshop` | Manage your player shop |
+| `tau:market` | Browse the player marketplace |
+| `tau:shopadmin` | Open player shop admin tools |
+| `tau:shopclaim` | Claim player shop earnings |
+| `tau:warps` | Open the warp list |
+| `tau:warpsadmin` | Open warp admin tools |
+| `tau:warp` | Teleport to a warp |
+| `tau:plot` | Open the plot menu |
+| `tau:plots` | Open plot admin tools |
+| `tau:lootchests` | Open loot chest admin tools |
+| `tau:generatorsadmin` | Open generator admin tools |
+| `tau:crate` | Open crate admin tools |
+| `tau:item` | Open Tau item admin tools |
+| `tau:rank` | Open rank tools |
+| `tau:profile` | Open profile browser |
+| `tau:stats` | View or edit stats |
+| `tau:richest` | Show richest players |
+| `tau:team` | Open the team menu |
 | `tau:tpa` | Send a teleport request |
 | `tau:tpaccept` | Accept a teleport request |
 | `tau:tpdeny` | Deny a teleport request |
 | `tau:sethome` | Set a home |
-| `tau:home` | Teleport to a home |
+| `tau:home` | Go to a home |
 | `tau:delhome` | Delete a home |
 | `tau:homes` | List homes |
 | `tau:pay` | Pay another player |
 | `tau:settings` | Open player settings |
-| `tau:stats` | View your stats |
-| `tau:creator` | Open the form creator |
-| `tau:sidebar` | Open sidebar editor |
-| `tau:shop` | Open the shop |
-| `tau:myshop` | Open your player shop |
-| `tau:market` | Open player marketplace |
-| `tau:shopadmin` | Open shop admin menu |
-| `tau:shopclaim` | Claim player shop earnings |
-| `tau:cleardata` | Clear all data |
-| `tau:config` | Open config menu |
-| `tau:debugscore` | Debug scoreboard values |
-| `tau:credits` | Show credits |
-| `tau:richest` | Show richest players |
-| `tau:rank` | Open rank menu |
-| `tau:profile` | Open profile browser |
-
-</details>
+| `tau:prune` | Open prune tools |
+| `tau:cleardata` | Clear Tau data |
+| `tau:debugscore` | Debug a scoreboard value |
 
 ---
 
-## Sidebar Placeholders
+## Placeholders
 
-Customize your sidebars and chat format with these placeholders:
+Use these in sidebars, chat formats, menus, and similar text systems.
 
-| Placeholder | Description |
-|:-----------|:------------|
+| Placeholder | Meaning |
+|:--|:--|
 | `[name]` | Player name |
-| `[money]` | Player money / score |
+| `[money]` | Currency score |
 | `[ping]` | Player ping |
 | `[pos]` | Player position |
 | `[tps]` | Server TPS |
 | `[health]` | Player health |
-| `[health_color]` | Health-based color code |
+| `[health_color]` | Health color code |
 | `[rank]` | Player rank |
-| `[kills]` | Player kill count |
+| `[rank_prefix]` | Rank prefix |
+| `[rank_suffix]` | Rank suffix |
+| `[rank_tag]` | Rank tag |
+| `[team]` | Team tag |
+| `[message]` | Chat message |
+| `[kills]` | Kill count |
 | `[killstreak]` | Current killstreak |
 | `[longest_killstreak]` | Best killstreak |
 
@@ -194,17 +207,24 @@ Customize your sidebars and chat format with these placeholders:
 
 ## Installation
 
-Apply the behavior pack and resource pack to your world or Minecraft Bedrock server.
-
-Once installed, use `tau:creator` or any admin command to start configuring features. Everything is ready to go.
+1. Import both the behavior pack and resource pack into your world or server.
+2. Make sure the packs are enabled.
+3. Run `tau:help` or open `tau:creator` to start configuring the systems you want.
 
 ---
 
-<p align="center">
-  <b>Created by RCodE777</b>
-</p>
+## Development
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-1.9.7--Beta-gold?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/Minecraft-1.26.20%2B-blue?style=flat-square" alt="Minecraft">
-</p>
+```bash
+npm run typecheck
+npm run build
+```
+
+- `typecheck` validates the TypeScript.
+- `build` bundles the scripts and deploys the packs locally.
+
+---
+
+## Credits
+
+Created by RCodE777.

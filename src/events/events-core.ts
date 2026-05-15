@@ -7,6 +7,7 @@ import { tryHandleTauItemTrigger } from "../tau-items";
 import { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
+import { shouldCancelLootChestBreak } from "../loot-chests";
 import {
   asPlayer,
   incrementStat,
@@ -215,8 +216,13 @@ type DistanceSample = {
   z: number;
 };
 
+type PlotTitleSample = DistanceSample & {
+  dimensionId: string;
+};
+
 const lastSampleByPlayerId: Record<string, DistanceSample> = {};
 const lastSeenPlotByPlayerId: Record<string, string | undefined> = {};
+const lastPlotTitleSampleByPlayerId: Record<string, PlotTitleSample> = {};
 
 let cachedPlayersTick = -1;
 let cachedPlayers: Player[] = [];
@@ -444,6 +450,11 @@ export function registerEventInterceptors() {
   });
 
   world.beforeEvents.playerBreakBlock.subscribe((event) => {
+    if (isFeatureEnabled("lootChests") && shouldCancelLootChestBreak(event.player, event.block.location, event.player.dimension.id)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot break managed loot chests.");
+      return;
+    }
     if (shouldCancelAreaBlockBreak(event.player, event.block.location, event.player.dimension.id)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot break blocks in this area.");
@@ -567,14 +578,17 @@ export function registerEventInterceptors() {
     for (const player of getCachedPlayers()) {
       const id = getPlayerId(player);
       const prev = lastSampleByPlayerId[id];
+      const location = player.location;
       if (prev) {
-        const dx = player.location.x - prev.x;
-        const dy = player.location.y - prev.y;
-        const dz = player.location.z - prev.z;
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist > 0) incrementStat(player, "distanceTraveled", dist);
+        const dx = location.x - prev.x;
+        const dy = location.y - prev.y;
+        const dz = location.z - prev.z;
+        if (dx !== 0 || dy !== 0 || dz !== 0) {
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist > 0) incrementStat(player, "distanceTraveled", dist);
+        }
       }
-      lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
+      lastSampleByPlayerId[id] = { x: location.x, y: location.y, z: location.z };
       incrementStat(player, "timePlayed", 1);
     }
   }, 20);
@@ -613,16 +627,35 @@ export function registerEventInterceptors() {
     if (!state.plots.config.autoBuild.showEnterTitle) return;
 
     const radius = Math.max(1, state.plots.config.autoBuild.titleRadius);
+    const slots = getPlotSlotsList();
     for (const player of getCachedPlayers()) {
       if (player.dimension.id !== state.plots.config.dimensionId) continue;
       const pid = getPlayerId(player);
+      const location = player.location;
+      const flooredLocation = {
+        x: Math.floor(location.x),
+        y: Math.floor(location.y),
+        z: Math.floor(location.z),
+        dimensionId: player.dimension.id,
+      };
+      const previousSample = lastPlotTitleSampleByPlayerId[pid];
+      if (
+        previousSample &&
+        previousSample.dimensionId === flooredLocation.dimensionId &&
+        previousSample.x === flooredLocation.x &&
+        previousSample.y === flooredLocation.y &&
+        previousSample.z === flooredLocation.z
+      ) {
+        continue;
+      }
+      lastPlotTitleSampleByPlayerId[pid] = flooredLocation;
 
       const expanded = {
-        x: player.location.x,
-        y: player.location.y,
-        z: player.location.z,
+        x: location.x,
+        y: location.y,
+        z: location.z,
       };
-      const slot = getPlotSlotsList().find((s) =>
+      const slot = slots.find((s) =>
         expanded.x >= s.min.x - radius && expanded.x <= s.max.x + radius &&
         expanded.y >= s.min.y - radius && expanded.y <= s.max.y + radius &&
         expanded.z >= s.min.z - radius && expanded.z <= s.max.z + radius

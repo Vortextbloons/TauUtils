@@ -97,6 +97,7 @@ function subjectForKey(key: string, context: TemplateContext): { player: Player;
 
 export function renderTemplate(raw: string | undefined, context: TemplateContext = {}): string {
   if (!raw) return "";
+  if (!String(raw).includes("[") && !String(raw).includes("{")) return String(raw);
   const extra = context.extra ?? {};
   const normalizedExtra = normalizeExtra(extra);
   const playerPlaceholderCache = new Map<string, string>();
