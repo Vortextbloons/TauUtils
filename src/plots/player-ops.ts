@@ -1,6 +1,6 @@
 import { Player, Vector3, system } from "@minecraft/server";
 import { type PlotSlot } from "../types";
-import { getPlayerId, savePlots, saveGenerators, state, tell } from "../storage";
+import { getPlayerId, isFeatureEnabled, savePlots, saveGenerators, state, tell } from "../storage";
 import { getPlotSlots, getDimension } from "./grid";
 import { clearSlot, saveAndClearSlot, captureSlotGenerators, saveSlotSnapshot, loadSlotSnapshot, applyAutoBuildRoof, getPlotForLocation } from "./build";
 import { getPlotOwnerIdForPlayerId, resolveAuthoritativeOwnedSlotId } from "./ownership";
@@ -92,6 +92,7 @@ export function clearAllPlotSlots(): { ok: boolean; message: string } {
 
 function* clearFreePlotSlotsJob(slots: PlotSlot[]): Generator<void, void, void> {
   for (const slot of slots) {
+    if (!isFeatureEnabled("plots")) break;
     if (!slot.occupiedByPlayerId) clearSlot(slot);
     yield;
   }

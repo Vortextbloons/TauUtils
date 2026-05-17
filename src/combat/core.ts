@@ -9,6 +9,8 @@ import {
   world,
 } from "@minecraft/server";
 import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "../storage";
+import { invalidatePlayerSidebarCache } from "../sidebar";
+import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { combatTagsByPlayerId, hasActiveCombatTag, isCombatFeatureActive, isPlayerInCombat } from "./status";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
 import type { KillConditionAction, KillConditionRule, PlayerStats } from "../types";
@@ -73,6 +75,7 @@ function clearCombatTag(player: Player, playerId: string, notify: boolean): void
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
   lastCombatSnapshotAtByPlayerId.delete(playerId);
+  invalidatePlayerSidebarCache(player);
   if (!notify) return;
   tell(player, state.combat.config.exitMessage);
 }
@@ -100,7 +103,10 @@ function setCombatTag(player: Player): void {
   combatTagsByPlayerId.set(id, { expiresAt: nowMs() + getCombatDurationMs() });
   combatSnapshotsByPlayerId.set(id, captureCombatLoot(player));
   lastCombatSnapshotAtByPlayerId.set(id, nowMs());
-  if (!tagged) tell(player, state.combat.config.enterMessage);
+  if (!tagged) {
+    tell(player, state.combat.config.enterMessage);
+    invalidatePlayerSidebarCache(player);
+  }
 }
 
 function captureCombatLoot(player: Player): CombatLootSnapshot {
@@ -239,8 +245,17 @@ function processPendingCombatLogouts(): void {
 }
 
 function* processPendingCombatLogoutsJob(): Generator<void, void, void> {
+  if (!isCombatSystemEnabled()) {
+    pendingCombatLogouts.length = 0;
+    pendingCombatLogoutsJobId = undefined;
+    return;
+  }
   const pending = pendingCombatLogouts.splice(0, pendingCombatLogouts.length);
   for (const logout of pending) {
+    if (!isCombatSystemEnabled()) {
+      pendingCombatLogouts.length = 0;
+      break;
+    }
     const failedEquipment = spawnDroppedItems(logout.dimensionId, logout.location, logout.equipment);
     const failedInventory = spawnDroppedItems(logout.dimensionId, logout.location, logout.inventory);
     const failed = [...failedEquipment, ...failedInventory];
@@ -325,6 +340,7 @@ export function handleCombatDeath(player: Player): void {
   combatTagsByPlayerId.delete(id);
   combatSnapshotsByPlayerId.delete(id);
   lastCombatSnapshotAtByPlayerId.delete(id);
+  invalidatePlayerSidebarCache(player);
 }
 
 export function resolveCombatAttacker(damageSource: EntityDamageSource): Player | undefined {
@@ -421,6 +437,7 @@ function runKillConditionAction(action: KillConditionAction, killer: Player, vic
       for (const raw of commands) {
         const command = renderCommandTemplate(replaceKillPlaceholders(raw, killer, victim, context));
         if (!command) continue;
+        if (runBuiltCommandFromConfiguredCommand(killer, command)) continue;
         try {
           killer.runCommand(command);
         } catch {
@@ -479,6 +496,10 @@ export function processCombatTags(): void {
 }
 
 function* processCombatTagsJob(): Generator<void, void, void> {
+  if (!isCombatSystemEnabled()) {
+    combatTagsJobId = undefined;
+    return;
+  }
   const now = nowMs();
   const onlineById = new Map<string, Player>();
   for (const player of world.getAllPlayers()) {
@@ -486,6 +507,7 @@ function* processCombatTagsJob(): Generator<void, void, void> {
   }
 
   for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
+    if (!isCombatSystemEnabled()) break;
     if (entry.expiresAt <= now) continue;
     if (now - (lastCombatSnapshotAtByPlayerId.get(playerId) ?? 0) < COMBAT_SNAPSHOT_INTERVAL_MS) continue;
     const player = onlineById.get(playerId);
@@ -497,6 +519,7 @@ function* processCombatTagsJob(): Generator<void, void, void> {
   }
 
   for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
+    if (!isCombatSystemEnabled()) break;
     if (entry.expiresAt > now) continue;
     const player = onlineById.get(playerId);
     if (player) clearCombatTag(player, playerId, true);

@@ -21,6 +21,7 @@ export const STORAGE_KEYS = {
   playerShops: "tau:player_shops",
   customAreas: "tau:custom_areas",
   lootChests: "tau:loot_chests",
+  commandBuilder: "tau:command_builder",
 } as const;
 
 export const CHAT_PREFIX = "§6[Tau]§r";
@@ -102,6 +103,7 @@ export type FeatureFlags = {
   moderation: boolean;
   customAreas: boolean;
   lootChests: boolean;
+  commandBuilder: boolean;
 };
 
 export type ConfigStore = {

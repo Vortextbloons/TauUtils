@@ -1,7 +1,7 @@
 import { Player, system, world } from "@minecraft/server";
 import { ICONS, type SidebarDefinition } from "../types";
 import { TauUi } from "../ui";
-import { isOperator, saveSidebars, state, tell } from "../storage";
+import { isFeatureEnabled, isOperator, saveSidebars, state, tell } from "../storage";
 import { renderTemplate } from "../shared/templates";
 
 let tpsSampleTick = 0;
@@ -85,6 +85,10 @@ function invalidateSidebarCaches(): void {
   playerRenderCache.clear();
 }
 
+export function invalidatePlayerSidebarCache(player: Player): void {
+  playerRenderCache.delete(getPlayerCacheKey(player));
+}
+
 function saveSidebarsAndInvalidate(): void {
   saveSidebars();
   invalidateSidebarCaches();
@@ -95,6 +99,7 @@ function getServerTps(): string {
 }
 
 function getEnabledSidebarCache(): SidebarRuntimeCache {
+  if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) return { ordered: [], byId: new Map() };
   if (!enabledSidebarCache) {
     const ordered = Object.values(state.sidebars.sidebars)
       .filter((sidebar) => sidebar.enabled)
@@ -117,7 +122,7 @@ function getEnabledSidebars(): SidebarRuntime[] {
 }
 
 function pickSidebarForPlayer(player: Player): SidebarRuntime | undefined {
-  if (!state.sidebars.enabled) return undefined;
+  if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) return undefined;
 
   const candidates = getEnabledSidebars();
   if (candidates.length === 0) return undefined;
@@ -183,6 +188,10 @@ function applySidebarForPlayer(player: Player, runtime: SidebarRuntime) {
 }
 
 function renderSidebarTick() {
+  if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) {
+    playerRenderCache.clear();
+    return;
+  }
   if (sidebarRenderJobId !== undefined) return;
   const players = world.getPlayers();
   if (players.length === 0) return;
@@ -191,6 +200,7 @@ function renderSidebarTick() {
 
 function* renderSidebarJob(players: Player[]): Generator<void, void, void> {
   for (const player of players) {
+    if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) break;
     const sidebar = pickSidebarForPlayer(player);
     if (sidebar) applySidebarForPlayer(player, sidebar);
     yield;
@@ -210,6 +220,7 @@ function registerStaggeredInterval(callback: () => void, interval: number, offse
 }
 
 function sampleTpsTick() {
+  if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) return;
   tpsSampleTick++;
   const now = Date.now();
   const elapsed = now - tpsSampleTime;

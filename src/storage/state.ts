@@ -4,6 +4,7 @@ import {
   type BindingStore,
   type ChatConfig,
   type CombatStore,
+  type CommandBuilderStore,
   type ConfigStore,
   type CrateStore,
   type CustomAreaDefinition,
@@ -66,7 +67,20 @@ export function defaultConfig(): ConfigStore {
       moderation: true,
       customAreas: true,
       lootChests: true,
+      commandBuilder: true,
     },
+  };
+}
+
+export function defaultCommandBuilderStore(): CommandBuilderStore {
+  return {
+    config: {
+      enabled: true,
+      maxCommands: 100,
+      maxActionsPerCommand: 30,
+      maxDelayTicks: 20 * 60 * 5,
+    },
+    commands: {},
   };
 }
 
@@ -966,6 +980,7 @@ export const state: {
   playerShops: PlayerShopStore;
   customAreas: CustomAreaStore;
   lootChests: LootChestStore;
+  commandBuilder: CommandBuilderStore;
 } = {
   forms: {},
   shops: {},
@@ -992,6 +1007,7 @@ export const state: {
   playerShops: defaultPlayerShopStore(),
   customAreas: defaultCustomAreaStore(),
   lootChests: defaultLootChestStore(),
+  commandBuilder: defaultCommandBuilderStore(),
 };
 
 // ---------------------------------------------------------------------------
@@ -1039,6 +1055,7 @@ export function loadState() {
   state.config.features.moderation ??= defaultConfig().features.moderation;
   state.config.features.customAreas ??= defaultConfig().features.customAreas;
   state.config.features.lootChests ??= defaultConfig().features.lootChests;
+  state.config.features.commandBuilder ??= defaultConfig().features.commandBuilder;
   state.ranks = parseJSON<RankStore>(
     world.getDynamicProperty(STORAGE_KEYS.ranks) as string | undefined,
     defaultRankStore()
@@ -1129,6 +1146,10 @@ export function loadState() {
     defaultModerationStore()
   );
   state.moderation.inspectionSnapshots ??= {};
+  for (const snapshot of Object.values(state.moderation.inspectionSnapshots)) {
+    snapshot.inventory ??= [];
+    snapshot.enderChest ??= [];
+  }
   state.crates = parseJSON<CrateStore>(
     world.getDynamicProperty(STORAGE_KEYS.crates) as string | undefined,
     defaultCrateStore()
@@ -1192,6 +1213,12 @@ export function loadState() {
   state.lootChests.snapshots ??= {};
   state.lootChests.chests ??= {};
   world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
+  state.commandBuilder = parseJSON<CommandBuilderStore>(
+    world.getDynamicProperty(STORAGE_KEYS.commandBuilder) as string | undefined,
+    defaultCommandBuilderStore()
+  );
+  state.commandBuilder.config = { ...defaultCommandBuilderStore().config, ...(state.commandBuilder.config ?? {}) };
+  state.commandBuilder.commands ??= {};
   state.plots.config.autoBuild ??= defaultPlotStore().config.autoBuild;
   state.plots.config.autoBuild.roofBlock ??= defaultPlotStore().config.autoBuild.roofBlock;
   state.plots.config.autoBuild.roofHeight ??= defaultPlotStore().config.autoBuild.roofHeight;

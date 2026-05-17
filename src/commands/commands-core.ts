@@ -29,12 +29,34 @@ import { listWarps } from "../warps";
 import { addGeneratorTier, createGeneratorDefinition, giveGenerator } from "../generators";
 import { listCrateIds } from "../crates";
 import { listTauItemIds } from "../tau-items";
+import { runBuiltCommand } from "../command-builder";
 import { TAUUTILS_VERSION } from "../shared/version";
 
 export function registerCustomCommands(
   startupEvent: { customCommandRegistry: CustomCommandRegistry }
 ) {
   const registry = startupEvent.customCommandRegistry;
+
+  registry.registerCommand(
+    {
+      name: "tau:cmd",
+      description: "Run an admin Command Builder command by id.",
+      cheatsRequired: false,
+      permissionLevel: CommandPermissionLevel.Any,
+      mandatoryParameters: [
+        {
+          name: "id",
+          type: CustomCommandParamType.String,
+        },
+      ],
+    },
+    (origin, id: string): CustomCommandResult => {
+      const player = commandOriginToPlayer(origin);
+      if (!player) return { status: 1, message: "This command can only be used by a player." };
+      const result = runBuiltCommand(player, id);
+      return { status: result.ok ? 0 : 1, message: result.message };
+    }
+  );
 
   registry.registerCommand(
     {
@@ -876,6 +898,8 @@ export function registerCustomCommands(
           "§e/tau help generators §7- Generator system",
           "§e/tau help crates §7- Crate system",
           "§e/tau help items §7- Custom Tau items",
+          "§e/tau help lootchests §7- Loot chest system",
+          "§e/tau help commandbuilder §7- Command builder system",
           "§e/tau help prune §7- Data pruning",
           "§e/tau help areas §7- Custom areas",
           "§e/tau help placeholders §7- Available placeholders",
@@ -912,7 +936,7 @@ export function registerCustomCommands(
         ],
         shop: [
           "§6--- Shop System ---",
-          "§e1.§7 Create a shop profile in §e/tau:creator§7 → Shop Profiles",
+          "§e1.§7 Create a shop profile in §e/tau:creator§7 → Player Systems → Shop Profiles",
           "§e2.§7 Set the §ecurrency objective§7 (e.g. money)",
           "§e3.§7 Add items with §ebuy/sell prices§7 and quantities",
           "§e4.§7 Open the shop: §e/tau:shop <profile_id>",
@@ -941,6 +965,7 @@ export function registerCustomCommands(
         generators: [
           "§6--- Generators ---",
           "§e/tau:generatorsadmin §7- Open generator admin (op)",
+          "§7Or via §e/tau:creator§7 → World Systems → Generators",
           "§7Place a generator block to start generating items.",
           "§7Upgrade tiers to increase output rate.",
           "§7Auto breakers can be purchased to auto-collect.",
@@ -949,6 +974,7 @@ export function registerCustomCommands(
         crates: [
           "§6--- Crates ---",
           "§e/tau:crate §7- Open crate admin (op)",
+          "§7Or via §e/tau:creator§7 → World Systems → Crates",
           "§7Configure crate blocks, keys, rewards, and animations.",
           "§7Give keys to players and let them open at crate blocks.",
           "§7Supports item, score, and tag rewards with weights.",
@@ -956,13 +982,28 @@ export function registerCustomCommands(
         items: [
           "§6--- Custom Tau Items ---",
           "§e/tau:item §7- Open TauItems admin (op)",
+          "§7Or via §e/tau:creator§7 → Admin / Rules → TauItems",
           "§7Create custom items with triggers (use, hit, mine).",
           "§7Bind commands, sounds, or effects to item usage.",
           "§7Supports costs (money, XP, health) and consumption modes.",
         ],
+        commandbuilder: [
+          "§6--- Command Builder ---",
+          "§e/tau:creator§7 → Menu & UI Management → Command Builder",
+          "§7Create custom triggered command chains with conditions and actions.",
+          "§7Supports rank, tag, score, permission conditions.",
+          "§7Actions: commands, effects, scores, tags, messages with delays.",
+        ],
+        lootchests: [
+          "§6--- Loot Chests ---",
+          "§e/tau:lootchests §7- Open loot chest admin (op)",
+          "§7Or via §e/tau:creator§7 → World Systems → Loot Chests",
+          "§7Configure pools, capture chest snapshots, bind locations.",
+          "§7Supports weighted templates, refill intervals, and commands.",
+        ],
         sidebar: [
           "§6--- Sidebar System ---",
-          "§e1.§7 Open §e/tau:sidebar§7 (or creator → Sidebar)",
+          "§e1.§7 Open §e/tau:sidebar§7 (or creator → Player Systems → Sidebar Customizer)",
           "§e2.§7 Create a sidebar and set §eupdate interval§7 (ticks)",
           "§e3.§7 Add lines with §eplaceholders§7 like §e[name]§7 or §e[money]",
           "§e4.§7 Tag players §esidebar:<id>§7 to bind them",
@@ -984,9 +1025,9 @@ export function registerCustomCommands(
         bindings: [
           "§6--- Binding System ---",
           "§eItem binds:§7 Bind a menu to an item type id",
-          "  Use creator → Bindings → Set item bind",
+          "  Use creator → Menu & UI Management → Bindings → Set item bind",
           "§eLore binds:§7 Match menu by item lore text",
-          "  Use creator → Bindings → Set item lore bind",
+          "  Use creator → Menu & UI Management → Bindings → Set item lore bind",
           "§eEntity binds:§7 Tag NPCs with §emenuid:<id>",
           "  Or: Bindings → Set entity-tag bind",
           "§eScriptevent:§7 §e/scriptevent tau open <id>",
@@ -994,7 +1035,7 @@ export function registerCustomCommands(
         ranks: [
           "§6--- Ranks & Chat Formatting ---",
           "§e/tau:config §7- Toggle ranks feature",
-          "§e/tau:creator §7- Manage ranks (op)",
+          "§e/tau:creator §7- Player Systems → Ranks (op)",
           "§7Each rank has: color, prefix, suffix, permissions, chat format.",
           "§7Chat placeholders: §e[name] [rank] [rank_prefix] [rank_suffix] [team] [money] [message]",
           "§7Default rank auto-assigned to new players.",
@@ -1005,7 +1046,7 @@ export function registerCustomCommands(
           "§7Tracked: kills, deaths, killstreak, blocks placed/broken,",
           "  time played, distance traveled.",
           "§7Profiles: customizable player info cards.",
-          "§7Use §e/tau:creator §7to edit profile visibility settings.",
+          "§7Use §e/tau:profile §7or §e/tau:creator§7 → Player Systems to edit profile visibility.",
         ],
         social: [
           "§6--- Social Features ---",
@@ -1062,7 +1103,7 @@ export function registerCustomCommands(
         areas: [
           "§6--- Custom Areas ---",
           "§7Custom areas let you define 3D regions with special rules.",
-          "§7Configure them in §e/tau:creator§7 → Custom Areas.",
+          "§7Configure them in §e/tau:creator§7 → World Systems → Custom Areas.",
           "§7Each area can have:",
           "§e  •§7 Enter/leave messages (chat or global)",
           "§e  •§7 Permission overrides: PvP, block break/place, item use, entity interact",

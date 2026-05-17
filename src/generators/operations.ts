@@ -1,5 +1,5 @@
 import { BlockPermutation, Direction, ItemStack, Player, Vector3, system, world } from "@minecraft/server";
-import { getPlayerId, getScore, isOperator, saveGenerators, setScore, state } from "../storage";
+import { getPlayerId, getScore, isFeatureEnabled, isOperator, saveGenerators, setScore, state } from "../storage";
 import { getPlayerTeam } from "../teams";
 import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from "../plots";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
@@ -503,6 +503,7 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
 }
 
 export function processGenerators(): void {
+  if (!isFeatureEnabled("generators")) return;
   const now = Date.now();
   const indexes = getGeneratorIndexes();
   if (indexes.dueSorted.length === 0) {
@@ -516,6 +517,10 @@ export function processGenerators(): void {
 }
 
 function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generator<void, void, void> {
+  if (!isFeatureEnabled("generators")) {
+    generatorProcessJobId = undefined;
+    return;
+  }
   const onlinePlayers = world.getAllPlayers();
   if (onlinePlayers.length === 0) {
     generatorProcessJobId = undefined;
@@ -542,6 +547,7 @@ function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generato
   let changedSchedule = false;
   const processBudget = Math.min(placedGenerators.length, Math.max(64, onlinePlayers.length * 16));
   for (let index = 0; index < processBudget; index++) {
+    if (!isFeatureEnabled("generators")) break;
     const placed = placedGenerators[generatorProcessCursor % placedGenerators.length];
     generatorProcessCursor = (generatorProcessCursor + 1) % placedGenerators.length;
     if (!placed) {

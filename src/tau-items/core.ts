@@ -1,5 +1,6 @@
 import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, system } from "@minecraft/server";
 import { commandStripSlash, getInventoryContainer, getPlayerId, getScore, saveTauItems, setScore, state } from "../storage";
+import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate as renderSharedCommandTemplate } from "../shared/templates";
 import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "../types";
 
@@ -266,6 +267,7 @@ function runCommandChain(player: Player, commands: string[], context: TriggerCon
   for (const raw of commands) {
     const command = renderCommandTemplate(raw, player, context);
     if (!command.trim()) continue;
+    if (runBuiltCommandFromConfiguredCommand(player, command)) continue;
     try {
       player.runCommand(commandStripSlash(command));
     } catch {

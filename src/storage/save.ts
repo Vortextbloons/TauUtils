@@ -148,6 +148,10 @@ export function saveLootChests(): boolean {
   return ok;
 }
 
+export function saveCommandBuilder() {
+  scheduleDynamicSave(STORAGE_KEYS.commandBuilder, () => safeSetDynamicJson(STORAGE_KEYS.commandBuilder, state.commandBuilder));
+}
+
 export function savePlayerShops() {
   writePlayerShopsIncrementalToSplitKeys(state.playerShops);
   world.setDynamicProperty(STORAGE_KEYS.playerShops, undefined);

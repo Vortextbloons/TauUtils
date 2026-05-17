@@ -21,6 +21,14 @@ type ModerationItemSnapshot = {
   lore?: string[];
 };
 
+type PlayerInspectionSource = "inventory" | "enderChest";
+
+type SnapshotContainerLike = {
+  size: number;
+  getItem(slot: number): ItemStack | undefined;
+  setItem(slot: number, item?: ItemStack): void;
+};
+
 function isBannedItemId(itemId: string): boolean {
   const normalized = normalizeItemId(itemId);
   return state.moderation.bannedItems.some((entry) => normalizeItemId(entry.itemId) === normalized);
@@ -89,12 +97,98 @@ function getContainerSnapshot(container: { size: number; getItem(slot: number): 
   }
 }
 
-function saveModerationInspectionSnapshot(playerName: string, inventory: ModerationItemSnapshot[]): void {
+function moderationSnapshotsEqual(
+  left: ModerationItemSnapshot[] | undefined,
+  right: ModerationItemSnapshot[] | undefined,
+): boolean {
+  const a = left ?? [];
+  const b = right ?? [];
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    const first = a[index];
+    const second = b[index];
+    if (!second) return false;
+    if (first.slot !== second.slot) return false;
+    if (first.itemId !== second.itemId) return false;
+    if (first.amount !== second.amount) return false;
+    if ((first.nameTag ?? "") !== (second.nameTag ?? "")) return false;
+    const firstLore = first.lore ?? [];
+    const secondLore = second.lore ?? [];
+    if (firstLore.length !== secondLore.length) return false;
+    for (let loreIndex = 0; loreIndex < firstLore.length; loreIndex++) {
+      if (firstLore[loreIndex] !== secondLore[loreIndex]) return false;
+    }
+  }
+  return true;
+}
+
+function snapshotToItemStack(snapshot: ModerationItemSnapshot): ItemStack {
+  const stack = new ItemStack(snapshot.itemId, snapshot.amount);
+  if (snapshot.nameTag) stack.nameTag = snapshot.nameTag;
+  if (snapshot.lore && snapshot.lore.length > 0) stack.setLore(snapshot.lore);
+  return stack;
+}
+
+function createSnapshotContainer(items: ModerationItemSnapshot[]): SnapshotContainerLike {
+  const normalize = (): void => {
+    items.sort((left, right) => left.slot - right.slot);
+  };
+
+  return {
+    get size(): number {
+      let maxSlot = -1;
+      for (const entry of items) {
+        if (entry.slot > maxSlot) maxSlot = entry.slot;
+      }
+      return maxSlot + 1;
+    },
+    getItem(slot: number): ItemStack | undefined {
+      const entry = items.find((item) => item.slot === slot);
+      return entry ? snapshotToItemStack(entry) : undefined;
+    },
+    setItem(slot: number, item?: ItemStack): void {
+      const index = items.findIndex((entry) => entry.slot === slot);
+      if (!item) {
+        if (index >= 0) items.splice(index, 1);
+        return;
+      }
+      const next: ModerationItemSnapshot = {
+        slot,
+        itemId: item.typeId,
+        amount: item.amount,
+        nameTag: item.nameTag?.trim() || undefined,
+        lore: item.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
+      };
+      if (index >= 0) items[index] = next;
+      else items.push(next);
+      normalize();
+    },
+  };
+}
+
+function getEnderInventoryContainer(player: Player): SnapshotContainerLike | undefined {
+  try {
+    const enderInventory = player.getComponent(EntityComponentTypes.EnderInventory);
+    return enderInventory?.container;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveModerationInspectionSnapshot(playerName: string, inventory?: ModerationItemSnapshot[], enderChest?: ModerationItemSnapshot[]): void {
   state.moderation.inspectionSnapshots ??= {};
-  state.moderation.inspectionSnapshots[playerName.toLowerCase()] = {
+  const key = playerName.toLowerCase();
+  const current = state.moderation.inspectionSnapshots[key];
+  const nextInventory = inventory ?? current?.inventory ?? [];
+  const nextEnderChest = enderChest ?? current?.enderChest ?? [];
+  if (current && current.playerName === playerName && moderationSnapshotsEqual(current.inventory, nextInventory) && moderationSnapshotsEqual(current.enderChest, nextEnderChest)) {
+    return;
+  }
+  state.moderation.inspectionSnapshots[key] = {
     playerName,
     updatedAt: Date.now(),
-    inventory,
+    inventory: nextInventory,
+    enderChest: nextEnderChest,
   };
   saveModeration();
 }
@@ -103,7 +197,7 @@ function getInspectionSnapshotKey(playerName: string): string {
   return String(playerName ?? "").trim().toLowerCase();
 }
 
-async function showContainerInspector(player: Player, title: string, container: { size: number; getItem(slot: number): ItemStack | undefined; setItem(slot: number, item?: ItemStack): void }, slotCount?: number) {
+async function showContainerInspector(player: Player, title: string, container: SnapshotContainerLike, slotCount?: number, onMutate?: () => void) {
   while (true) {
     const items = getContainerItems(container, slotCount);
     const res = await TauUi.action(title)
@@ -127,6 +221,7 @@ async function showContainerInspector(player: Player, title: string, container: 
     const entry = items[parseInt(picked.id)];
     if (!entry) continue;
     container.setItem(entry.slot, undefined);
+    onMutate?.();
     tell(player, `§aDeleted ${entry.stack.typeId} from slot ${entry.slot + 1}.`);
   }
 }
@@ -138,12 +233,15 @@ async function showOnlinePlayerInspector(player: Player) {
     const res = await TauUi.action("§cPlayer Inspector§r")
       .body(`§7Online players: §f${world.getAllPlayers().length}§r`)
       .button("inventory", "Inventory", { iconPath: ICONS.item })
+      .button("enderChest", "Ender Chest", { iconPath: ICONS.menu })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
     if (res.canceled || res.id === "back") return;
 
+    const source: PlayerInspectionSource = res.id === "enderChest" ? "enderChest" : "inventory";
+
     const picker = TauUi.action<{ name: string }>("Select Player")
-      .body("§7Choose a player to inspect.");
+      .body(`§7Choose a player to inspect.\n§7Source: §f${source === "inventory" ? "Inventory" : "Ender Chest"}§r`);
     for (const target of targets) {
       picker.button(target.name, target.name, { iconPath: ICONS.item, value: { name: target.name } });
     }
@@ -153,15 +251,22 @@ async function showOnlinePlayerInspector(player: Player) {
 
     const target = targets.find((t) => t.name === picked.value!.name)!;
     const inventoryContainer = getInventoryContainer(target);
-    const inventorySnapshot = inventoryContainer ? (getContainerSnapshot(inventoryContainer) ?? []) : [];
+    const enderChestContainer = getEnderInventoryContainer(target);
+    const inventorySnapshot = inventoryContainer ? (getContainerSnapshot(inventoryContainer) ?? []) : undefined;
+    const enderChestSnapshot = enderChestContainer ? (getContainerSnapshot(enderChestContainer) ?? []) : undefined;
+    saveModerationInspectionSnapshot(target.name, inventorySnapshot, enderChestSnapshot);
 
-    const container = inventoryContainer;
+    const container = source === "inventory" ? inventoryContainer : enderChestContainer;
     if (!container) {
-      tell(player, "That player has no inventory component.");
+      tell(player, source === "inventory" ? "That player has no inventory component." : "That player's Ender Chest is unavailable.");
       continue;
     }
-    saveModerationInspectionSnapshot(target.name, inventorySnapshot);
-    await showContainerInspector(player, `Inventory: ${target.name}`, container);
+
+    await showContainerInspector(player, source === "inventory" ? `Inventory: ${target.name}` : `Ender Chest: ${target.name}`, container, undefined, () => {
+      const refreshedInventory = inventoryContainer ? (getContainerSnapshot(inventoryContainer) ?? []) : undefined;
+      const refreshedEnderChest = enderChestContainer ? (getContainerSnapshot(enderChestContainer) ?? []) : undefined;
+      saveModerationInspectionSnapshot(target.name, refreshedInventory, refreshedEnderChest);
+    });
   }
 }
 
@@ -185,11 +290,22 @@ async function showOfflinePlayerInspector(player: Player) {
 
   const snapshot = state.moderation.inspectionSnapshots?.[getInspectionSnapshotKey(name)];
   if (!snapshot) {
-    tell(player, `No offline inventory snapshot is stored for ${name}. Online players can still be inspected.`);
+    tell(player, `No offline snapshot is stored for ${name}. Online players can still be inspected.`);
     return;
   }
 
-  tell(player, `Saved snapshot for ${snapshot.playerName}: inventory ${snapshot.inventory.length} item(s).`);
+  const sourceResponse = await TauUi.action("Offline Player Inspector")
+    .body(`§7Saved snapshot for §f${snapshot.playerName}§r`)
+    .button("inventory", "Inventory", { iconPath: ICONS.item })
+    .button("enderChest", "Ender Chest", { iconPath: ICONS.menu })
+    .button("back", "Back", { iconPath: ICONS.back })
+    .show(player);
+  if (sourceResponse.canceled || sourceResponse.id === "back") return;
+
+  const source: PlayerInspectionSource = sourceResponse.id === "enderChest" ? "enderChest" : "inventory";
+  const items = source === "inventory" ? snapshot.inventory : snapshot.enderChest;
+  const container = createSnapshotContainer(items);
+  await showContainerInspector(player, `${source === "inventory" ? "Inventory" : "Ender Chest"}: ${snapshot.playerName} (offline)`, container, undefined, () => saveModeration());
 }
 
 function captureHeldBannedItem(player: Player): { itemId: string; label?: string } | undefined {
@@ -481,6 +597,7 @@ export async function showConfigMenu(player: Player) {
       .button("moderation", `Moderation: ${features.moderation ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("customAreas", `Custom Areas: ${features.customAreas ? "On" : "Off"}`, { iconPath: ICONS.sidebar })
       .button("lootChests", `Loot Chests: ${features.lootChests ? "On" : "Off"}`, { iconPath: ICONS.item })
+      .button("commandBuilder", `Command Builder: ${features.commandBuilder ? "On" : "Off"}`, { iconPath: ICONS.utility })
       .button("prune", "Prune Data", { iconPath: ICONS.delete })
       .button("socialSettings", "Social Settings", { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
@@ -545,7 +662,7 @@ export async function showConfigMenu(player: Player) {
       creator: "creator", forms: "forms", shops: "shops", sidebars: "sidebars",
       bindings: "bindings", stats: "stats", plots: "plots", tpa: "tpa",
       homes: "homes", pay: "pay", playerConfig: "playerConfig", teams: "teams",
-      lootChests: "lootChests",
+      lootChests: "lootChests", commandBuilder: "commandBuilder",
     };
     const key = keys[response.id];
     if (!key) continue;

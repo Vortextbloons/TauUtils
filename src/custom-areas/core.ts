@@ -2,6 +2,7 @@ import { Player, Vector3, system, world } from "@minecraft/server";
 import { getPlayerId, getPlayerRank, isFeatureEnabled, isOperator, saveCustomAreas, state, tell } from "../storage";
 import { dropCombatInventory } from "../combat";
 import { isPlayerInCombat } from "../combat";
+import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { CUSTOM_AREAS_AREA_PREFIX } from "../storage/state";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
 import type { CustomAreaCommandRule, CustomAreaDefinition } from "../types";
@@ -119,6 +120,7 @@ function runCommandRule(player: Player, area: CustomAreaDefinition, rule: Custom
       },
     });
     if (!command) continue;
+    if (runBuiltCommandFromConfiguredCommand(player, command)) continue;
     try {
       player.runCommand(command);
     } catch {
@@ -164,8 +166,13 @@ export function processCustomAreas(): void {
 }
 
 function* processCustomAreasJob(): Generator<void, void, void> {
+  if (!enabled()) {
+    customAreaJobId = undefined;
+    return;
+  }
   const now = Date.now();
   for (const player of world.getAllPlayers()) {
+    if (!enabled()) break;
     const playerId = getPlayerId(player);
     const location = player.location;
     const dimensionId = player.dimension.id;

@@ -1,6 +1,6 @@
 import { Player, Vector3, system, world } from "@minecraft/server";
 import { STORAGE_KEYS, type PlacedGenerator, type PlotSnapshot, type PlotSlot, type TeamDefinition } from "../types";
-import { getPlayerId, saveGenerators, savePlots, saveTeams, state, tell } from "../storage";
+import { getPlayerId, isFeatureEnabled, saveGenerators, savePlots, saveTeams, state, tell } from "../storage";
 import { getPlotSlots, getDimension, invalidatePlotSlotCache, parseSlotIndex, slotName, buildManualGridSlots, MAX_FILL_VOLUME, MAX_FILL_SPAN, BUILD_PROXIMITY_RADIUS } from "./grid";
 
 export function reorderPlotSlots(): boolean {
@@ -215,12 +215,14 @@ function distanceToBox(location: { x: number; y: number; z: number }, min: { x: 
 }
 
 export function processQueuedPlotBuildJobs(): void {
+  if (!isFeatureEnabled("plots")) return;
   if (fillQueue.length === 0 || fillJobId !== undefined) return;
   fillJobId = system.runJob(processQueuedPlotBuildJobsJob());
 }
 
 function* processQueuedPlotBuildJobsJob(): Generator<void, void, void> {
   while (fillQueueCursor < fillQueue.length) {
+    if (!isFeatureEnabled("plots")) break;
     const job = fillQueue[fillQueueCursor++];
     if (!job) break;
 
@@ -524,6 +526,7 @@ export function loadSlotSnapshot(slot: PlotSlot, playerId: string, queueOnFailur
 }
 
 export function processQueuedPlotSnapshots(): void {
+  if (!isFeatureEnabled("plots")) return;
   if (snapshotQueue.length === 0 || !canUsePlotCommandsNow()) return;
 
   const retryLimit = 20;

@@ -2,6 +2,7 @@ import { Player, ItemStack } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ACTION_TYPES, isWorkingIconPath, ICONS, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
 import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
+import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
 
 export async function openFormById(player: Player, menuId: string) {
@@ -115,11 +116,13 @@ async function runBoundAction(
           tell(player, "That player command is blocked by sanitization policy.");
           return;
         }
+        if (runBuiltCommandFromConfiguredCommand(player, value)) return;
         player.runCommand(commandStripSlash(value));
         return;
       }
       case "COMMAND_SUDO": {
         if (!value) return;
+        if (runBuiltCommandFromConfiguredCommand(player, value)) return;
         player.dimension.runCommand(commandStripSlash(normalizeForSudo(value, player)));
         return;
       }

@@ -3,6 +3,7 @@ import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ACTION_TYPES, ICONS, WORKING_ICON_OPTIONS, isWorkingIconPath, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
 import { findForm, getPlayerId, getPlayerRank, getPlayerStats, isFeatureEnabled, isOperator, normalizeKey, saveForms, saveProfiles, saveModeration, state, tell } from "../storage";
 import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
+import { TauUi } from "./tau-ui";
 
 function formLabel(element: FormElement): string {
   switch (element.kind) {
@@ -222,134 +223,246 @@ export async function showCreatorMenu(player: Player) {
 
   while (true) {
     const ids = Object.keys(state.forms);
-    const form = new ActionFormData()
-      .title("UI Creator")
+    const response = await TauUi.action("Creator")
       .body(`Stored forms: ${ids.length}`)
-      .button("Create Action Form", ICONS.actionForm)
-      .button("Create Modal Form", ICONS.modalForm)
-      .button("Edit Existing Form", ICONS.edit)
-      .button("Shop Profiles", ICONS.shop)
-      .button("Player Shop Admin", ICONS.settings)
-      .button("Sidebar Customizer", ICONS.sidebar)
-      .button("Bindings", ICONS.binding)
-      .button("Ranks", ICONS.rank)
-      .button("Plots", ICONS.plot)
-      .button("TauItems", ICONS.utility)
-      .button("Moderation", ICONS.utility)
-      .button("Combat Settings", ICONS.settings)
-      .button("Custom Areas", ICONS.sidebar)
-      .button("Prune Data", ICONS.delete)
-      .button("Generators", ICONS.shop)
-      .button("Crates", ICONS.shop)
-      .button("Loot Chests", ICONS.item)
-      .button("Config", ICONS.settings)
-      .button("Close", ICONS.cancel);
+      .button("menuUi", "Menu & UI Management", { iconPath: ICONS.menu })
+      .button("playerSystems", "Player Systems", { iconPath: ICONS.rank })
+      .button("worldSystems", "World Systems", { iconPath: ICONS.plot })
+      .button("adminRules", "Admin / Rules", { iconPath: ICONS.utility })
+      .button("config", "Config", { iconPath: ICONS.settings })
+      .button("close", "Close", { iconPath: ICONS.cancel })
+      .show(player);
 
-    const response = await form.show(player).catch(() => undefined);
-    if (!response || response.canceled || response.selection === undefined) return;
-    if (response.selection === 18) return;
+    if (response.canceled || response.id === "close") return;
 
-    if (response.selection === 0) {
+    if (response.id === "menuUi") {
+      await showMenuUiManagement(player);
+      continue;
+    }
+    if (response.id === "playerSystems") {
+      await showPlayerSystems(player);
+      continue;
+    }
+    if (response.id === "worldSystems") {
+      await showWorldSystems(player);
+      continue;
+    }
+    if (response.id === "adminRules") {
+      await showAdminRules(player);
+      continue;
+    }
+    if (response.id === "config") {
+      await showConfigSection(player);
+      continue;
+    }
+  }
+}
+
+async function showMenuUiManagement(player: Player) {
+  while (true) {
+    const ids = Object.keys(state.forms);
+    const response = await TauUi.action("Menu & UI Management")
+      .body(`Stored forms: ${ids.length}`)
+      .button("createAction", "Create Action Form", { iconPath: ICONS.actionForm })
+      .button("createModal", "Create Modal Form", { iconPath: ICONS.modalForm })
+      .button("editForm", "Edit Existing Form", { iconPath: ICONS.edit })
+      .button("previewForm", "Preview Form", { iconPath: ICONS.menu })
+      .button("bindings", "Bindings", { iconPath: ICONS.binding })
+      .button("commandBuilder", "Command Builder", { iconPath: ICONS.utility })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+
+    if (response.canceled || response.id === "back") return;
+
+    if (response.id === "createAction") {
       await showCreateBaseForm(player, "action");
       continue;
     }
-    if (response.selection === 1) {
+    if (response.id === "createModal") {
       await showCreateBaseForm(player, "modal");
       continue;
     }
-    if (response.selection === 2) {
+    if (response.id === "editForm") {
       if (ids.length === 0) {
         tell(player, "No forms exist yet.");
         continue;
       }
-      const picker = new ActionFormData().title("Edit Form");
+      const picker = TauUi.action<string>("Edit Form");
       for (const id of ids) {
-        picker.button(id, ICONS.edit);
+        picker.button(id, id, { iconPath: ICONS.edit, value: id });
       }
-      picker.button("Cancel", ICONS.cancel);
-      const pick = await picker.show(player).catch(() => undefined);
-      if (!pick || pick.canceled || pick.selection === undefined) continue;
-      if (pick.selection >= ids.length) continue;
-      await showFormEditor(player, ids[pick.selection]);
+      picker.button("back", "Back", { iconPath: ICONS.back });
+      const pick = await picker.show(player);
+      if (pick.canceled || pick.id === "back" || !pick.value) continue;
+      await showFormEditor(player, pick.value);
       continue;
     }
-    if (response.selection === 3) {
-      const { showShopProfilesEditor } = await import("../shop");
-      await showShopProfilesEditor(player);
+    if (response.id === "previewForm") {
+      if (ids.length === 0) {
+        tell(player, "No forms exist yet.");
+        continue;
+      }
+      const picker = TauUi.action<string>("Preview Form");
+      for (const id of ids) {
+        picker.button(id, id, { iconPath: ICONS.menu, value: id });
+      }
+      picker.button("back", "Back", { iconPath: ICONS.back });
+      const pick = await picker.show(player);
+      if (pick.canceled || pick.id === "back" || !pick.value) continue;
+      const { openFormById } = await import("./form-engine");
+      await openFormById(player, pick.value);
       continue;
     }
-    if (response.selection === 4) {
-      const { openPlayerShopAdmin } = await import("../player-shops");
-      await openPlayerShopAdmin(player);
-      continue;
-    }
-    if (response.selection === 5) {
-      const { showSidebarEditor } = await import("../sidebar");
-      await showSidebarEditor(player);
-      continue;
-    }
-    if (response.selection === 6) {
+    if (response.id === "bindings") {
       const { showBindingsEditor } = await import("./admin-ui");
       await showBindingsEditor(player);
       continue;
     }
-    if (response.selection === 7) {
+    if (response.id === "commandBuilder") {
+      const { showCommandBuilderMenu } = await import("./command-builder-ui");
+      await showCommandBuilderMenu(player);
+      continue;
+    }
+  }
+}
+
+async function showPlayerSystems(player: Player) {
+  while (true) {
+    const response = await TauUi.action("Player Systems")
+      .button("shopProfiles", "Shop Profiles", { iconPath: ICONS.shop })
+      .button("playerShopAdmin", "Player Shop Admin", { iconPath: ICONS.settings })
+      .button("sidebar", "Sidebar Customizer", { iconPath: ICONS.sidebar })
+      .button("ranks", "Ranks", { iconPath: ICONS.rank })
+      .button("profiles", "Profiles", { iconPath: ICONS.menu })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+
+    if (response.canceled || response.id === "back") return;
+
+    if (response.id === "shopProfiles") {
+      const { showShopProfilesEditor } = await import("../shop");
+      await showShopProfilesEditor(player);
+      continue;
+    }
+    if (response.id === "playerShopAdmin") {
+      const { openPlayerShopAdmin } = await import("../player-shops");
+      await openPlayerShopAdmin(player);
+      continue;
+    }
+    if (response.id === "sidebar") {
+      const { showSidebarEditor } = await import("../sidebar");
+      await showSidebarEditor(player);
+      continue;
+    }
+    if (response.id === "ranks") {
       const { showRankManager } = await import("./ranks-ui");
       await showRankManager(player);
       continue;
     }
-    if (response.selection === 8) {
+    if (response.id === "profiles") {
+      const { showProfileBrowser } = await import("./ranks-ui");
+      await showProfileBrowser(player);
+      continue;
+    }
+  }
+}
+
+async function showWorldSystems(player: Player) {
+  while (true) {
+    const response = await TauUi.action("World Systems")
+      .button("plots", "Plots", { iconPath: ICONS.plot })
+      .button("customAreas", "Custom Areas", { iconPath: ICONS.sidebar })
+      .button("lootChests", "Loot Chests", { iconPath: ICONS.item })
+      .button("generators", "Generators", { iconPath: ICONS.shop })
+      .button("crates", "Crates", { iconPath: ICONS.shop })
+      .button("prune", "Prune Data", { iconPath: ICONS.delete })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+
+    if (response.canceled || response.id === "back") return;
+
+    if (response.id === "plots") {
       const { showPlotManager } = await import("./plots-ui");
       await showPlotManager(player);
       continue;
     }
-    if (response.selection === 9) {
-      const { showTauItemsAdminMenu } = await import("./admin-ui");
-      await showTauItemsAdminMenu(player);
-      continue;
-    }
-    if (response.selection === 10) {
-      const { showModerationMenu } = await import("./admin-ui");
-      await showModerationMenu(player);
-      continue;
-    }
-    if (response.selection === 11) {
-      const { showCombatSettingsAdmin } = await import("./social-ui");
-      await showCombatSettingsAdmin(player);
-      continue;
-    }
-    if (response.selection === 12) {
+    if (response.id === "customAreas") {
       const { showCustomAreasAdminMenu } = await import("./custom-areas-ui");
       await showCustomAreasAdminMenu(player);
       continue;
     }
-    if (response.selection === 13) {
-      const { showPruneDataMenu } = await import("./admin-ui");
-      await showPruneDataMenu(player);
-      continue;
-    }
-    if (response.selection === 14) {
-      const { showGeneratorAdminMenu } = await import("./admin-ui");
-      await showGeneratorAdminMenu(player);
-      continue;
-    }
-    if (response.selection === 15) {
-      const { showCrateAdminMenu } = await import("./admin-ui");
-      await showCrateAdminMenu(player);
-      continue;
-    }
-    if (response.selection === 16) {
+    if (response.id === "lootChests") {
       const { showLootChestsAdminMenu } = await import("./loot-chests-ui");
       await showLootChestsAdminMenu(player);
       continue;
     }
-    if (response.selection === 17) {
+    if (response.id === "generators") {
+      const { showGeneratorAdminMenu } = await import("./admin-ui");
+      await showGeneratorAdminMenu(player);
+      continue;
+    }
+    if (response.id === "crates") {
+      const { showCrateAdminMenu } = await import("./admin-ui");
+      await showCrateAdminMenu(player);
+      continue;
+    }
+    if (response.id === "prune") {
+      const { showPruneDataMenu } = await import("./admin-ui");
+      await showPruneDataMenu(player);
+      continue;
+    }
+  }
+}
+
+async function showAdminRules(player: Player) {
+  while (true) {
+    const response = await TauUi.action("Admin / Rules")
+      .button("combat", "Combat Settings", { iconPath: ICONS.settings })
+      .button("moderation", "Moderation", { iconPath: ICONS.utility })
+      .button("tauItems", "TauItems", { iconPath: ICONS.item })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+
+    if (response.canceled || response.id === "back") return;
+
+    if (response.id === "combat") {
+      const { showCombatSettingsAdmin } = await import("./social-ui");
+      await showCombatSettingsAdmin(player);
+      continue;
+    }
+    if (response.id === "moderation") {
+      const { showModerationMenu } = await import("./admin-ui");
+      await showModerationMenu(player);
+      continue;
+    }
+    if (response.id === "tauItems") {
+      const { showTauItemsAdminMenu } = await import("./admin-ui");
+      await showTauItemsAdminMenu(player);
+      continue;
+    }
+  }
+}
+
+async function showConfigSection(player: Player) {
+  while (true) {
+    const response = await TauUi.action("Config")
+      .button("featureToggles", "Feature Toggles", { iconPath: ICONS.settings })
+      .button("socialSettings", "Social Settings", { iconPath: ICONS.menu })
+      .button("back", "Back", { iconPath: ICONS.back })
+      .show(player);
+
+    if (response.canceled || response.id === "back") return;
+
+    if (response.id === "featureToggles") {
       const { showConfigMenu } = await import("./admin-ui");
       await showConfigMenu(player);
       continue;
     }
-
-    return;
+    if (response.id === "socialSettings") {
+      const { showSocialSettingsAdmin } = await import("./social-ui");
+      await showSocialSettingsAdmin(player);
+      continue;
+    }
   }
 }
 

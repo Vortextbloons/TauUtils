@@ -56,6 +56,83 @@ export type CombatStore = {
   config: CombatConfig;
 };
 
+export type BuiltCommandCondition =
+  | {
+      type: "rank";
+      mode: "allow" | "deny";
+      ranks: string[];
+    }
+  | {
+      type: "tag";
+      mode: "has" | "missing";
+      tag: string;
+    }
+  | {
+      type: "score";
+      objective: string;
+      operator: "==" | "!=" | ">=" | "<=" | ">" | "<";
+      value: number;
+    }
+  | {
+      type: "permission";
+      permission: string;
+    };
+
+export type BuiltCommandAction =
+  | {
+      type: "command";
+      command: string;
+      delayTicks?: number;
+      runAs?: "executor" | "world";
+    }
+  | {
+      type: "effect";
+      effectId: string;
+      durationSeconds: number;
+      amplifier: number;
+      showParticles?: boolean;
+      delayTicks?: number;
+    }
+  | {
+      type: "score";
+      objective: string;
+      operation: "add" | "set" | "remove";
+      amount: number;
+      delayTicks?: number;
+    }
+  | {
+      type: "tag";
+      operation: "add" | "remove";
+      tag: string;
+      delayTicks?: number;
+    }
+  | {
+      type: "message";
+      message: string;
+      delayTicks?: number;
+    };
+
+export type BuiltCommandDefinition = {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  adminOnly: true;
+  cooldownSeconds?: number;
+  conditions: BuiltCommandCondition[];
+  actions: BuiltCommandAction[];
+};
+
+export type CommandBuilderStore = {
+  config: {
+    enabled: boolean;
+    maxCommands: number;
+    maxActionsPerCommand: number;
+    maxDelayTicks: number;
+  };
+  commands: Record<string, BuiltCommandDefinition>;
+};
+
 export type TauItemTriggerType = "use_air" | "use_block" | "hit_melee" | "mine_block";
 export type TauItemConsumptionMode = "none" | "consume_item" | "damage_durability";
 export type TauItemCostType = "money" | "xp" | "health";
@@ -431,6 +508,7 @@ export type ModerationInspectionSnapshot = {
   playerName: string;
   updatedAt: number;
   inventory: ModerationItemSnapshot[];
+  enderChest: ModerationItemSnapshot[];
 };
 
 export type ModerationStore = {

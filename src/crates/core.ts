@@ -1,5 +1,6 @@
 import { Block, ItemStack, Player, system, world } from "@minecraft/server";
 import { getInventoryContainer, getPlayerId, getScore, saveCrates, setScore, state } from "../storage";
+import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate } from "../shared/templates";
 import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "../types";
 
@@ -220,7 +221,7 @@ function giveReward(player: Player, crate: CrateDefinition, reward: CrateReward)
 
   if (reward.type === "command") {
     try {
-      player.runCommand(renderCommandTemplate(reward.command, {
+      const command = renderCommandTemplate(reward.command, {
         player,
         extra: {
           crate: crate.displayName,
@@ -231,7 +232,9 @@ function giveReward(player: Player, crate: CrateDefinition, reward: CrateReward)
           z: Math.floor(player.location.z),
           dimension: player.dimension.id,
         },
-      }));
+      });
+      if (runBuiltCommandFromConfiguredCommand(player, command)) return { ok: true, message: `Granted ${reward.label}.` };
+      player.runCommand(command);
       return { ok: true, message: `Granted ${reward.label}.` };
     } catch {
       return { ok: false, message: `Failed command reward: ${reward.label}.` };

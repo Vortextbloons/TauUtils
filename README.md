@@ -38,7 +38,7 @@ TauUtils is a modular Bedrock add-on for running a server or world with less com
 
 | Area | What it does |
 |:--|:--|
-| **Creator** | Build menus visually with buttons, toggles, sliders, dropdowns, inputs, labels, and dividers. |
+| **Creator** | Categorized hub for UI building (forms, bindings, command builder) plus player systems, world systems, admin tools, and config. |
 | **Bindings** | Bind menus to held items, item lore, entity interactions, or scriptevents. |
 | **Help System** | In-game help topics for commands, shops, sidebars, ranks, stats, plots, generators, crates, items, and more. |
 | **Shops** | Admin shop profiles plus player-run shops and a public marketplace. |
@@ -53,8 +53,8 @@ TauUtils is a modular Bedrock add-on for running a server or world with less com
 
 ### Creator And Admin Tools
 
-- Build menus in-game with the Creator UI.
-- Bind menus to items, lore, or entity tags.
+- The Creator is organized into submenus: **Menu & UI Management**, **Player Systems**, **World Systems**, **Admin / Rules**, and **Config**.
+- Build menus in-game under **Menu & UI Management** with forms, bindings, and command builder.
 - Toggle individual systems from the config menu.
 - Manage ranks, shops, generators, crates, custom areas, loot chests, and more from the admin UI.
 

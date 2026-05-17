@@ -52,6 +52,10 @@ export {
 export {
   type CombatConfig,
   type CombatStore,
+  type BuiltCommandCondition,
+  type BuiltCommandAction,
+  type BuiltCommandDefinition,
+  type CommandBuilderStore,
   type KillConditionStore,
   type KillConditionRule,
   type KillConditionFilters,

@@ -1,5 +1,5 @@
 // test 
-import { ItemStack, Player, world, system } from "@minecraft/server";
+import { EntityComponentTypes, ItemStack, Player, world, system } from "@minecraft/server";
 import { ensurePlayerPlotAssigned, getAssignedSlotIdForOwner, getPlotForLocation, getPlotOwnerIdForPlayer, getPlotSlotsList, getPlotTitle, processQueuedPlotBuildJobs, processQueuedPlotSnapshots, reconcileAllPlotState, releasePlayerPlotById, saveAssignedPlayerPlot, showPlotError, teleportPlayerToSlot } from "../plots";
 import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUseOnBlock, isGeneratorBlock, processGenerators } from "../generators";
 import { tryHandleCrateInteract } from "../crates";
@@ -111,10 +111,13 @@ function cacheModerationInspectionSnapshot(player: Player | undefined): boolean 
     const current = state.moderation.inspectionSnapshots[key];
     const inventory = getInventoryContainer(player);
     const inventorySnapshot = inventory ? (snapshotContainer(inventory) ?? (current?.inventory ?? [])) : (current?.inventory ?? []);
+    const enderInventory = player.getComponent(EntityComponentTypes.EnderInventory)?.container;
+    const enderChestSnapshot = enderInventory ? (snapshotContainer(enderInventory) ?? (current?.enderChest ?? [])) : (current?.enderChest ?? []);
     if (
       current
       && current.playerName === player.name
       && snapshotsEqual(current.inventory, inventorySnapshot)
+      && snapshotsEqual(current.enderChest, enderChestSnapshot)
     ) {
       return false;
     }
@@ -122,6 +125,7 @@ function cacheModerationInspectionSnapshot(player: Player | undefined): boolean 
       playerName: player.name,
       updatedAt: Date.now(),
       inventory: inventorySnapshot,
+      enderChest: enderChestSnapshot,
     };
     return true;
   } catch {
@@ -262,6 +266,7 @@ function processStatsSample(): void {
 
 function* processStatsSampleJob(players: Player[]): Generator<void, void, void> {
   for (const player of players) {
+    if (!isFeatureEnabled("stats")) break;
     const id = getPlayerId(player);
     const prev = lastSampleByPlayerId[id];
     const location = player.location;
@@ -290,6 +295,7 @@ function processPlotAutoSaveTick(getNextPlayer: () => Player | undefined, advanc
 
 function* processPlotAutoSaveJob(getNextPlayer: () => Player | undefined, advanceCursor: () => void, perTick: number): Generator<void, void, void> {
   for (let i = 0; i < perTick; i++) {
+    if (!isFeatureEnabled("plots")) break;
     const player = getNextPlayer();
     if (player) saveAssignedPlayerPlot(player);
     advanceCursor();
@@ -308,9 +314,14 @@ function processPlotTitleTick(): void {
 }
 
 function* processPlotTitleJob(players: Player[]): Generator<void, void, void> {
+  if (!isFeatureEnabled("plots") || !state.plots.config.autoBuild.showEnterTitle) {
+    plotTitleJobId = undefined;
+    return;
+  }
   const radius = Math.max(1, state.plots.config.autoBuild.titleRadius);
   const slots = getPlotSlotsList();
   for (const player of players) {
+    if (!isFeatureEnabled("plots") || !state.plots.config.autoBuild.showEnterTitle) break;
     if (player.dimension.id !== state.plots.config.dimensionId) {
       yield;
       continue;
@@ -372,6 +383,7 @@ function processModerationSnapshotTick(players: Player[], getNextPlayer: () => P
 function* processModerationSnapshotJob(getNextPlayer: () => Player | undefined, advanceCursor: () => void, perTick: number): Generator<void, void, void> {
   let changed = false;
   for (let index = 0; index < perTick; index++) {
+    if (!isFeatureEnabled("moderation")) break;
     const player = getNextPlayer();
     if (player && cacheModerationInspectionSnapshot(player)) changed = true;
     advanceCursor();

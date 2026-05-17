@@ -424,10 +424,15 @@ export function processLootChests(): void {
 }
 
 function* processLootChestsJob(cache: RuntimeCache, now: number): Generator<void, void, void> {
+  if (!isFeatureEnabled("lootChests") || !state.lootChests.config.enabled) {
+    processJobId = undefined;
+    return;
+  }
   const budget = Math.max(1, Math.floor(state.lootChests.config.maxRefillsPerTick || 1));
   let changed = false;
   let cacheChanged = false;
   for (let count = 0; count < Math.min(budget, cache.enabledChests.length); count++) {
+    if (!isFeatureEnabled("lootChests") || !state.lootChests.config.enabled) break;
     const chest = cache.enabledChests[processCursor % cache.enabledChests.length];
     processCursor = (processCursor + 1) % cache.enabledChests.length;
     if (!chest || now < chest.nextRefillAt) continue;

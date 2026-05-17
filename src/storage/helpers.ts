@@ -32,6 +32,7 @@ import {
   defaultCrateStore,
   defaultTauItemsStore,
   defaultCombatStore,
+  defaultCommandBuilderStore,
   defaultPlayerShopStore,
   PLOTS_CONFIG_KEY,
   PLOTS_MIGRATION_MARKER_KEY,
@@ -204,6 +205,7 @@ export function clearAllData() {
   world.setDynamicProperty(STORAGE_KEYS.crates, undefined);
   world.setDynamicProperty(STORAGE_KEYS.tauItems, undefined);
   world.setDynamicProperty(STORAGE_KEYS.combat, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.commandBuilder, undefined);
   world.setDynamicProperty(STORAGE_KEYS.playerShops, undefined);
   world.setDynamicProperty(PLAYER_SHOPS_CONFIG_KEY, undefined);
   world.setDynamicProperty(PLOTS_CONFIG_KEY, undefined);
@@ -244,6 +246,7 @@ export function clearAllData() {
   state.crates = defaultCrateStore();
   state.tauItems = defaultTauItemsStore();
   state.combat = defaultCombatStore();
+  state.commandBuilder = defaultCommandBuilderStore();
   state.playerShops = defaultPlayerShopStore();
 }
 

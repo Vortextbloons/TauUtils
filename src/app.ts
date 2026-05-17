@@ -1,5 +1,5 @@
 import { system, world } from "@minecraft/server";
-import { loadState, saveShops, state } from "./storage";
+import { isFeatureEnabled, loadState, saveShops, state } from "./storage";
 import { initializeOnlinePlayersAfterReload, registerEventInterceptors } from "./events";
 import { registerCustomCommands } from "./commands";
 import { registerSidebarSystem } from "./sidebar";
@@ -63,7 +63,7 @@ function bootstrap() {
     if (initialized || startupPhase !== 1) return;
     startupPhase = 2;
     reconcileTeamAssignments();
-    reconcileAllPlotState("startup_phase_2");
+    if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_phase_2");
     registerEventInterceptors();
     registerSidebarSystem();
     registerLootChestSystem();
@@ -72,9 +72,9 @@ function bootstrap() {
   system.runTimeout(() => {
     if (initialized || startupPhase !== 2) return;
     startupPhase = 3;
-    reconcileAllPlotState("startup_phase_3");
+    if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_phase_3");
     initializeOnlinePlayersAfterReload();
-    reconcileAllPlotState("startup_finalize");
+    if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_finalize");
     world.sendMessage(formatTauUtilsLoadedMessage());
     initialized = true;
   }, 20);
