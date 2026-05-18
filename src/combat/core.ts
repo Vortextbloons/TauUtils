@@ -416,18 +416,35 @@ function replaceKillPlaceholders(value: string, killer: Player, victim: Player, 
   });
 }
 
+function ensureObjective(objectiveId: string): boolean {
+  const existing = world.scoreboard.getObjective(objectiveId);
+  if (existing) return true;
+  try {
+    world.scoreboard.addObjective(objectiveId, objectiveId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function runKillConditionAction(action: KillConditionAction, killer: Player, victim: Player, context: CombatKillContext): void {
   if (action.type === "score") {
     const target = action.target === "victim" ? victim : killer;
-    const current = getScore(target, action.objective);
-    if (current === undefined) return;
+    if (!ensureObjective(action.objective)) return;
+    const current = getScore(target, action.objective) ?? 0;
     const amount = Math.floor(Number(action.amount) || 0);
     const next = action.operation === "set"
       ? amount
       : action.operation === "remove"
         ? current - amount
         : current + amount;
-    setScore(target, action.objective, next);
+    if (setScore(target, action.objective, next)) return;
+
+    try {
+      target.runCommand(`scoreboard players set @s ${action.objective} ${next}`);
+    } catch {
+      // ignore score initialization failures
+    }
     return;
   }
 

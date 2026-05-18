@@ -390,12 +390,29 @@ export function refillLootChest(chest: LootChestLocation, force = false): Refill
   if (!snapshot) return { ok: false, message: "Pool has no enabled weighted snapshots." };
   const container = getContainerAt(chest);
   if (!container) return { ok: false, message: "Target loot chest is missing or not a container." };
+  const now = nowMs();
+  const respawnDelayMs = Math.max(1, chest.respawnTicks) * 50;
+  const retryDelayMs = Math.max(1, state.lootChests.config.processIntervalTicks) * 50;
   if (!force && chest.refillMode === "empty_only" && !isContainerEmpty(container)) {
-    chest.nextRefillAt = nowMs() + Math.max(1, state.lootChests.config.processIntervalTicks) * 50;
+    chest.emptySinceAt = undefined;
+    chest.nextRefillAt = now + retryDelayMs;
     return { ok: true, message: "Chest is not empty; retrying soon.", savedChange: false };
   }
+
+  if (!force && chest.refillMode === "empty_only") {
+    if (chest.emptySinceAt === undefined) {
+      chest.emptySinceAt = now;
+      chest.nextRefillAt = now + respawnDelayMs;
+      return { ok: true, message: "Chest is empty; starting refill countdown.", savedChange: true };
+    }
+    if (now < chest.nextRefillAt) {
+      return { ok: true, message: "Chest is empty; waiting to refill.", savedChange: false };
+    }
+    chest.emptySinceAt = undefined;
+  }
+
   const placed = restoreSnapshotToContainer(snapshot, container, chest.preserveSlots);
-  chest.nextRefillAt = nowMs() + Math.max(1, chest.respawnTicks) * 50;
+  chest.nextRefillAt = now + respawnDelayMs;
   if (placed > 0) runRefillSideEffects(chest, snapshot, placed);
   return { ok: placed > 0, message: placed > 0 ? `Refilled with ${snapshot.name}.` : `No items from ${snapshot.name} could be placed.`, savedChange: true };
 }

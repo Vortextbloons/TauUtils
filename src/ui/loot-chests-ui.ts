@@ -36,12 +36,25 @@ function splitCommandLines(value: unknown): string[] {
     .slice(0, 10);
 }
 
+function getLootChestSnapshotTotalWeight(poolId: string): number {
+  return listLootChestSnapshots(poolId)
+    .filter((snapshot) => snapshot.enabled && Number.isFinite(snapshot.weight) && snapshot.weight > 0 && snapshot.items.length > 0)
+    .reduce((sum, snapshot) => sum + snapshot.weight, 0);
+}
+
+function getLootChestSnapshotChanceText(weight: number, totalWeight: number): string {
+  if (totalWeight <= 0) return "0%";
+  const chance = (weight / totalWeight) * 100;
+  return `${chance.toFixed(chance >= 10 ? 1 : 2)}%`;
+}
+
 function snapshotSummary(poolId: string): string {
   const snapshots = listLootChestSnapshots(poolId);
   if (snapshots.length === 0) return "§7No snapshots yet.";
+  const totalWeight = getLootChestSnapshotTotalWeight(poolId);
   return snapshots
     .slice(0, 12)
-    .map((snapshot) => `§f${snapshot.name} §7weight=§e${snapshot.weight} §7items=§b${snapshot.items.length} §7${snapshot.enabled ? "ON" : "OFF"}`)
+    .map((snapshot) => `§f${snapshot.name} §7weight=§e${snapshot.weight} §7(${getLootChestSnapshotChanceText(snapshot.weight, totalWeight)}) §7items=§b${snapshot.items.length} §7${snapshot.enabled ? "ON" : "OFF"}`)
     .join("\n");
 }
 
@@ -90,9 +103,11 @@ async function editSnapshot(player: Player, poolId: string, snapshotId: string):
       tell(player, "Snapshot not found.");
       return;
     }
+    const totalWeight = getLootChestSnapshotTotalWeight(poolId);
     const body = [
       `§7Name: §f${snapshot.name}`,
       `§7Weight: §e${snapshot.weight}`,
+      `§7Chance: §f${getLootChestSnapshotChanceText(snapshot.weight, totalWeight)}`,
       `§7Enabled: §f${snapshot.enabled ? "On" : "Off"}`,
       `§7Items: §b${snapshot.items.length}`,
       `§7Source: §8${snapshot.source ? `${snapshot.source.dimensionId} ${snapshot.source.x} ${snapshot.source.y} ${snapshot.source.z}` : "unknown"}`,
@@ -146,8 +161,9 @@ async function editSnapshot(player: Player, poolId: string, snapshotId: string):
 async function manageSnapshots(player: Player, poolId: string): Promise<void> {
   while (true) {
     const snapshots = listLootChestSnapshots(poolId);
+    const totalWeight = getLootChestSnapshotTotalWeight(poolId);
     const form = TauUi.action<string>("Snapshots").body(snapshotSummary(poolId));
-    for (const snapshot of snapshots) form.button("snapshot", `${snapshot.name} (${snapshot.weight})`, { iconPath: ICONS.item, value: snapshot.id });
+    for (const snapshot of snapshots) form.button("snapshot", `${snapshot.name} (${snapshot.weight}, ${getLootChestSnapshotChanceText(snapshot.weight, totalWeight)})`, { iconPath: ICONS.item, value: snapshot.id });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
     if (response.canceled || response.id === "back") return;

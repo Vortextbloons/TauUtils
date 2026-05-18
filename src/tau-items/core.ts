@@ -118,6 +118,13 @@ function consumeHeldTauItem(player: Player, expected: TauItemDefinition): boolea
   if (normalizeItemId(held.typeId) !== normalizeItemId(expected.baseItemId)) return false;
   if (readTauItemId(held) !== expected.id) return false;
 
+  // Stackable consumables should only lose one copy per use.
+  if (held.amount > 1) {
+    held.amount -= 1;
+    inventory.setItem(player.selectedSlotIndex, held);
+    return true;
+  }
+
   const remainingUses = readRemainingUses(held);
   if (expected.maxUses !== undefined && expected.maxUses > 0) {
     const current = remainingUses ?? expected.maxUses;

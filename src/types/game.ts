@@ -329,6 +329,7 @@ export type LootChestLocation = {
   enabled: boolean;
   respawnTicks: number;
   nextRefillAt: number;
+  emptySinceAt?: number;
   refillMode: LootChestRefillMode;
   preserveSlots: boolean;
   refillMessageEnabled?: boolean;
