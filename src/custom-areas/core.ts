@@ -14,6 +14,8 @@ type AreaState = {
 type RuntimeArea = {
   area: CustomAreaDefinition;
   allowedRanks: Set<string>;
+  blockBreakExceptions: Set<string>;
+  blockPlaceExceptions: Set<string>;
 };
 
 type AreaRuntimeCache = {
@@ -37,6 +39,10 @@ function normalizedRankSet(area: CustomAreaDefinition): Set<string> {
   return new Set(area.allowedRanks.map((rank) => rank.trim().toLowerCase()).filter((rank) => rank.length > 0));
 }
 
+function normalizedBlockSet(blocks: string[] | undefined): Set<string> {
+  return new Set((blocks ?? []).map((block) => block.trim().toLowerCase()).filter((block) => block.length > 0));
+}
+
 function playerAllowedByRank(player: Player, runtime: RuntimeArea): boolean {
   const ranks = runtime.allowedRanks;
   if (ranks.size === 0) return true;
@@ -56,7 +62,12 @@ function getEnabledAreaCache(): AreaRuntimeCache {
     const all = Object.values(state.customAreas.areas)
       .filter((area) => area.enabled)
       .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
-      .map((area) => ({ area, allowedRanks: normalizedRankSet(area) }));
+      .map((area) => ({
+        area,
+        allowedRanks: normalizedRankSet(area),
+        blockBreakExceptions: normalizedBlockSet(area.permissions?.blockBreakExceptions),
+        blockPlaceExceptions: normalizedBlockSet(area.permissions?.blockPlaceExceptions),
+      }));
     const byDimension = new Map<string, RuntimeArea[]>();
     for (const runtime of all) {
       const areas = byDimension.get(runtime.area.dimensionId) ?? [];
@@ -74,6 +85,10 @@ function getEnabledAreaRuntime(dimensionId?: string): RuntimeArea[] {
   return dimensionId ? (cache.byDimension.get(dimensionId) ?? []) : cache.all;
 }
 
+function getAreaRuntimeForPlayer(player: Player, location: Vector3 = player.location, dimensionId: string = player.dimension.id): RuntimeArea | undefined {
+  return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId) && playerAllowedByRank(player, runtime));
+}
+
 export function getAreasForLocation(location: Vector3, dimensionId: string): CustomAreaDefinition[] {
   return getEnabledAreaRuntime(dimensionId)
     .filter((runtime) => pointInside(runtime.area, location, dimensionId))
@@ -81,7 +96,7 @@ export function getAreasForLocation(location: Vector3, dimensionId: string): Cus
 }
 
 function getAreaForPlayer(player: Player, location: Vector3 = player.location, dimensionId: string = player.dimension.id): CustomAreaDefinition | undefined {
-  return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId) && playerAllowedByRank(player, runtime))?.area;
+  return getAreaRuntimeForPlayer(player, location, dimensionId)?.area;
 }
 
 function formatAreaMessage(raw: string, player: Player, area: CustomAreaDefinition): string {
@@ -219,16 +234,20 @@ function* processCustomAreasJob(): Generator<void, void, void> {
   customAreaJobId = undefined;
 }
 
-export function shouldCancelAreaBlockBreak(player: Player, location: Vector3, dimensionId: string): boolean {
+export function shouldCancelAreaBlockBreak(player: Player, location: Vector3, dimensionId: string, blockTypeId?: string): boolean {
   if (isOperator(player)) return false;
-  const area = getAreaForPlayer(player, location, dimensionId);
-  return Boolean(area && !area.permissions.blockBreak);
+  const runtime = getAreaRuntimeForPlayer(player, location, dimensionId);
+  if (!runtime || runtime.area.permissions.blockBreak) return false;
+  const blockId = blockTypeId?.trim().toLowerCase();
+  return !(blockId && runtime.blockBreakExceptions.has(blockId));
 }
 
-export function shouldCancelAreaBlockPlace(player: Player, location: Vector3, dimensionId: string): boolean {
+export function shouldCancelAreaBlockPlace(player: Player, location: Vector3, dimensionId: string, blockTypeId?: string): boolean {
   if (isOperator(player)) return false;
-  const area = getAreaForPlayer(player, location, dimensionId);
-  return Boolean(area && !area.permissions.blockPlace);
+  const runtime = getAreaRuntimeForPlayer(player, location, dimensionId);
+  if (!runtime || runtime.area.permissions.blockPlace) return false;
+  const blockId = blockTypeId?.trim().toLowerCase();
+  return !(blockId && runtime.blockPlaceExceptions.has(blockId));
 }
 
 export function shouldCancelAreaItemUse(player: Player): boolean {
@@ -269,13 +288,22 @@ function safeAreaVector(vector: Vector3): boolean {
 
 function normalizeAreaDefinition(area: CustomAreaDefinition): CustomAreaDefinition {
   const bounds = normalizeAreaBounds(area.min, area.max);
+  const permissions = area.permissions ?? { pvp: true, blockBreak: true, blockBreakExceptions: [], blockPlace: true, blockPlaceExceptions: [], itemUse: true, entityInteract: true };
   return {
     ...area,
     dimensionId: String(area.dimensionId ?? "minecraft:overworld").trim() || "minecraft:overworld",
     min: bounds.min,
     max: bounds.max,
     allowedRanks: [...(area.allowedRanks ?? [])],
-    permissions: Object.assign({ pvp: true, blockBreak: true, blockPlace: true, itemUse: true, entityInteract: true }, area.permissions ?? {}),
+    permissions: {
+      pvp: permissions.pvp ?? true,
+      blockBreak: permissions.blockBreak ?? true,
+      blockBreakExceptions: [...normalizedBlockSet(permissions.blockBreakExceptions)],
+      blockPlace: permissions.blockPlace ?? true,
+      blockPlaceExceptions: [...normalizedBlockSet(permissions.blockPlaceExceptions)],
+      itemUse: permissions.itemUse ?? true,
+      entityInteract: permissions.entityInteract ?? true,
+    },
     dropItemsIfInCombat: area.dropItemsIfInCombat ?? false,
     commandRules: (area.commandRules ?? []).map((rule) => ({ ...rule, commands: [...(rule.commands ?? [])] })),
     effects: (area.effects ?? []).map((effect) => ({ ...effect })),

@@ -2,6 +2,7 @@ import { Block, BlockComponentTypes, BlockInventoryComponent, Player, system, wo
 import { isFeatureEnabled, isOperator, saveLootChests, state, tell } from "../storage";
 import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
+import { registerBackgroundTask } from "../scheduler";
 import type { LootChestLocation, LootChestPool, LootChestRefillMode, LootChestSnapshot, LootChestSnapshotItem } from "../types";
 
 type ContainerLike = {
@@ -72,13 +73,6 @@ function getContainerAt(location: LocationInput): ContainerLike | undefined {
   }
 }
 
-function isContainerEmpty(container: ContainerLike): boolean {
-  for (let slot = 0; slot < container.size; slot++) {
-    if (container.getItem(slot)) return false;
-  }
-  return true;
-}
-
 function clearContainer(container: ContainerLike): void {
   for (let slot = 0; slot < container.size; slot++) {
     container.setItem(slot, undefined);
@@ -129,6 +123,7 @@ function restoreSnapshotToContainer(snapshot: LootChestSnapshot, container: Cont
 function getRefillTemplateExtra(chest: LootChestLocation, snapshot: LootChestSnapshot, placed: number): Record<string, string | number | boolean | undefined> {
   const pool = state.lootChests.pools[chest.poolId];
   return {
+    chest_name: chest.name,
     chest: chest.id,
     pool: pool?.name ?? chest.poolId,
     pool_id: chest.poolId,
@@ -140,6 +135,17 @@ function getRefillTemplateExtra(chest: LootChestLocation, snapshot: LootChestSna
     z: chest.z,
     dimension: chest.dimensionId,
   };
+}
+
+function scheduleLootChestRefill(chest: LootChestLocation): void {
+  if (chest.refillMode !== "always") {
+    chest.nextRefillAt = Number.POSITIVE_INFINITY;
+    chest.emptySinceAt = undefined;
+    return;
+  }
+
+  chest.nextRefillAt = nowMs();
+  chest.emptySinceAt = undefined;
 }
 
 function runRefillSideEffects(chest: LootChestLocation, snapshot: LootChestSnapshot, placed: number): void {
@@ -323,13 +329,14 @@ export function deleteLootChestSnapshot(poolId: string, snapshotId: string): Ref
   return { ok: true, message: `Deleted snapshot ${snapshot.name}.` };
 }
 
-export function bindLootChestLocation(location: LocationInput, poolId: string, options: { respawnTicks?: number; refillMode?: LootChestRefillMode; preserveSlots?: boolean } = {}): RefillResult {
+export function bindLootChestLocation(location: LocationInput, poolId: string, options: { name?: string; respawnTicks?: number; refillMode?: LootChestRefillMode; preserveSlots?: boolean } = {}): RefillResult {
   const pool = getLootChestPool(poolId);
   if (!pool) return { ok: false, message: "Pool not found." };
   if (!getContainerAt(location)) return { ok: false, message: "Target block is not a chest/container." };
   const key = locationKey(location);
   state.lootChests.chests[key] = {
     id: key,
+    name: String(options.name ?? key).trim() || key,
     poolId: pool.id,
     dimensionId: location.dimensionId,
     x: Math.floor(location.x),
@@ -337,8 +344,8 @@ export function bindLootChestLocation(location: LocationInput, poolId: string, o
     z: Math.floor(location.z),
     enabled: true,
     respawnTicks: Math.max(1, Math.floor(options.respawnTicks ?? state.lootChests.config.defaultRespawnTicks)),
-    nextRefillAt: nowMs(),
-    refillMode: options.refillMode ?? "empty_only",
+    nextRefillAt: options.refillMode === "always" ? nowMs() : Number.POSITIVE_INFINITY,
+    refillMode: options.refillMode ?? "open",
     preserveSlots: options.preserveSlots ?? true,
     refillMessageEnabled: false,
     refillMessage: "§aLoot chest refilled at [x] [y] [z].",
@@ -351,7 +358,7 @@ export function bindLootChestLocation(location: LocationInput, poolId: string, o
   return { ok: true, message: `Bound loot chest at ${key} to ${pool.name}.` };
 }
 
-export function updateLootChestLocation(chestId: string, patch: Partial<Pick<LootChestLocation, "poolId" | "enabled" | "respawnTicks" | "refillMode" | "preserveSlots" | "refillMessageEnabled" | "refillMessage" | "broadcastRefillMessage" | "refillCommandsEnabled" | "refillCommands">>): RefillResult {
+export function updateLootChestLocation(chestId: string, patch: Partial<Pick<LootChestLocation, "name" | "poolId" | "enabled" | "respawnTicks" | "refillMode" | "preserveSlots" | "refillMessageEnabled" | "refillMessage" | "broadcastRefillMessage" | "refillCommandsEnabled" | "refillCommands">>): RefillResult {
   const chest = state.lootChests.chests[chestId];
   if (!chest) return { ok: false, message: "Loot chest not found." };
   if (patch.poolId !== undefined) {
@@ -359,9 +366,13 @@ export function updateLootChestLocation(chestId: string, patch: Partial<Pick<Loo
     if (!pool) return { ok: false, message: "Pool not found." };
     chest.poolId = pool.id;
   }
+  if (patch.name !== undefined) chest.name = String(patch.name).trim() || chest.name;
   if (patch.enabled !== undefined) chest.enabled = patch.enabled;
   if (patch.respawnTicks !== undefined) chest.respawnTicks = Math.max(1, Math.floor(Number(patch.respawnTicks) || chest.respawnTicks));
-  if (patch.refillMode !== undefined) chest.refillMode = patch.refillMode;
+  if (patch.refillMode !== undefined) {
+    chest.refillMode = patch.refillMode;
+    scheduleLootChestRefill(chest);
+  }
   if (patch.preserveSlots !== undefined) chest.preserveSlots = patch.preserveSlots;
   if (patch.refillMessageEnabled !== undefined) chest.refillMessageEnabled = patch.refillMessageEnabled;
   if (patch.refillMessage !== undefined) chest.refillMessage = patch.refillMessage;
@@ -392,29 +403,35 @@ export function refillLootChest(chest: LootChestLocation, force = false): Refill
   if (!container) return { ok: false, message: "Target loot chest is missing or not a container." };
   const now = nowMs();
   const respawnDelayMs = Math.max(1, chest.respawnTicks) * 50;
-  const retryDelayMs = Math.max(1, state.lootChests.config.processIntervalTicks) * 50;
-  if (!force && chest.refillMode === "empty_only" && !isContainerEmpty(container)) {
-    chest.emptySinceAt = undefined;
-    chest.nextRefillAt = now + retryDelayMs;
-    return { ok: true, message: "Chest is not empty; retrying soon.", savedChange: false };
-  }
-
-  if (!force && chest.refillMode === "empty_only") {
+  if (!force && chest.refillMode !== "always") {
     if (chest.emptySinceAt === undefined) {
-      chest.emptySinceAt = now;
-      chest.nextRefillAt = now + respawnDelayMs;
-      return { ok: true, message: "Chest is empty; starting refill countdown.", savedChange: true };
+      return { ok: true, message: "Chest has not been opened yet.", savedChange: false };
     }
     if (now < chest.nextRefillAt) {
-      return { ok: true, message: "Chest is empty; waiting to refill.", savedChange: false };
+      return { ok: true, message: "Chest is waiting to refill.", savedChange: false };
     }
-    chest.emptySinceAt = undefined;
   }
 
   const placed = restoreSnapshotToContainer(snapshot, container, chest.preserveSlots);
-  chest.nextRefillAt = now + respawnDelayMs;
+  scheduleLootChestRefill(chest);
   if (placed > 0) runRefillSideEffects(chest, snapshot, placed);
   return { ok: placed > 0, message: placed > 0 ? `Refilled with ${snapshot.name}.` : `No items from ${snapshot.name} could be placed.`, savedChange: true };
+}
+
+export function startLootChestRefillCountdown(location: LocationInput): RefillResult {
+  const chest = getLootChestLocation(location);
+  if (!chest) return { ok: false, message: "Loot chest not found." };
+  if (!chest.enabled) return { ok: false, message: "Loot chest is disabled." };
+  if (chest.refillMode === "always") return { ok: true, message: "Loot chest does not use open-triggered refill.", savedChange: false };
+  if (chest.emptySinceAt !== undefined && chest.nextRefillAt !== Number.POSITIVE_INFINITY) {
+    return { ok: true, message: "Loot chest refill countdown already started.", savedChange: false };
+  }
+
+  chest.emptySinceAt = nowMs();
+  chest.nextRefillAt = chest.emptySinceAt + Math.max(1, chest.respawnTicks) * 50;
+  saveLootChests();
+  invalidateLootChestRuntimeCache();
+  return { ok: true, message: "Loot chest refill countdown started.", savedChange: true };
 }
 
 export function forceRefillLootChest(chestId: string): RefillResult {
@@ -424,6 +441,36 @@ export function forceRefillLootChest(chestId: string): RefillResult {
   saveLootChests();
   invalidateLootChestRuntimeCache();
   return result;
+}
+
+export function forceRefillAllLootChests(): RefillResult {
+  const chests = Object.values(state.lootChests.chests);
+  if (chests.length === 0) return { ok: false, message: "No loot chests are bound." };
+
+  let refilled = 0;
+  let failed = 0;
+  for (const chest of chests) {
+    const result = refillLootChest(chest, true);
+    if (result.ok) refilled += 1;
+    else failed += 1;
+  }
+
+  saveLootChests();
+  invalidateLootChestRuntimeCache();
+  return {
+    ok: refilled > 0,
+    message: `Forced refill complete: ${refilled}/${chests.length} chest(s) refilled${failed > 0 ? `, ${failed} failed` : ""}.`,
+  };
+}
+
+export function applyLootChestSnapshotToLocation(poolId: string, snapshotId: string, location: LocationInput, preserveSlots = true): RefillResult {
+  const key = snapshotKey(normalizeId(poolId), normalizeId(snapshotId));
+  const snapshot = state.lootChests.snapshots[key];
+  if (!snapshot) return { ok: false, message: "Snapshot not found." };
+  const container = getContainerAt(location);
+  if (!container) return { ok: false, message: "Target block is not a chest/container." };
+  const placed = restoreSnapshotToContainer(snapshot, container, preserveSlots);
+  return { ok: placed > 0, message: placed > 0 ? `Applied ${snapshot.name} to the looked-at chest.` : `No items from ${snapshot.name} could be placed.` };
 }
 
 export function processLootChests(): void {
@@ -468,13 +515,12 @@ function* processLootChestsJob(cache: RuntimeCache, now: number): Generator<void
 }
 
 export function registerLootChestSystem(): void {
-  const interval = Math.max(1, state.lootChests.config.processIntervalTicks);
-  system.runTimeout(() => {
-    processLootChests();
-    system.runInterval(() => {
-      processLootChests();
-    }, interval);
-  }, Math.min(19, Math.max(1, Math.floor(interval / 2))));
+  registerBackgroundTask(
+    "loot-chests",
+    () => Math.max(1, state.lootChests.config.processIntervalTicks),
+    processLootChests,
+    Math.min(19, Math.max(1, Math.floor(Math.max(1, state.lootChests.config.processIntervalTicks) / 2)))
+  );
 }
 
 export function getLookedAtContainerLocation(player: Player, maxDistance = 8): LocationInput | undefined {
@@ -501,7 +547,7 @@ export function shouldCancelLootChestBreak(player: Player, location: Vector3, di
 
 export function describeLootChest(chest: LootChestLocation): string {
   const pool = state.lootChests.pools[chest.poolId];
-  return `${chest.dimensionId} ${chest.x} ${chest.y} ${chest.z} -> ${pool?.name ?? chest.poolId}`;
+  return `${chest.name} -> ${chest.dimensionId} ${chest.x} ${chest.y} ${chest.z} -> ${pool?.name ?? chest.poolId}`;
 }
 
 export function sendLootChestResult(player: Player, result: RefillResult): void {

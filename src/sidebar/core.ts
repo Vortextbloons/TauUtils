@@ -3,6 +3,7 @@ import { ICONS, type SidebarDefinition } from "../types";
 import { TauUi } from "../ui";
 import { isFeatureEnabled, isOperator, saveSidebars, state, tell } from "../storage";
 import { renderTemplate } from "../shared/templates";
+import { registerBackgroundTask, registerEveryTickTask } from "../scheduler";
 
 let tpsSampleTick = 0;
 let tpsSampleTime = Date.now();
@@ -208,17 +209,6 @@ function* renderSidebarJob(players: Player[]): Generator<void, void, void> {
   sidebarRenderJobId = undefined;
 }
 
-function registerStaggeredInterval(callback: () => void, interval: number, offset: number): void {
-  if (offset <= 0) {
-    system.runInterval(callback, interval);
-    return;
-  }
-  system.runTimeout(() => {
-    callback();
-    system.runInterval(callback, interval);
-  }, offset);
-}
-
 function sampleTpsTick() {
   if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) return;
   tpsSampleTick++;
@@ -236,8 +226,8 @@ export function registerSidebarSystem() {
   ensureDefaultSidebarExists();
   ensureSidebarDefaults();
   sanitizeAllSidebars();
-  system.runInterval(sampleTpsTick, 1);
-  registerStaggeredInterval(renderSidebarTick, 5, 3);
+  registerEveryTickTask("sidebar-tps-sample", sampleTpsTick);
+  registerBackgroundTask("sidebar-render", 5, renderSidebarTick, 3);
 }
 
 async function createOrEditSidebar(player: Player, sidebarId?: string) {

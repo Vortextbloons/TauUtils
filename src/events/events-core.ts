@@ -7,7 +7,8 @@ import { tryHandleTauItemTrigger } from "../tau-items";
 import { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
-import { shouldCancelLootChestBreak } from "../loot-chests";
+import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../loot-chests";
+import { registerBackgroundTask } from "../scheduler";
 import {
   asPlayer,
   incrementStat,
@@ -241,19 +242,6 @@ function getCachedPlayers(): Player[] {
     cachedPlayersTick = system.currentTick;
   }
   return cachedPlayers;
-}
-
-function registerStaggeredInterval(callback: () => void, interval: number, offset: number): void {
-  const tickInterval = Math.max(1, Math.floor(interval));
-  const tickOffset = Math.max(0, Math.floor(offset));
-  if (tickOffset <= 0) {
-    system.runInterval(callback, tickInterval);
-    return;
-  }
-  system.runTimeout(() => {
-    callback();
-    system.runInterval(callback, tickInterval);
-  }, tickOffset);
 }
 
 function processStatsSample(): void {
@@ -545,14 +533,14 @@ export function registerEventInterceptors() {
   });
 
   world.afterEvents.playerPlaceBlock.subscribe((event) => {
-    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id)) return;
+    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id, event.block.typeId)) return;
     if (!isFeatureEnabled("stats")) return;
     incrementStat(event.player, "blocksPlaced", 1);
   });
 
-  const beforePlaceBlock = (world.beforeEvents as unknown as { playerPlaceBlock?: { subscribe(callback: (event: { player: Player; block: { location: { x: number; y: number; z: number } }; cancel: boolean }) => void): void } }).playerPlaceBlock;
+  const beforePlaceBlock = (world.beforeEvents as unknown as { playerPlaceBlock?: { subscribe(callback: (event: { player: Player; block: { location: { x: number; y: number; z: number } }; permutationToPlace: { type: { id: string } }; cancel: boolean }) => void): void } }).playerPlaceBlock;
   beforePlaceBlock?.subscribe((event) => {
-    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id)) {
+    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id, event.permutationToPlace.type.id)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot place blocks in this area.");
     }
@@ -595,6 +583,15 @@ export function registerEventInterceptors() {
       }
     }
 
+    if (isFeatureEnabled("lootChests")) {
+      startLootChestRefillCountdown({
+        dimensionId: event.player.dimension.id,
+        x: event.block.location.x,
+        y: event.block.location.y,
+        z: event.block.location.z,
+      });
+    }
+
     if (!isFeatureEnabled("generators")) return;
     const heldStack = getInventoryContainer(event.player)?.getItem(event.player.selectedSlotIndex);
     if (!describeGeneratorStack(heldStack)) return;
@@ -613,7 +610,7 @@ export function registerEventInterceptors() {
       tell(event.player, "§cYou cannot break managed loot chests.");
       return;
     }
-    if (shouldCancelAreaBlockBreak(event.player, event.block.location, event.player.dimension.id)) {
+    if (shouldCancelAreaBlockBreak(event.player, event.block.location, event.player.dimension.id, event.block.typeId)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot break blocks in this area.");
       return;
@@ -723,18 +720,18 @@ export function registerEventInterceptors() {
     if (handled.matched && handled.message) tell(player, handled.message);
   });
 
-  registerStaggeredInterval(() => {
+  registerBackgroundTask("combat-tags", 20, () => {
     processCombatTags();
-  }, 20, 1);
+  }, 1);
 
-  registerStaggeredInterval(() => {
+  registerBackgroundTask("custom-areas", () => Math.max(1, state.customAreas.config.checkIntervalTicks), () => {
     processCustomAreas();
-  }, Math.max(1, state.customAreas.config.checkIntervalTicks), 4);
+  }, 4);
 
-  registerStaggeredInterval(processStatsSample, 20, 7);
+  registerBackgroundTask("stats-sample", 20, processStatsSample, 7);
 
   let plotSaveCursor = 0;
-  registerStaggeredInterval(() => {
+  registerBackgroundTask("plot-auto-save", () => Math.max(1, state.plots.config.saveIntervalTicks), () => {
     const players = getCachedPlayers();
     if (!isFeatureEnabled("plots")) return;
     if (players.length === 0) {
@@ -747,10 +744,10 @@ export function registerEventInterceptors() {
       () => { plotSaveCursor++; },
       perTick
     );
-  }, Math.max(1, state.plots.config.saveIntervalTicks), 11);
+  }, 11);
 
   let moderationSnapshotCursor = 0;
-  registerStaggeredInterval(() => {
+  registerBackgroundTask("moderation-snapshot", 40, () => {
     if (!isFeatureEnabled("moderation")) return;
     const players = getCachedPlayers();
     if (players.length === 0) return;
@@ -761,17 +758,17 @@ export function registerEventInterceptors() {
       () => { moderationSnapshotCursor++; },
       perTick
     );
-  }, 40, 17);
+  }, 17);
 
-  registerStaggeredInterval(processPlotTitleTick, 20, 13);
+  registerBackgroundTask("plot-enter-title", 20, processPlotTitleTick, 13);
 
-  registerStaggeredInterval(() => {
+  registerBackgroundTask("plot-build-queue", 20, () => {
     if (!isFeatureEnabled("plots")) return;
     processQueuedPlotBuildJobs();
-  }, 20, 15);
+  }, 15);
 
-  registerStaggeredInterval(() => {
+  registerBackgroundTask("generators", 20, () => {
     if (!isFeatureEnabled("generators")) return;
     processGenerators();
-  }, 20, 18);
+  }, 18);
 }

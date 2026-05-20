@@ -11,7 +11,7 @@ function parseCoords(raw: string): { ok: boolean; message: string; values?: numb
 }
 
 function defaultPermissions() {
-  return { pvp: true, blockBreak: true, blockPlace: true, itemUse: true, entityInteract: true };
+  return { pvp: true, blockBreak: true, blockBreakExceptions: [], blockPlace: true, blockPlaceExceptions: [], itemUse: true, entityInteract: true };
 }
 
 function defaultArea(id: string, player: Player, values: number[]): CustomAreaDefinition {
@@ -44,11 +44,19 @@ function copyArea(area: CustomAreaDefinition): CustomAreaDefinition {
     max: { ...area.max },
     allowedRanks: [...(area.allowedRanks ?? [])],
     dropItemsIfInCombat: area.dropItemsIfInCombat ?? false,
-    permissions: { ...(area.permissions ?? defaultPermissions()) },
+    permissions: {
+      ...(area.permissions ?? defaultPermissions()),
+      blockBreakExceptions: [...(area.permissions?.blockBreakExceptions ?? [])],
+      blockPlaceExceptions: [...(area.permissions?.blockPlaceExceptions ?? [])],
+    },
     commandRules: (area.commandRules ?? []).map((rule) => ({ ...rule, commands: [...(rule.commands ?? [])] })),
     effects: (area.effects ?? []).map((effect) => ({ ...effect })),
     tickingArea: area.tickingArea ? { ...area.tickingArea } : undefined,
   };
+}
+
+function parseBlockList(raw: string): string[] {
+  return [...new Set(raw.split(",").map((entry) => normalizeKey(entry.trim())).filter((entry) => entry.length > 0))];
 }
 
 function getArea(player: Player, areaId: string): CustomAreaDefinition | undefined {
@@ -150,7 +158,9 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
   const result = await TauUi.modal(`Permissions: ${area.name}`)
     .toggle("pvp", "Allow PvP", area.permissions.pvp)
     .toggle("blockBreak", "Allow block breaking", area.permissions.blockBreak)
+    .text("blockBreakExceptions", "Break exceptions (comma, only when off)", { placeholder: "minecraft:stone,minecraft:dirt", defaultValue: area.permissions.blockBreakExceptions.join(",") })
     .toggle("blockPlace", "Allow block placing", area.permissions.blockPlace)
+    .text("blockPlaceExceptions", "Place exceptions (comma, only when off)", { placeholder: "minecraft:stone,minecraft:dirt", defaultValue: area.permissions.blockPlaceExceptions.join(",") })
     .toggle("itemUse", "Allow item use", area.permissions.itemUse)
     .toggle("entityInteract", "Allow entity interact", area.permissions.entityInteract)
     .toggle("dropItemsIfInCombat", "Drop items if in combat", area.dropItemsIfInCombat ?? false)
@@ -161,7 +171,9 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
   next.permissions = {
     pvp: Boolean(result.values.pvp),
     blockBreak: Boolean(result.values.blockBreak),
+    blockBreakExceptions: parseBlockList(String(result.values.blockBreakExceptions ?? "")),
     blockPlace: Boolean(result.values.blockPlace),
+    blockPlaceExceptions: parseBlockList(String(result.values.blockPlaceExceptions ?? "")),
     itemUse: Boolean(result.values.itemUse),
     entityInteract: Boolean(result.values.entityInteract),
   };

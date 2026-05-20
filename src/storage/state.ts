@@ -642,8 +642,13 @@ function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { store: Loo
       const raw = world.getDynamicProperty(key) as string | undefined;
       const parsed = parseJSON<LootChestLocation | undefined>(raw, undefined);
       if (!parsed?.id || !parsed.poolId) continue;
+      parsed.name ??= parsed.id;
       parsed.enabled ??= true;
-      parsed.refillMode ??= "empty_only";
+      if (parsed.refillMode === "empty_only" || parsed.refillMode === undefined) parsed.refillMode = "open";
+      if (parsed.refillMode === "open") {
+        parsed.nextRefillAt = Number.POSITIVE_INFINITY;
+        parsed.emptySinceAt = undefined;
+      }
       parsed.preserveSlots ??= true;
       parsed.refillMessageEnabled ??= false;
       parsed.refillMessage ??= "§aLoot chest refilled at [x] [y] [z].";
@@ -1202,6 +1207,15 @@ export function loadState() {
   state.customAreas.areas ??= {};
   for (const area of Object.values(state.customAreas.areas)) {
     area.dropItemsIfInCombat ??= false;
+    area.permissions = {
+      pvp: area.permissions?.pvp ?? true,
+      blockBreak: area.permissions?.blockBreak ?? true,
+      blockBreakExceptions: [...new Set((area.permissions?.blockBreakExceptions ?? []).map((block) => block.trim().toLowerCase()).filter((block) => block.length > 0))],
+      blockPlace: area.permissions?.blockPlace ?? true,
+      blockPlaceExceptions: [...new Set((area.permissions?.blockPlaceExceptions ?? []).map((block) => block.trim().toLowerCase()).filter((block) => block.length > 0))],
+      itemUse: area.permissions?.itemUse ?? true,
+      entityInteract: area.permissions?.entityInteract ?? true,
+    };
   }
   state.plots = normalizePlotStore(state.plots);
   const splitLootChests = loadLootChestsFromSplitKeys(dynamicPropertyIds);

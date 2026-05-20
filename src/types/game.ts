@@ -288,7 +288,7 @@ export type CrateStore = {
   locations: Record<string, { crateId: string; dimensionId: string; x: number; y: number; z: number }>;
 };
 
-export type LootChestRefillMode = "empty_only" | "always";
+export type LootChestRefillMode = "open" | "always" | "empty_only";
 
 export type LootChestSnapshotItem = {
   slot: number;
@@ -321,6 +321,7 @@ export type LootChestPool = {
 
 export type LootChestLocation = {
   id: string;
+  name: string;
   poolId: string;
   dimensionId: string;
   x: number;
@@ -432,7 +433,9 @@ export type CustomAreaVector = { x: number; y: number; z: number };
 export type CustomAreaPermissions = {
   pvp: boolean;
   blockBreak: boolean;
+  blockBreakExceptions: string[];
   blockPlace: boolean;
+  blockPlaceExceptions: string[];
   itemUse: boolean;
   entityInteract: boolean;
 };

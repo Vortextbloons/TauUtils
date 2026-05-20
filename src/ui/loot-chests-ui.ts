@@ -2,6 +2,7 @@ import { Player } from "@minecraft/server";
 import { ICONS } from "./icons";
 import { isOperator, saveLootChests, state, tell } from "../storage";
 import {
+  applyLootChestSnapshotToLocation,
   bindLootChestLocation,
   captureLootChestSnapshot,
   createLootChestPool,
@@ -9,6 +10,7 @@ import {
   deleteLootChestPool,
   deleteLootChestSnapshot,
   describeLootChest,
+  forceRefillAllLootChests,
   forceRefillLootChest,
   getLookedAtContainerLocation,
   listLootChestLocations,
@@ -26,6 +28,10 @@ import { TauUi } from "./tau-ui";
 function parseCoord(value: unknown, fallback: number): number {
   const parsed = Math.floor(Number(value));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getRefillModeLabel(mode: LootChestRefillMode): string {
+  return mode === "open" ? "Open triggered" : "Always";
 }
 
 function splitCommandLines(value: unknown): string[] {
@@ -56,6 +62,22 @@ function snapshotSummary(poolId: string): string {
     .slice(0, 12)
     .map((snapshot) => `§f${snapshot.name} §7weight=§e${snapshot.weight} §7(${getLootChestSnapshotChanceText(snapshot.weight, totalWeight)}) §7items=§b${snapshot.items.length} §7${snapshot.enabled ? "ON" : "OFF"}`)
     .join("\n");
+}
+
+function snapshotContentsBody(snapshotId: string): string {
+  const snapshot = Object.values(state.lootChests.snapshots).find((entry) => `${entry.poolId}:${entry.id}` === snapshotId);
+  if (!snapshot) return "Snapshot not found.";
+  const lines = [
+    `§7Name: §f${snapshot.name}`,
+    `§7Weight: §e${snapshot.weight}`,
+    `§7Items: §b${snapshot.items.length}`,
+  ];
+  for (const entry of snapshot.items.slice(0, 20)) {
+    const name = entry.item.nameTag?.trim() || entry.item.itemId;
+    lines.push(`§7- §f${name} §8x${entry.item.amount} §7(${entry.item.itemId})`);
+  }
+  if (snapshot.items.length > 20) lines.push(`§7...and ${snapshot.items.length - 20} more`);
+  return lines.join("\n");
 }
 
 async function promptLocation(player: Player, title: string) {
@@ -115,6 +137,8 @@ async function editSnapshot(player: Player, poolId: string, snapshotId: string):
     const response = await TauUi.action("Snapshot")
       .body(body)
       .button("edit", "Edit Name / Weight", { iconPath: ICONS.edit })
+      .button("preview", "Preview Contents", { iconPath: ICONS.item })
+      .button("apply", "Apply To Looked Chest", { iconPath: ICONS.confirm })
       .button("toggle", `Enabled: ${snapshot.enabled ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("replace", "Replace From Chest", { iconPath: ICONS.binding })
       .button("delete", "Delete Snapshot", { iconPath: ICONS.delete })
@@ -136,6 +160,22 @@ async function editSnapshot(player: Player, poolId: string, snapshotId: string):
     }
     if (response.id === "toggle") {
       sendLootChestResult(player, updateLootChestSnapshot(poolId, snapshotId, { enabled: !snapshot.enabled }));
+      continue;
+    }
+    if (response.id === "preview") {
+      await TauUi.action("Snapshot Contents")
+        .body(snapshotContentsBody(`${poolId}:${snapshotId}`))
+        .button("back", "Back", { iconPath: ICONS.back })
+        .show(player);
+      continue;
+    }
+    if (response.id === "apply") {
+      const looked = getLookedAtContainerLocation(player);
+      if (!looked) {
+        tell(player, "Look at a chest/container first.");
+        continue;
+      }
+      sendLootChestResult(player, applyLootChestSnapshotToLocation(poolId, snapshotId, looked));
       continue;
     }
     if (response.id === "replace") {
@@ -253,16 +293,27 @@ async function bindChest(player: Player, useLookedAt: boolean): Promise<void> {
     tell(player, "No chest/container selected.");
     return;
   }
-  const result = await TauUi.modal("Loot Chest Settings")
-    .text("respawnTicks", "Respawn ticks", { defaultValue: String(state.lootChests.config.defaultRespawnTicks) })
-    .dropdown("refillMode", "Refill mode", ["empty_only", "always"])
-    .toggle("preserveSlots", "Preserve saved slots", true)
-    .submitButton("Bind")
+  const nameResult = await TauUi.modal("Loot Chest Name")
+    .text("name", "Chest name", { defaultValue: `${picked.value} @ ${location.x} ${location.y} ${location.z}` })
+    .submitButton("Continue")
     .show(player);
+  if (nameResult.canceled) return;
+  const name = String(nameResult.values.name ?? "").trim();
+  if (!name) {
+    tell(player, "Chest name is required.");
+    return;
+  }
+    const result = await TauUi.modal("Loot Chest Settings")
+      .text("respawnTicks", "Respawn ticks", { defaultValue: String(state.lootChests.config.defaultRespawnTicks) })
+      .dropdown("refillMode", "Refill mode", ["Open triggered", "Always"])
+      .toggle("preserveSlots", "Preserve saved slots", true)
+      .submitButton("Bind")
+      .show(player);
   if (result.canceled) return;
   sendLootChestResult(player, bindLootChestLocation(location, picked.value, {
+    name,
     respawnTicks: Number(result.values.respawnTicks ?? state.lootChests.config.defaultRespawnTicks),
-    refillMode: (Number(result.values.refillMode ?? 0) === 1 ? "always" : "empty_only") as LootChestRefillMode,
+    refillMode: (Number(result.values.refillMode ?? 0) === 1 ? "always" : "open") as LootChestRefillMode,
     preserveSlots: result.values.preserveSlots === true,
   }));
 }
@@ -272,7 +323,7 @@ async function editLocation(player: Player, chestId: string): Promise<void> {
     const chest = state.lootChests.chests[chestId];
     if (!chest) return;
     const response = await TauUi.action("Loot Chest")
-      .body(`§7${describeLootChest(chest)}\n§7Enabled: §f${chest.enabled ? "On" : "Off"}\n§7Respawn: §e${chest.respawnTicks}t\n§7Mode: §f${chest.refillMode}\n§7Preserve slots: §f${chest.preserveSlots ? "On" : "Off"}\n§7Message: §f${chest.refillMessageEnabled ? (chest.broadcastRefillMessage ? "Broadcast" : "Nearby") : "Off"}\n§7Commands: §f${chest.refillCommandsEnabled ? `${chest.refillCommands?.length ?? 0} cmd(s)` : "Off"}`)
+      .body(`§7${describeLootChest(chest)}\n§7Enabled: §f${chest.enabled ? "On" : "Off"}\n§7Respawn: §e${chest.respawnTicks}t\n§7Mode: §f${getRefillModeLabel(chest.refillMode)}\n§7Preserve slots: §f${chest.preserveSlots ? "On" : "Off"}\n§7Message: §f${chest.refillMessageEnabled ? (chest.broadcastRefillMessage ? "Broadcast" : "Nearby") : "Off"}\n§7Commands: §f${chest.refillCommandsEnabled ? `${chest.refillCommands?.length ?? 0} cmd(s)` : "Off"}`)
       .button("settings", "Edit Settings", { iconPath: ICONS.edit })
       .button("message", "Refill Message", { iconPath: ICONS.menu })
       .button("commands", "Refill Commands", { iconPath: ICONS.command })
@@ -292,14 +343,16 @@ async function editLocation(player: Player, chestId: string): Promise<void> {
     }
     if (response.id === "settings") {
       const result = await TauUi.modal("Edit Loot Chest")
+        .text("name", "Chest name", { defaultValue: chest.name })
         .text("respawnTicks", "Respawn ticks", { defaultValue: String(chest.respawnTicks) })
-        .dropdown("refillMode", "Refill mode", ["empty_only", "always"], chest.refillMode === "always" ? 1 : 0)
+        .dropdown("refillMode", "Refill mode", ["Open triggered", "Always"], chest.refillMode === "always" ? 1 : 0)
         .toggle("preserveSlots", "Preserve saved slots", chest.preserveSlots)
         .submitButton("Save")
         .show(player);
       if (!result.canceled) sendLootChestResult(player, updateLootChestLocation(chest.id, {
+        name: String(result.values.name ?? chest.name),
         respawnTicks: Number(result.values.respawnTicks ?? chest.respawnTicks),
-        refillMode: (Number(result.values.refillMode ?? 0) === 1 ? "always" : "empty_only") as LootChestRefillMode,
+        refillMode: (Number(result.values.refillMode ?? 0) === 1 ? "always" : "open") as LootChestRefillMode,
         preserveSlots: result.values.preserveSlots === true,
       }));
       continue;
@@ -385,12 +438,23 @@ export async function showLootChestsAdminMenu(player: Player): Promise<void> {
       .body(`§7Saved full-chest loot snapshots.\n§7Enabled: §f${state.lootChests.config.enabled ? "On" : "Off"}\n§7Pools: §f${Object.keys(state.lootChests.pools).length}§7 | Snapshots: §f${Object.keys(state.lootChests.snapshots).length}§7 | Chests: §f${Object.keys(state.lootChests.chests).length}`)
       .button("pools", "Manage Pools", { iconPath: ICONS.menu })
       .button("locations", "Manage Chest Locations", { iconPath: ICONS.item })
+      .button("refillAll", "Force Refill All", { iconPath: ICONS.utility })
       .button("settings", "Settings", { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
     if (response.canceled || response.id === "back") return;
     if (response.id === "pools") await managePools(player);
     else if (response.id === "locations") await manageLocations(player);
+    else if (response.id === "refillAll") {
+      const confirmed = await TauUi.confirm(player, {
+        title: "Force Refill All",
+        body: "Refill every bound loot chest right now? This will overwrite current chest contents.",
+        confirmText: "Refill All",
+      });
+      if (!confirmed) continue;
+      const result = forceRefillAllLootChests();
+      tell(player, result.ok ? `§a${result.message}` : `§c${result.message}`);
+    }
     else if (response.id === "settings") await lootChestSettings(player);
   }
 }
