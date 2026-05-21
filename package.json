@@ -2,12 +2,14 @@
   "name": "eysicutils",
   "private": true,
   "scripts": {
-"build": "node scripts/sync-version.js && node ./node_modules/esbuild/bin/esbuild src/main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node ./node_modules/esbuild/bin/esbuild src/client-main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/client.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
+    "build": "node scripts/sync-version.js && node ./node_modules/esbuild/bin/esbuild src/main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node ./node_modules/esbuild/bin/esbuild src/client-main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/client.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/deploy.js",
     "build:production": "node scripts/sync-version.js && node ./node_modules/esbuild/bin/esbuild src/main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui && node ./node_modules/esbuild/bin/esbuild src/client-main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/client.js --external:@minecraft/server --external:@minecraft/server-ui && node scripts/package-release.js",
-    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit"
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "dead-exports": "node ./node_modules/ts-prune/lib/index.js -p tsconfig.json -e -i \"index.ts|(used in module)\""
   },
   "devDependencies": {
     "esbuild": "^0.25.9",
+    "ts-prune": "^0.10.3",
     "typescript": "^6.0.3"
   },
   "dependencies": {

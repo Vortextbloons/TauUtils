@@ -45,6 +45,7 @@ import {
   PLAYER_SHOPS_EARNINGS_PREFIX,
   STATS_PLAYER_IDS_KEY,
   STATS_PLAYER_PREFIX,
+  clearSplitDynamicJson,
 } from "./state";
 
 export function tell(player: Player, message: string) {
@@ -161,19 +162,6 @@ export function setScore(
   return true;
 }
 
-export function applyTemplate(
-  raw: string | undefined,
-  player: Player,
-  selectedValue?: unknown
-): string {
-  if (!raw) return "";
-  return raw
-    .split("{player}")
-    .join(player.name)
-    .split("{value}")
-    .join(selectedValue === undefined ? "" : String(selectedValue));
-}
-
 export function normalizeItemId(value: string): string {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -202,6 +190,7 @@ export function clearAllData() {
   world.setDynamicProperty(STORAGE_KEYS.warps, undefined);
   world.setDynamicProperty(STORAGE_KEYS.generators, undefined);
   world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);
+  clearSplitDynamicJson(STORAGE_KEYS.moderation);
   world.setDynamicProperty(STORAGE_KEYS.crates, undefined);
   world.setDynamicProperty(STORAGE_KEYS.tauItems, undefined);
   world.setDynamicProperty(STORAGE_KEYS.combat, undefined);

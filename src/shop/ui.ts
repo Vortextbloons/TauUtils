@@ -1,6 +1,6 @@
 import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, EnchantmentTypes } from "@minecraft/server";
 import { TauUi } from "../ui";
-import { canonicalShopId, findShopProfile, getInventoryContainer, getScore, normalizeCategory, getProfileCategories, setScore, state, saveShops, tell } from "../storage";
+import { canonicalShopId, findShopProfile, getInventoryContainer, getScore, isFeatureEnabled, normalizeCategory, getProfileCategories, setScore, state, saveShops, tell } from "../storage";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import {
   iconForShopItem,
@@ -87,14 +87,11 @@ function buildSellAllPlan(player: Player, profile: ShopProfile): { entries: Sell
   const container = getInventoryContainer(player);
   if (!container) return { entries: [], totalGain: 0 };
 
-  const availableByItemId = new Map<string, SellAllSlotPlan[]>();
+  const slotRemaining = new Map<number, number>();
   for (let slot = 0; slot < container.size; slot++) {
     const stack = container.getItem(slot);
     if (!stack || isProtectedCrateKey(stack)) continue;
-    const itemId = normalizeItemId(stack.typeId);
-    const slots = availableByItemId.get(itemId) ?? [];
-    slots.push({ slot, amount: stack.amount });
-    availableByItemId.set(itemId, slots);
+    slotRemaining.set(slot, stack.amount);
   }
 
   const entries: SellAllPlanEntry[] = [];
@@ -102,19 +99,20 @@ function buildSellAllPlan(player: Player, profile: ShopProfile): { entries: Sell
   for (const item of profile.items) {
     if (item.bundle && item.bundle.length > 0) continue;
     if (item.canSell === false || item.sellPrice <= 0) continue;
-    const availableSlots = availableByItemId.get(normalizeItemId(item.itemId));
-    if (!availableSlots || availableSlots.length === 0) continue;
 
+    const def = getItemInstanceDefinition(item);
     let owned = 0;
     const slots: SellAllSlotPlan[] = [];
-    for (const slotPlan of availableSlots) {
-      if (slotPlan.amount <= 0) continue;
-      const stack = container.getItem(slotPlan.slot);
-      if (!stack || !itemMatchesDefinition(stack, getItemInstanceDefinition(item))) continue;
-      owned += slotPlan.amount;
-      slots.push({ slot: slotPlan.slot, amount: slotPlan.amount });
-      slotPlan.amount = 0;
+
+    for (const [slot, remaining] of slotRemaining) {
+      if (remaining <= 0) continue;
+      const stack = container.getItem(slot);
+      if (!stack || !itemMatchesDefinition(stack, def)) continue;
+      owned += remaining;
+      slots.push({ slot, amount: remaining });
+      slotRemaining.set(slot, 0);
     }
+
     if (owned <= 0) continue;
 
     const total = item.sellPrice * owned;
@@ -129,13 +127,15 @@ function applySellAllPlan(player: Player, entries: SellAllPlanEntry[]): boolean 
   const container = getInventoryContainer(player);
   if (!container) return false;
   for (const entry of entries) {
+    const def = getItemInstanceDefinition(entry.item);
     for (const plan of entry.slots) {
       let remaining = plan.amount;
       const stack = container.getItem(plan.slot);
-      if (!stack || !itemMatchesDefinition(stack, getItemInstanceDefinition(entry.item))) return false;
+      if (!stack || !itemMatchesDefinition(stack, def)) return false;
       if (stack.amount < remaining) return false;
       if (stack.amount === remaining) {
         container.setItem(plan.slot, undefined);
+        remaining = 0;
       } else {
         stack.amount -= remaining;
         remaining = 0;
@@ -846,7 +846,7 @@ async function showShopItemActions(player: Player, profile: ShopProfile, itemInd
           `Sell: ${item.bundle && item.bundle.length > 0 ? "N/A" : item.canSell === false ? "Off" : item.sellPrice}`,
           `Category: ${normalizeCategory(item.category)}`,
           item.durability !== undefined ? `Durability: ${item.durability}/${item.maxDurability ?? "?"}` : "",
-          item.exactDurability ? "§aExact durability match" : "",
+          item.exactDurability ? "§aStrict sell matching" : "",
         ].filter(Boolean).join("\n")
       )
       .button("edit", "Edit", { iconPath: ICONS.edit })
@@ -898,12 +898,12 @@ async function showAdvancedProperties(player: Player, profile: ShopProfile, item
       .body(
         [
           `Durability: ${durText}`,
-          `Exact Durability Match: ${exactLabel}`,
+          `Strict Sell Matching: ${exactLabel}`,
           `Show Enchants in Preview: ${showLabel}`,
           `Custom Data: ${item.customData ? "Set" : "None"}`,
         ].join("\n")
       )
-      .button("toggleExactDurability", "Toggle Exact Durability", { iconPath: ICONS.settings })
+      .button("toggleExactDurability", "Toggle Strict Sell Matching", { iconPath: ICONS.settings })
       .button("toggleShowEnchants", "Toggle Show Enchants", { iconPath: ICONS.settings })
       .button("editCustomData", "Edit Custom Data", { iconPath: ICONS.edit })
       .button("back", "Back", { iconPath: ICONS.back });
@@ -949,6 +949,11 @@ async function showAdvancedProperties(player: Player, profile: ShopProfile, item
 }
 
 export async function sellAllSellableItems(player: Player, profileId: string) {
+  if (!isFeatureEnabled("shops")) {
+    tell(player, "Shops are disabled.");
+    return;
+  }
+
   const profile = findShopProfile(profileId);
   if (!profile) {
     tell(player, `Shop profile "${profileId}" was not found.`);
@@ -1006,11 +1011,21 @@ export async function sellAllSellableItems(player: Player, profileId: string) {
         tell(player, `Missing scoreboard objective "${profile.currencyObjective}".`);
         return;
       }
+      const container = getInventoryContainer(player);
+      if (!container) {
+        tell(player, "Inventory is unavailable.");
+        return;
+      }
+      const snapshot = snapshotContainer(container);
       if (!applySellAllPlan(player, latest.entries)) {
         tell(player, "Inventory changed before the sale could complete. Try again.");
         return;
       }
-      setScore(player, profile.currencyObjective, latestBalance + latest.totalGain);
+      if (!setScore(player, profile.currencyObjective, latestBalance + latest.totalGain)) {
+        restoreContainer(container, snapshot);
+        tell(player, "Failed to add currency; sale was reverted.");
+        return;
+      }
       tell(player, `§aSold all items for §e${latest.totalGain} ${profile.currencyObjective}§a!`);
       return;
     }
@@ -1022,6 +1037,11 @@ export async function openShopTransaction(
   player: Player,
   transactionValue: string
 ) {
+  if (!isFeatureEnabled("shops")) {
+    tell(player, "Shops are disabled.");
+    return;
+  }
+
   const [profileOrDefault, itemOrUndefined] = transactionValue.includes("|")
     ? transactionValue.split("|", 2)
     : ["default", transactionValue];
@@ -1136,6 +1156,13 @@ export async function openShopTransaction(
       return;
     }
 
+    const container = getInventoryContainer(player);
+    if (!container) {
+      tell(player, "Inventory is unavailable.");
+      return;
+    }
+
+    const snapshot = snapshotContainer(container);
     if (!removeItemInstance(player, item, op.qty)) {
       tell(player, "Sell failed while removing items.");
       return;
@@ -1143,7 +1170,8 @@ export async function openShopTransaction(
 
     const gain = item.sellPrice * op.qty;
     if (!setScore(player, profile.currencyObjective, current + gain)) {
-      tell(player, "Failed to add currency after selling.");
+      restoreContainer(container, snapshot);
+      tell(player, "Failed to add currency after selling. Items were restored.");
       return;
     }
 
@@ -1161,6 +1189,13 @@ export async function openShopTransaction(
       return;
     }
 
+    const container = getInventoryContainer(player);
+    if (!container) {
+      tell(player, "Inventory is unavailable.");
+      return;
+    }
+
+    const snapshot = snapshotContainer(container);
     if (!removeItemInstance(player, item, owned)) {
       tell(player, "Sell-all failed while removing items.");
       return;
@@ -1168,7 +1203,8 @@ export async function openShopTransaction(
 
     const gain = item.sellPrice * owned;
     if (!setScore(player, profile.currencyObjective, current + gain)) {
-      tell(player, "Failed to add currency after selling all items.");
+      restoreContainer(container, snapshot);
+      tell(player, "Failed to add currency after selling all items. Items were restored.");
       return;
     }
 

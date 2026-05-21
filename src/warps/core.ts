@@ -66,7 +66,3 @@ export function teleportToWarp(player: Player, warpIdOrName: string): { ok: bool
   player.teleport(warp.position, { dimension });
   return { ok: true, message: `Teleported to ${warp.name}.` };
 }
-
-export function getWarpCategories(): string[] {
-  return state.warps.config.categories;
-}

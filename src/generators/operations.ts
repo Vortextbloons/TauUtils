@@ -2,16 +2,15 @@ import { BlockPermutation, Direction, ItemStack, Player, Vector3, system, world 
 import { getPlayerId, getScore, isFeatureEnabled, isOperator, saveGenerators, setScore, state } from "../storage";
 import { getPlayerTeam } from "../teams";
 import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from "../plots";
+import { getItemCanDestroyComponent, getItemCanPlaceOnComponent } from "../shared/item-components";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
-import { generatorCache, GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
+import { GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
 import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, normalizeId, normalizeItemId, parsePlotIndex, readGeneratorItemData } from "./definitions";
 
 let generatorProcessCursor = 0;
 let generatorProcessJobId: number | undefined;
 
 type GeneratorIndexes = {
-  byOwnerId: Map<string, PlacedGenerator[]>;
-  bySlotId: Map<string, PlacedGenerator[]>;
   dueSorted: PlacedGenerator[];
   earliestDueAt: number;
 };
@@ -24,25 +23,9 @@ function markGeneratorIndexesDirty(): void {
 }
 
 function buildGeneratorIndexes(): GeneratorIndexes {
-  const byOwnerId = new Map<string, PlacedGenerator[]>();
-  const bySlotId = new Map<string, PlacedGenerator[]>();
   const dueSorted = Object.values(state.generators.placed).slice().sort((a, b) => a.nextSpawnAt - b.nextSpawnAt || a.id.localeCompare(b.id));
   const earliestDueAt = dueSorted[0]?.nextSpawnAt ?? Number.POSITIVE_INFINITY;
-
-  for (const placed of dueSorted) {
-    const ownerGenerators = byOwnerId.get(placed.ownerPlayerId) ?? [];
-    ownerGenerators.push(placed);
-    byOwnerId.set(placed.ownerPlayerId, ownerGenerators);
-
-    const slot = getPlotForLocation({ x: placed.x, y: placed.y, z: placed.z });
-    if (slot) {
-      const slotGenerators = bySlotId.get(slot.id) ?? [];
-      slotGenerators.push(placed);
-      bySlotId.set(slot.id, slotGenerators);
-    }
-  }
-
-  return { byOwnerId, bySlotId, dueSorted, earliestDueAt };
+  return { dueSorted, earliestDueAt };
 }
 
 function getGeneratorIndexes(): GeneratorIndexes {
@@ -284,9 +267,9 @@ export function giveGenerator(player: Player, defId: string, amount = 1): { ok: 
   const stack = new ItemStack(normalizeItemId(def.baseItemId), Math.max(1, Math.floor(amount)));
   stack.nameTag = def.displayName ?? def.name;
   stack.setLore(buildGeneratorLore(def, 1));
-  const placeComp = stack.getComponent("minecraft:can_place_on") as any;
+  const placeComp = getItemCanPlaceOnComponent(stack);
   if (placeComp && def.canPlaceOn && def.canPlaceOn.length > 0) placeComp.blocks = def.canPlaceOn;
-  const destroyComp = stack.getComponent("minecraft:can_destroy") as any;
+  const destroyComp = getItemCanDestroyComponent(stack);
   if (destroyComp && def.canDestroy && def.canDestroy.length > 0) destroyComp.blocks = def.canDestroy;
   const inventory = player.getComponent("minecraft:inventory")?.container;
   if (!inventory) return { ok: false, message: "Inventory unavailable." };
@@ -418,14 +401,6 @@ export function getPlacedGeneratorDefinition(location: Vector3, dimensionId: str
   const placed = getPlacedGeneratorAtLocation(location, dimensionId);
   if (!placed) return undefined;
   return state.generators.definitions[placed.definitionId];
-}
-
-export function getPlacedGeneratorsForOwner(ownerPlayerId: string): PlacedGenerator[] {
-  return [...(getGeneratorIndexes().byOwnerId.get(ownerPlayerId) ?? [])];
-}
-
-export function getPlacedGeneratorsForSlot(slotId: string): PlacedGenerator[] {
-  return [...(getGeneratorIndexes().bySlotId.get(slotId) ?? [])];
 }
 
 export function describeGeneratorStack(itemStack?: ItemStack): string | undefined {
@@ -595,15 +570,4 @@ function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generato
   }
   if (changedSchedule) markGeneratorIndexesDirty();
   generatorProcessJobId = undefined;
-}
-
-export function clearAllGenerators(): void {
-  state.generators.placed = {};
-  for (const snapshot of Object.values(state.plots.snapshots)) {
-    delete snapshot.generators;
-  }
-  generatorCache.definitions = undefined;
-  generatorCache.source = undefined;
-  markGeneratorIndexesDirty();
-  saveGenerators();
 }

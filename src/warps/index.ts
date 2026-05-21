@@ -1,1 +1,1 @@
-export { listWarps, createWarp, setWarpLocation, deleteWarp, teleportToWarp, getWarpCategories } from "./core";
+export { listWarps, createWarp, setWarpLocation, deleteWarp, teleportToWarp } from "./core";

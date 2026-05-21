@@ -1110,6 +1110,7 @@ export function registerCustomCommands(
           "§e  •§7 Periodic effects (any potion effect on interval)",
           "§e  •§7 Periodic command rules (commands on interval per player)",
           "§e  •§7 Rank filters (who is affected)",
+          "§e  •§7 Combat drop while tagged (2 second grace, then inventory drops)",
           "§e  •§7 Ticking area support (manual apply)",
           "§7Operators bypass custom-area block restrictions.",
         ],

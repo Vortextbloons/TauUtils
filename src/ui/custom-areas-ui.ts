@@ -274,7 +274,7 @@ async function editArea(player: Player, areaId: string): Promise<void> {
       return;
     }
     const response = await TauUi.action(area.name)
-      .body(`${area.enabled ? "§aEnabled" : "§cDisabled"}§r\n${coords(area)}\nPriority: ${area.priority}\nCombat drop: ${area.dropItemsIfInCombat ? "On" : "Off"}`)
+      .body(`${area.enabled ? "§aEnabled" : "§cDisabled"}§r\n${coords(area)}\nPriority: ${area.priority}\nCombat drop: ${area.dropItemsIfInCombat ? "On (2s grace)" : "Off"}`)
       .button("basics", "Basics / Rank Filter", { iconPath: ICONS.edit })
       .button("messages", "Messages", { iconPath: ICONS.menu })
       .button("permissions", "Permissions", { iconPath: ICONS.settings })

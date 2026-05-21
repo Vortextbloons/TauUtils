@@ -1,4 +1,3 @@
-  import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import type { ActionType, FormElement } from "../types";
 import { ICONS, isWorkingIconPath } from "./icons";
 
@@ -36,23 +35,7 @@ export function iconForElement(kind: FormElement["kind"]): string {
   }
 }
 
-export function buttonWithIcon(
-  form: ActionFormData,
-  text: string,
-  iconPath?: string,
-) {
-  if (isWorkingIconPath(iconPath)) {
-    form.button(text, iconPath);
-    return;
-  }
-  form.button(text);
-}
-
 export function optionalIcon(iconPath?: string): string | undefined {
   if (!isWorkingIconPath(iconPath)) return undefined;
   return iconPath;
-}
-
-export function newModalForm(title: string, submit = "Submit") {
-  return new ModalFormData().title(title).submitButton(submit);
 }

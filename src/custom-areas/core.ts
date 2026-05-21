@@ -23,10 +23,15 @@ type AreaRuntimeCache = {
   byDimension: Map<string, RuntimeArea[]>;
 };
 
+type PendingCombatAreaDrop = {
+  deadlineMs: number;
+};
+
+const COMBAT_AREA_DROP_GRACE_MS = 2000;
 const playerAreaState = new Map<string, AreaState>();
 const lastRuleRunByPlayerArea = new Map<string, number>();
 const lastEffectRunByPlayerArea = new Map<string, number>();
-const combatDropsByPlayerArea = new Set<string>();
+const pendingCombatAreaDrops = new Map<string, PendingCombatAreaDrop>();
 const MAX_SAFE_AREA_COORD = 30000000;
 let enabledAreaCache: AreaRuntimeCache | undefined;
 let customAreaJobId: number | undefined;
@@ -89,12 +94,6 @@ function getAreaRuntimeForPlayer(player: Player, location: Vector3 = player.loca
   return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId) && playerAllowedByRank(player, runtime));
 }
 
-export function getAreasForLocation(location: Vector3, dimensionId: string): CustomAreaDefinition[] {
-  return getEnabledAreaRuntime(dimensionId)
-    .filter((runtime) => pointInside(runtime.area, location, dimensionId))
-    .map((runtime) => runtime.area);
-}
-
 function getAreaForPlayer(player: Player, location: Vector3 = player.location, dimensionId: string = player.dimension.id): CustomAreaDefinition | undefined {
   return getAreaRuntimeForPlayer(player, location, dimensionId)?.area;
 }
@@ -153,16 +152,37 @@ function runLeave(area: CustomAreaDefinition, player: Player): void {
   for (const rule of area.commandRules) if (rule.runOnLeave) runCommandRule(player, area, rule);
 }
 
+function combatAreaDropKey(playerId: string, areaId: string): string {
+  return `${playerId}:${areaId}`;
+}
+
+function cancelPendingCombatAreaDrop(player: Player, playerId: string, areaId: string): void {
+  const key = combatAreaDropKey(playerId, areaId);
+  const pending = pendingCombatAreaDrops.get(key);
+  if (!pending) return;
+  pendingCombatAreaDrops.delete(key);
+  if (Date.now() < pending.deadlineMs) {
+    tell(player, "§aYou left the restricted combat area in time. Your items were not dropped.");
+  }
+}
+
 function maybeDropCombatInventory(player: Player, area: CustomAreaDefinition): void {
   if (!area.dropItemsIfInCombat) return;
   if (isOperator(player)) return;
-  const key = `${getPlayerId(player)}:${area.id}`;
+  const key = combatAreaDropKey(getPlayerId(player), area.id);
   if (!isPlayerInCombat(player)) {
-    combatDropsByPlayerArea.delete(key);
+    pendingCombatAreaDrops.delete(key);
     return;
   }
-  if (combatDropsByPlayerArea.has(key)) return;
-  combatDropsByPlayerArea.add(key);
+  const now = Date.now();
+  const pending = pendingCombatAreaDrops.get(key);
+  if (!pending) {
+    pendingCombatAreaDrops.set(key, { deadlineMs: now + COMBAT_AREA_DROP_GRACE_MS });
+    tell(player, "§eYou entered a restricted combat area while in combat. Leave within 2 seconds or your items will be dropped.");
+    return;
+  }
+  if (now < pending.deadlineMs) return;
+  pendingCombatAreaDrops.delete(key);
   const direction = player.getViewDirection();
   const dropLocation = {
     x: player.location.x - direction.x * 2,
@@ -224,7 +244,7 @@ function* processCustomAreasJob(): Generator<void, void, void> {
     }
     for (const oldId of previous) {
       if (current.has(oldId)) continue;
-      combatDropsByPlayerArea.delete(`${playerId}:${oldId}`);
+      cancelPendingCombatAreaDrop(player, playerId, oldId);
       const area = state.customAreas.areas[oldId];
       if (area) runLeave(area, player);
     }
@@ -317,13 +337,14 @@ export function invalidateCustomAreaRuntimeState(areaId?: string): void {
   if (!areaId) {
     lastRuleRunByPlayerArea.clear();
     lastEffectRunByPlayerArea.clear();
-    combatDropsByPlayerArea.clear();
+    pendingCombatAreaDrops.clear();
     return;
   }
   const marker = `:${areaId}:`;
+  const areaSuffix = marker.slice(0, -1);
   for (const key of lastRuleRunByPlayerArea.keys()) if (key.includes(marker)) lastRuleRunByPlayerArea.delete(key);
   for (const key of lastEffectRunByPlayerArea.keys()) if (key.includes(marker)) lastEffectRunByPlayerArea.delete(key);
-  for (const key of combatDropsByPlayerArea) if (key.endsWith(marker.slice(0, -1))) combatDropsByPlayerArea.delete(key);
+  for (const key of pendingCombatAreaDrops.keys()) if (key.endsWith(areaSuffix)) pendingCombatAreaDrops.delete(key);
 }
 
 export function commitCustomArea(area: CustomAreaDefinition): { ok: boolean; message: string; area?: CustomAreaDefinition } {
@@ -371,8 +392,4 @@ export function applyAreaTickingArea(area: CustomAreaDefinition): { ok: boolean;
   } catch {
     return { ok: false, message: "Failed to apply ticking area." };
   }
-}
-
-export function saveAreaStore(): void {
-  saveCustomAreas();
 }

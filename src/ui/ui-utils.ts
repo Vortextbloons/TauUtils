@@ -1,6 +1,7 @@
-import { Player, world, ItemStack, EntityComponentTypes, ItemComponentTypes } from "@minecraft/server";
+import { Player, world, ItemStack, EntityComponentTypes } from "@minecraft/server";
 import type { CrateItemReward } from "../types";
 import { state, tell, getInventoryContainer } from "../storage";
+import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
 
 export function getHeldItemSnapshot(player: Player): {
   itemId: string;
@@ -30,10 +31,10 @@ export function getHeldItemSnapshot(player: Player): {
   } = {
     itemId: held.typeId,
     displayName: held.nameTag?.trim() || undefined,
-    lore: held.getLore().map((line) => String(line)),
+    lore: held.getLore().map((line: string) => String(line)),
   };
 
-  const enchantComp = held.getComponent(ItemComponentTypes.Enchantable) as any;
+  const enchantComp = getItemEnchantableComponent(held);
   if (enchantComp?.getEnchantments) {
     try {
       snapshot.enchantments = enchantComp.getEnchantments().map((entry: any) => ({ id: entry.type?.id ?? entry.typeId, level: entry.level }));
@@ -41,7 +42,7 @@ export function getHeldItemSnapshot(player: Player): {
     }
   }
 
-  const durability = held.getComponent(ItemComponentTypes.Durability) as any;
+  const durability = getItemDurabilityComponent(held);
   if (durability) {
     try {
       snapshot.durability = Number(durability.damage ?? 0);
@@ -51,13 +52,13 @@ export function getHeldItemSnapshot(player: Player): {
   }
 
   try {
-    const placeComp = held.getComponent("minecraft:can_place_on") as any;
+    const placeComp = getItemCanPlaceOnComponent(held);
     if (placeComp?.blocks) snapshot.canPlaceOn = Array.isArray(placeComp.blocks) ? placeComp.blocks.slice() : String(placeComp.blocks).split(",");
   } catch {
   }
 
   try {
-    const destroyComp = held.getComponent("minecraft:can_destroy") as any;
+    const destroyComp = getItemCanDestroyComponent(held);
     if (destroyComp?.blocks) snapshot.canDestroy = Array.isArray(destroyComp.blocks) ? destroyComp.blocks.slice() : String(destroyComp.blocks).split(",");
   } catch {
   }

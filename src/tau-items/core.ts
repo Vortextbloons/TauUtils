@@ -1,7 +1,8 @@
-import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, system } from "@minecraft/server";
+import { ItemStack, Player, system } from "@minecraft/server";
 import { commandStripSlash, getInventoryContainer, getPlayerId, getScore, saveTauItems, setScore, state } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate as renderSharedCommandTemplate } from "../shared/templates";
+import { getEntityHealthComponent, getItemDurabilityComponent } from "../shared/item-components";
 import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "../types";
 
 type TriggerContext = {
@@ -167,7 +168,7 @@ function damageHeldTauItem(player: Player, expected: TauItemDefinition): boolean
     return true;
   }
 
-  const durability = held.getComponent(ItemComponentTypes.Durability);
+  const durability = getItemDurabilityComponent(held);
   if (!durability) return true;
   try {
     const next = durability.damage + 1;
@@ -217,7 +218,7 @@ function hasRequirements(player: Player, def: TauItemDefinition): { ok: boolean;
   }
 
   if (def.cost.type === "health") {
-    const health = player.getComponent(EntityComponentTypes.Health) as any;
+    const health = getEntityHealthComponent(player);
     const current = Number(health?.currentValue ?? 20);
     if (current <= def.cost.amount) return { ok: false, message: "§cNot enough health" };
     return { ok: true };
@@ -246,7 +247,7 @@ function payCost(player: Player, def: TauItemDefinition): boolean {
   }
 
   if (def.cost.type === "health") {
-    const health = player.getComponent(EntityComponentTypes.Health) as any;
+    const health = getEntityHealthComponent(player);
     if (!health?.setCurrentValue) return false;
     const current = Number(health.currentValue ?? 20);
     if (current <= def.cost.amount) return false;
@@ -355,7 +356,7 @@ function runAction(player: Player, action: TauItemAction, context: TriggerContex
         }
       } else if (action.mode === "heal") {
         try {
-          const health = target.getComponent(EntityComponentTypes.Health) as any;
+          const health = getEntityHealthComponent(target);
           if (!health?.setCurrentValue) continue;
           const current = Number(health.currentValue ?? 0);
           const max = Number(health.defaultValue ?? current);

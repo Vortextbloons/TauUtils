@@ -1,7 +1,8 @@
-import { EntityComponentTypes, ItemComponentTypes, ItemStack, Player, EnchantmentTypes } from "@minecraft/server";
+import { EntityComponentTypes, ItemStack, Player, EnchantmentTypes } from "@minecraft/server";
 import { TauUi } from "../ui";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import { getInventoryContainer, normalizeCategory, getProfileCategories, saveShops } from "../storage";
+import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
 
 export function iconForShopItem(item: ShopProfile["items"][number]): string | undefined {
   if (item.displayName && item.displayName.trim().length > 0) return undefined;
@@ -72,6 +73,7 @@ export function normalizeItemStackDefinition(def: Partial<ShopItemStackDefinitio
     enchantments: def.enchantments?.filter((entry) => entry.id.trim().length > 0 && entry.level > 0),
     durability: def.durability,
     maxDurability: def.maxDurability,
+    exactDurability: def.exactDurability,
     customData: def.customData,
   };
 }
@@ -109,10 +111,11 @@ export function isProtectedCrateKey(stack: ItemStack): boolean {
 }
 
 export function getItemEnchantments(stack: ItemStack): { id: string; level: number }[] {
-  const component = stack.getComponent(ItemComponentTypes.Enchantable);
+  const component = getItemEnchantableComponent(stack);
   const enchantments = component?.getEnchantments() ?? [];
   return enchantments
-    .map((entry) => ({ id: entry.type.id, level: entry.level }))
+    .map((entry) => ({ id: entry.type?.id ?? entry.typeId ?? "", level: entry.level }))
+    .filter((entry) => entry.id.length > 0)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -127,7 +130,7 @@ export function createStackFromDefinition(def: ShopItemStackDefinition, multipli
   const stack = new ItemStack(def.itemId, amount);
   if (def.displayName) stack.nameTag = def.displayName;
   if (def.lore && def.lore.length > 0) stack.setLore(def.lore);
-  const component = stack.getComponent(ItemComponentTypes.Enchantable);
+  const component = getItemEnchantableComponent(stack);
   if (component && def.enchantments && def.enchantments.length > 0) {
     const valid: { type: any; level: number }[] = [];
     let needsFallback = false;
@@ -139,7 +142,7 @@ export function createStackFromDefinition(def: ShopItemStackDefinition, multipli
         if (level > type.maxLevel) needsFallback = true;
       }
     }
-    if (valid.length > 0) {
+    if (valid.length > 0 && component.addEnchantments) {
       try {
         component.addEnchantments(valid);
       } catch {
@@ -152,7 +155,7 @@ export function createStackFromDefinition(def: ShopItemStackDefinition, multipli
     }
   }
   if (def.durability !== undefined && def.maxDurability !== undefined) {
-    const durComp = stack.getComponent(ItemComponentTypes.Durability);
+    const durComp = getItemDurabilityComponent(stack);
     if (durComp) {
       try {
         durComp.damage = Math.max(0, Math.min(def.maxDurability, def.durability));
@@ -165,12 +168,12 @@ export function createStackFromDefinition(def: ShopItemStackDefinition, multipli
     try {
       const data = JSON.parse(def.customData);
       if (data.canPlaceOn) {
-        const placeComp = stack.getComponent("minecraft:can_place_on");
-        if (placeComp) (placeComp as any).blocks = data.canPlaceOn;
+        const placeComp = getItemCanPlaceOnComponent(stack);
+        if (placeComp) placeComp.blocks = data.canPlaceOn;
       }
       if (data.canDestroy) {
-        const destroyComp = stack.getComponent("minecraft:can_destroy");
-        if (destroyComp) (destroyComp as any).blocks = data.canDestroy;
+        const destroyComp = getItemCanDestroyComponent(stack);
+        if (destroyComp) destroyComp.blocks = data.canDestroy;
       }
     } catch {
       // Invalid custom data, skip
@@ -206,9 +209,88 @@ export function buildChunkedStacks(def: ShopItemStackDefinition, totalAmount: nu
   return stacks;
 }
 
+function normalizeEnchantmentId(id: string): string {
+  const trimmed = String(id ?? "").trim().toLowerCase();
+  return trimmed.startsWith("minecraft:") ? trimmed.slice(10) : trimmed;
+}
+
+function enchantmentListsEqual(
+  expected: { id: string; level: number }[] | undefined,
+  actual: { id: string; level: number }[]
+): boolean {
+  if (!expected || expected.length === 0) return true;
+  const normalize = (entries: { id: string; level: number }[]) =>
+    entries
+      .map((entry) => ({ id: normalizeEnchantmentId(entry.id), level: Math.max(1, Math.floor(entry.level)) }))
+      .filter((entry) => entry.id.length > 0)
+      .sort((a, b) => a.id.localeCompare(b.id) || a.level - b.level);
+
+  const left = normalize(expected);
+  const right = normalize(actual);
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index].id !== right[index].id || left[index].level !== right[index].level) return false;
+  }
+  return true;
+}
+
+function loreListsEqual(expected: string[] | undefined, stack: ItemStack): boolean {
+  if (!expected || expected.length === 0) return true;
+  const actual = getItemLore(stack);
+  if (actual.length !== expected.length) return false;
+  for (let index = 0; index < expected.length; index++) {
+    if (actual[index] !== expected[index].trim()) return false;
+  }
+  return true;
+}
+
+function getStackEnchantmentsForMatch(stack: ItemStack): { id: string; level: number }[] {
+  const fromComponent = getItemEnchantments(stack);
+  if (fromComponent.length > 0) return fromComponent;
+
+  const raw = stack.getDynamicProperty("tau:enchants");
+  if (typeof raw !== "string" || raw.trim().length === 0) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const result: { id: string; level: number }[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") continue;
+      const id = String((entry as { id?: string }).id ?? "").trim();
+      const level = Math.max(1, Math.floor(Number((entry as { level?: number }).level ?? 1)));
+      if (!id) continue;
+      result.push({ id, level });
+    }
+    return result.sort((a, b) => a.id.localeCompare(b.id));
+  } catch {
+    return [];
+  }
+}
+
 export function itemMatchesDefinition(stack: ItemStack, def: ShopItemStackDefinition): boolean {
   if (isProtectedCrateKey(stack)) return false;
-  return normalizeItemId(stack.typeId) === normalizeItemId(def.itemId);
+  if (normalizeItemId(stack.typeId) !== normalizeItemId(def.itemId)) return false;
+
+  if (!def.exactDurability) return true;
+
+  const displayName = def.displayName?.trim();
+  if (displayName) {
+    const tag = stack.nameTag?.trim() ?? "";
+    if (tag !== displayName) return false;
+  }
+
+  if (!loreListsEqual(def.lore, stack)) return false;
+
+  if (!enchantmentListsEqual(def.enchantments, getStackEnchantmentsForMatch(stack))) return false;
+
+  if (def.durability !== undefined) {
+    const durComp = getItemDurabilityComponent(stack);
+    if (!durComp || durComp.damage !== def.durability) return false;
+    if (def.maxDurability !== undefined && durComp.maxDurability !== def.maxDurability) return false;
+  }
+
+  return true;
 }
 
 export function countMatchingItems(player: Player, def: ShopItemStackDefinition): number {
@@ -306,7 +388,7 @@ export function buildItemStacksForPurchase(item: ShopItemDefinition, quantity: n
 }
 
 export function captureHeldItemDefinition(held: ItemStack, amount: number): ShopItemStackDefinition {
-  const durComp = held.getComponent(ItemComponentTypes.Durability);
+  const durComp = getItemDurabilityComponent(held);
   return normalizeItemStackDefinition({
     itemId: held.typeId,
     amount,
@@ -343,6 +425,9 @@ export function getItemInstanceDefinition(item: ShopItemDefinition): ShopItemSta
     displayName: item.displayName,
     lore: item.lore,
     enchantments: item.enchantments,
+    durability: item.exactDurability ? item.durability : undefined,
+    maxDurability: item.exactDurability ? item.maxDurability : undefined,
+    exactDurability: item.exactDurability,
   });
 }
 

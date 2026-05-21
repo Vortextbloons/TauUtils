@@ -4,6 +4,7 @@ import { ACTION_TYPES, isWorkingIconPath, ICONS, type ActionType, type FormDefin
 import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
+import { safeCall } from "../shared/safe-call";
 
 export async function openFormById(player: Player, menuId: string) {
   const form = findForm(menuId);
@@ -28,7 +29,7 @@ export async function openFormById(player: Player, menuId: string) {
       actionForm.button("Close", ICONS.cancel);
     }
 
-    const response = await actionForm.show(player).catch(() => undefined);
+    const response = await safeCall(() => actionForm.show(player), undefined);
     if (!response || response.canceled || response.selection === undefined)
       return;
     const selected = buttons[response.selection];
@@ -78,7 +79,7 @@ export async function openFormById(player: Player, menuId: string) {
     }
   }
 
-  const response = await modalForm.show(player).catch(() => undefined);
+  const response = await safeCall(() => modalForm.show(player), undefined);
   if (!response || response.canceled || !response.formValues) return;
 
   for (let i = 0; i < handlers.length; i++) {
@@ -133,6 +134,10 @@ async function runBoundAction(
       }
       case "SHOP_TRANSACTION": {
         if (!value) return;
+        if (!isFeatureEnabled("shops")) {
+          tell(player, "Shops are disabled.");
+          return;
+        }
         await openShopTransaction(player, value);
         return;
       }

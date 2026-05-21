@@ -35,6 +35,7 @@ import {
   type TpaStore,
   type WarpStore,
 } from "../types";
+import { safeCall } from "../shared/safe-call";
 
 // ---------------------------------------------------------------------------
 // Default factory functions
@@ -412,6 +413,7 @@ export const PLOTS_SNAPSHOT_PREFIX = `${STORAGE_KEYS.plots}:snapshot:`;
 export const PLOTS_MIGRATION_MARKER_KEY = `${STORAGE_KEYS.plots}:migration_v2_done`;
 
 const MAX_DYNAMIC_STRING_BYTES = 32000;
+const SPLIT_DYNAMIC_JSON_CHUNK_BYTES = 30000;
 export const STATS_PLAYER_IDS_KEY = "tau:stats:player_ids";
 export const STATS_PLAYER_PREFIX = "tau:stats:player:";
 
@@ -443,6 +445,89 @@ function estimateUtf8Bytes(value: string): number {
     } else bytes += 3;
   }
   return bytes;
+}
+
+function dynamicJsonChunkCountKey(key: string): string {
+  return `${key}:chunks`;
+}
+
+function dynamicJsonChunkPrefix(key: string): string {
+  return `${key}:chunk:`;
+}
+
+function splitUtf8String(value: string, maxBytes: number): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  let currentBytes = 0;
+
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    let char = value[i];
+    let charBytes = 1;
+    if (code <= 0x7f) charBytes = 1;
+    else if (code <= 0x7ff) charBytes = 2;
+    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
+      char += value[i + 1];
+      charBytes = 4;
+      i++;
+    } else charBytes = 3;
+
+    if (currentBytes > 0 && currentBytes + charBytes > maxBytes) {
+      chunks.push(current);
+      current = "";
+      currentBytes = 0;
+    }
+    current += char;
+    currentBytes += charBytes;
+  }
+
+  chunks.push(current);
+  return chunks;
+}
+
+export function readSplitDynamicJson<T>(key: string, fallback: T): { value: T; hasSplitData: boolean } {
+  const chunkCountRaw = world.getDynamicProperty(dynamicJsonChunkCountKey(key));
+  const chunkCount = typeof chunkCountRaw === "number" ? chunkCountRaw : Number(chunkCountRaw ?? 0);
+  if (!Number.isInteger(chunkCount) || chunkCount <= 0) return { value: fallback, hasSplitData: false };
+
+  let raw = "";
+  for (let index = 0; index < chunkCount; index++) {
+    const chunk = world.getDynamicProperty(`${dynamicJsonChunkPrefix(key)}${index}`);
+    if (typeof chunk !== "string") return { value: fallback, hasSplitData: false };
+    raw += chunk;
+  }
+
+  return { value: parseJSON<T>(raw, fallback), hasSplitData: true };
+}
+
+export function clearSplitDynamicJson(key: string, dynamicPropertyIds: string[] = world.getDynamicPropertyIds()): void {
+  const prefix = dynamicJsonChunkPrefix(key);
+  world.setDynamicProperty(dynamicJsonChunkCountKey(key), undefined);
+  for (const propertyKey of dynamicPropertyIds) {
+    if (propertyKey.startsWith(prefix)) world.setDynamicProperty(propertyKey, undefined);
+  }
+}
+
+export function writeSplitDynamicJson(key: string, value: unknown): boolean {
+  const serialized = JSON.stringify(value);
+  const chunks = splitUtf8String(serialized, SPLIT_DYNAMIC_JSON_CHUNK_BYTES);
+  const chunkPrefix = dynamicJsonChunkPrefix(key);
+  const wantedKeys = new Set<string>();
+
+  for (let index = 0; index < chunks.length; index++) {
+    const chunkKey = `${chunkPrefix}${index}`;
+    wantedKeys.add(chunkKey);
+    world.setDynamicProperty(chunkKey, chunks[index]);
+  }
+  world.setDynamicProperty(dynamicJsonChunkCountKey(key), chunks.length);
+
+  for (const propertyKey of world.getDynamicPropertyIds()) {
+    if (propertyKey.startsWith(chunkPrefix) && !wantedKeys.has(propertyKey)) {
+      world.setDynamicProperty(propertyKey, undefined);
+    }
+  }
+
+  return true;
 }
 
 export function safeSetDynamicJson(key: string, value: unknown): boolean {
@@ -1028,6 +1113,10 @@ export function parseJSON<T>(raw: string | undefined, fallback: T): T {
   }
 }
 
+function readDynamicJSON<T>(key: string, fallback: T): T {
+  return safeCall(() => parseJSON<T>(world.getDynamicProperty(key) as string | undefined, fallback), fallback);
+}
+
 // ---------------------------------------------------------------------------
 // loadState — read everything from dynamic properties
 // ---------------------------------------------------------------------------
@@ -1036,85 +1125,32 @@ export function loadState() {
   migrateLegacyPlotsToSplitOneShot();
   const dynamicPropertyIds = world.getDynamicPropertyIds();
 
-  state.forms = parseJSON<Record<string, FormDefinition>>(
-    world.getDynamicProperty(STORAGE_KEYS.forms) as string | undefined,
-    {}
-  );
-  state.shops = parseJSON<Record<string, ShopProfile>>(
-    world.getDynamicProperty(STORAGE_KEYS.shops) as string | undefined,
-    {}
-  );
-  state.binds = parseJSON<BindingStore>(
-    world.getDynamicProperty(STORAGE_KEYS.binds) as string | undefined,
-    { itemBinds: {}, entityTagBinds: {} }
-  );
-  state.sidebars = parseJSON<SidebarStore>(
-    world.getDynamicProperty(STORAGE_KEYS.sidebars) as string | undefined,
-    { enabled: true, sidebars: {} }
-  );
-  state.config = parseJSON<ConfigStore>(
-    world.getDynamicProperty(STORAGE_KEYS.config) as string | undefined,
-    defaultConfig()
-  );
+  state.forms = readDynamicJSON<Record<string, FormDefinition>>(STORAGE_KEYS.forms, {});
+  state.shops = readDynamicJSON<Record<string, ShopProfile>>(STORAGE_KEYS.shops, {});
+  state.binds = readDynamicJSON<BindingStore>(STORAGE_KEYS.binds, { itemBinds: {}, entityTagBinds: {} });
+  state.sidebars = readDynamicJSON<SidebarStore>(STORAGE_KEYS.sidebars, { enabled: true, sidebars: {} });
+  state.config = readDynamicJSON<ConfigStore>(STORAGE_KEYS.config, defaultConfig());
   state.config.features.combat ??= defaultConfig().features.combat;
   state.config.features.moderation ??= defaultConfig().features.moderation;
   state.config.features.customAreas ??= defaultConfig().features.customAreas;
   state.config.features.lootChests ??= defaultConfig().features.lootChests;
   state.config.features.commandBuilder ??= defaultConfig().features.commandBuilder;
-  state.ranks = parseJSON<RankStore>(
-    world.getDynamicProperty(STORAGE_KEYS.ranks) as string | undefined,
-    defaultRankStore()
-  );
-  state.chat = parseJSON<ChatConfig>(
-    world.getDynamicProperty(STORAGE_KEYS.chat) as string | undefined,
-    defaultChatConfig()
-  );
+  state.ranks = readDynamicJSON<RankStore>(STORAGE_KEYS.ranks, defaultRankStore());
+  state.chat = readDynamicJSON<ChatConfig>(STORAGE_KEYS.chat, defaultChatConfig());
   const splitStats = loadStatsFromSplitKeys(dynamicPropertyIds);
-  state.stats = splitStats.hasSplitData
-    ? splitStats.store
-    : parseJSON<StatsStore>(
-      world.getDynamicProperty("tau:stats") as string | undefined,
-      { playerIds: {}, players: {} }
-    );
-  state.profiles = parseJSON<PlayerProfilesStore>(
-    world.getDynamicProperty("tau:profiles") as string | undefined,
-    { configs: {} }
-  );
+  state.stats = splitStats.hasSplitData ? splitStats.store : readDynamicJSON<StatsStore>("tau:stats", { playerIds: {}, players: {} });
+  state.profiles = readDynamicJSON<PlayerProfilesStore>("tau:profiles", { configs: {} });
   const splitPlots = loadPlotsFromSplitKeys(dynamicPropertyIds);
   state.plots = splitPlots.hasSplitData ? normalizePlotStore(splitPlots.store) : defaultPlotStore();
   rememberPlotSplitKeys(state.plots);
-  state.tpa = parseJSON<TpaStore>(
-    world.getDynamicProperty(STORAGE_KEYS.tpa) as string | undefined,
-    defaultTpaStore()
-  );
-  state.homes = parseJSON<HomeStore>(
-    world.getDynamicProperty(STORAGE_KEYS.homes) as string | undefined,
-    defaultHomeStore()
-  );
-  state.pay = parseJSON<PayStore>(
-    world.getDynamicProperty(STORAGE_KEYS.pay) as string | undefined,
-    defaultPayStore()
-  );
-  state.playerSettings = parseJSON<PlayerSettingsStore>(
-    world.getDynamicProperty(STORAGE_KEYS.playerSettings) as string | undefined,
-    defaultPlayerSettingsStore()
-  );
-  state.teams = parseJSON<TeamStore>(
-    world.getDynamicProperty(STORAGE_KEYS.teams) as string | undefined,
-    defaultTeamStore()
-  );
-  state.prune = parseJSON<PruneStore>(
-    world.getDynamicProperty("tau:prune") as string | undefined,
-    defaultPruneStore()
-  );
-  state.warps = parseJSON<WarpStore>(
-    world.getDynamicProperty(STORAGE_KEYS.warps) as string | undefined,
-    defaultWarpStore()
-  );
-  state.generators = parseJSON<GeneratorStore>(
-    world.getDynamicProperty(STORAGE_KEYS.generators) as string | undefined,
-    defaultGeneratorStore()
-  );
+  state.tpa = readDynamicJSON<TpaStore>(STORAGE_KEYS.tpa, defaultTpaStore());
+  state.homes = readDynamicJSON<HomeStore>(STORAGE_KEYS.homes, defaultHomeStore());
+  state.pay = readDynamicJSON<PayStore>(STORAGE_KEYS.pay, defaultPayStore());
+  state.playerSettings = readDynamicJSON<PlayerSettingsStore>(STORAGE_KEYS.playerSettings, defaultPlayerSettingsStore());
+  state.teams = readDynamicJSON<TeamStore>(STORAGE_KEYS.teams, defaultTeamStore());
+  state.prune = readDynamicJSON<PruneStore>("tau:prune", defaultPruneStore());
+  state.warps = readDynamicJSON<WarpStore>(STORAGE_KEYS.warps, defaultWarpStore());
+  state.generators = readDynamicJSON<GeneratorStore>(STORAGE_KEYS.generators, defaultGeneratorStore());
   let generatorsChanged = false;
   const placementsByDefinitionId = new Map<string, typeof state.generators.placed[string][]>();
   for (const placed of Object.values(state.generators.placed)) {
@@ -1146,27 +1182,16 @@ export function loadState() {
   if (generatorsChanged) {
     safeSetDynamicJson(STORAGE_KEYS.generators, state.generators);
   }
-  state.moderation = parseJSON<ModerationStore>(
-    world.getDynamicProperty(STORAGE_KEYS.moderation) as string | undefined,
-    defaultModerationStore()
-  );
+  const splitModeration = readSplitDynamicJson<ModerationStore>(STORAGE_KEYS.moderation, defaultModerationStore());
+  state.moderation = splitModeration.hasSplitData ? splitModeration.value : readDynamicJSON<ModerationStore>(STORAGE_KEYS.moderation, defaultModerationStore());
   state.moderation.inspectionSnapshots ??= {};
   for (const snapshot of Object.values(state.moderation.inspectionSnapshots)) {
     snapshot.inventory ??= [];
     snapshot.enderChest ??= [];
   }
-  state.crates = parseJSON<CrateStore>(
-    world.getDynamicProperty(STORAGE_KEYS.crates) as string | undefined,
-    defaultCrateStore()
-  );
-  state.tauItems = parseJSON<TauItemsStore>(
-    world.getDynamicProperty(STORAGE_KEYS.tauItems) as string | undefined,
-    defaultTauItemsStore()
-  );
-  state.combat = parseJSON<CombatStore>(
-    world.getDynamicProperty(STORAGE_KEYS.combat) as string | undefined,
-    defaultCombatStore()
-  );
+  state.crates = readDynamicJSON<CrateStore>(STORAGE_KEYS.crates, defaultCrateStore());
+  state.tauItems = readDynamicJSON<TauItemsStore>(STORAGE_KEYS.tauItems, defaultTauItemsStore());
+  state.combat = readDynamicJSON<CombatStore>(STORAGE_KEYS.combat, defaultCombatStore());
   state.combat.config.enabled ??= defaultCombatStore().config.enabled;
   state.combat.config.combatTimeSeconds ??= defaultCombatStore().config.combatTimeSeconds;
   state.combat.config.announceLogouts ??= defaultCombatStore().config.announceLogouts;
@@ -1180,12 +1205,7 @@ export function loadState() {
   state.combat.config.killConditions.enabled ??= true;
   state.combat.config.killConditions.rules ??= [];
   const splitShops = loadPlayerShopsFromSplitKeys(dynamicPropertyIds);
-  state.playerShops = splitShops.hasSplitData
-    ? splitShops.store
-    : parseJSON<PlayerShopStore>(
-      world.getDynamicProperty(STORAGE_KEYS.playerShops) as string | undefined,
-      defaultPlayerShopStore()
-    );
+  state.playerShops = splitShops.hasSplitData ? splitShops.store : readDynamicJSON<PlayerShopStore>(STORAGE_KEYS.playerShops, defaultPlayerShopStore());
   state.playerShops.config.enabled ??= defaultPlayerShopStore().config.enabled;
   state.playerShops.config.defaultCurrencyObjective ??= defaultPlayerShopStore().config.defaultCurrencyObjective;
   state.playerShops.config.allowCustomItems ??= defaultPlayerShopStore().config.allowCustomItems;
@@ -1200,9 +1220,7 @@ export function loadState() {
   state.playerShops.earningsByPlayerId ??= {};
   rememberPlayerShopSplitKeys(state.playerShops);
   const splitCustomAreas = loadCustomAreasFromSplitKeys(dynamicPropertyIds);
-  state.customAreas = splitCustomAreas.hasSplitData
-    ? splitCustomAreas.store
-    : parseJSON<CustomAreaStore>(world.getDynamicProperty(STORAGE_KEYS.customAreas) as string | undefined, defaultCustomAreaStore());
+  state.customAreas = splitCustomAreas.hasSplitData ? splitCustomAreas.store : readDynamicJSON<CustomAreaStore>(STORAGE_KEYS.customAreas, defaultCustomAreaStore());
   state.customAreas.config = { ...defaultCustomAreaStore().config, ...(state.customAreas.config ?? {}) };
   state.customAreas.areas ??= {};
   for (const area of Object.values(state.customAreas.areas)) {
@@ -1219,18 +1237,13 @@ export function loadState() {
   }
   state.plots = normalizePlotStore(state.plots);
   const splitLootChests = loadLootChestsFromSplitKeys(dynamicPropertyIds);
-  state.lootChests = splitLootChests.hasSplitData
-    ? splitLootChests.store
-    : parseJSON<LootChestStore>(world.getDynamicProperty(STORAGE_KEYS.lootChests) as string | undefined, defaultLootChestStore());
+  state.lootChests = splitLootChests.hasSplitData ? splitLootChests.store : readDynamicJSON<LootChestStore>(STORAGE_KEYS.lootChests, defaultLootChestStore());
   state.lootChests.config = { ...defaultLootChestStore().config, ...(state.lootChests.config ?? {}) };
   state.lootChests.pools ??= {};
   state.lootChests.snapshots ??= {};
   state.lootChests.chests ??= {};
   world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
-  state.commandBuilder = parseJSON<CommandBuilderStore>(
-    world.getDynamicProperty(STORAGE_KEYS.commandBuilder) as string | undefined,
-    defaultCommandBuilderStore()
-  );
+  state.commandBuilder = readDynamicJSON<CommandBuilderStore>(STORAGE_KEYS.commandBuilder, defaultCommandBuilderStore());
   state.commandBuilder.config = { ...defaultCommandBuilderStore().config, ...(state.commandBuilder.config ?? {}) };
   state.commandBuilder.commands ??= {};
   state.plots.config.autoBuild ??= defaultPlotStore().config.autoBuild;

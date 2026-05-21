@@ -2,6 +2,7 @@ import { Block, ItemStack, Player, system, world } from "@minecraft/server";
 import { getInventoryContainer, getPlayerId, getScore, saveCrates, setScore, state } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate } from "../shared/templates";
+import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
 import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "../types";
 
 type CrateInteractResult = {
@@ -159,18 +160,18 @@ function giveItemReward(player: Player, reward: Extract<CrateReward, { type: "it
     else if (reward.nameTag && reward.nameTag.trim().length > 0) stack.nameTag = reward.nameTag;
     if (reward.lore && reward.lore.length > 0) stack.setLore(reward.lore);
     if (reward.customData) stack.setDynamicProperty("tau:custom_data", reward.customData);
-    const placeComp = stack.getComponent("minecraft:can_place_on") as any;
+    const placeComp = getItemCanPlaceOnComponent(stack);
     if (placeComp && reward.canPlaceOn && reward.canPlaceOn.length > 0) placeComp.blocks = reward.canPlaceOn;
-    const destroyComp = stack.getComponent("minecraft:can_destroy") as any;
+    const destroyComp = getItemCanDestroyComponent(stack);
     if (destroyComp && reward.canDestroy && reward.canDestroy.length > 0) destroyComp.blocks = reward.canDestroy;
     if (reward.enchantments && reward.enchantments.length > 0) {
-      const enchantComp = stack.getComponent("minecraft:enchantable") as any;
+      const enchantComp = getItemEnchantableComponent(stack);
       if (enchantComp?.addEnchantments) {
         enchantComp.addEnchantments(reward.enchantments.map((entry) => ({ type: { id: entry.id }, level: entry.level })));
       }
     }
     if (reward.durability !== undefined && reward.maxDurability !== undefined) {
-      const durability = stack.getComponent("minecraft:durability") as any;
+      const durability = getItemDurabilityComponent(stack);
       if (durability) durability.damage = Math.max(0, Math.min(reward.maxDurability, reward.durability));
     }
   } catch {

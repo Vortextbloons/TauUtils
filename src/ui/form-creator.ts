@@ -4,6 +4,7 @@ import { ACTION_TYPES, ICONS, WORKING_ICON_OPTIONS, isWorkingIconPath, type Acti
 import { findForm, getPlayerId, getPlayerRank, getPlayerStats, isFeatureEnabled, isOperator, normalizeKey, saveForms, saveProfiles, saveModeration, state, tell } from "../storage";
 import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
 import { TauUi } from "./tau-ui";
+import { safeCall } from "../shared/safe-call";
 
 function formLabel(element: FormElement): string {
   switch (element.kind) {
@@ -63,7 +64,7 @@ async function editFormElement(player: Player, form: FormDefinition, index: numb
     submenu.button("Delete", ICONS.delete);
     submenu.button("Back", ICONS.back);
 
-    const response = await submenu.show(player).catch(() => undefined);
+    const response = await safeCall(() => submenu.show(player), undefined);
     if (!response || response.canceled || response.selection === undefined) return;
 
     if (response.selection === 0) {
@@ -112,7 +113,7 @@ async function editElementModal(player: Player, form: FormDefinition, index: num
       .dropdown("Action Type", [...ACTION_TYPES], { defaultValueIndex: ACTION_TYPES.indexOf(element.action) })
       .textField("Value", "", { defaultValue: element.value ?? "" })
       .submitButton("Save");
-    const result = await modal.show(player).catch(() => undefined);
+    const result = await safeCall(() => modal.show(player), undefined);
     if (!result || result.canceled || !result.formValues) return;
     element.text = String(result.formValues[0] ?? "").trim() || element.text;
     const selectedIcon = WORKING_ICON_OPTIONS[Number(result.formValues[1] ?? 0)]?.path;
@@ -132,7 +133,7 @@ async function editElementModal(player: Player, form: FormDefinition, index: num
       .dropdown("Action Type", [...ACTION_TYPES], { defaultValueIndex: ACTION_TYPES.indexOf(element.action) })
       .textField("Value", "", { defaultValue: element.value ?? "" })
       .submitButton("Save");
-    const result = await modal.show(player).catch(() => undefined);
+    const result = await safeCall(() => modal.show(player), undefined);
     if (!result || result.canceled || !result.formValues) return;
     element.label = String(result.formValues[0] ?? "").trim() || element.label;
     element.defaultValue = Boolean(result.formValues[1]);
@@ -154,7 +155,7 @@ async function editElementModal(player: Player, form: FormDefinition, index: num
       .dropdown("Action Type", [...ACTION_TYPES], { defaultValueIndex: ACTION_TYPES.indexOf(element.action) })
       .textField("Value", "", { defaultValue: element.value ?? "" })
       .submitButton("Save");
-    const result = await modal.show(player).catch(() => undefined);
+    const result = await safeCall(() => modal.show(player), undefined);
     if (!result || result.canceled || !result.formValues) return;
     element.label = String(result.formValues[0] ?? "").trim() || element.label;
     element.min = Number(result.formValues[1] ?? element.min);
@@ -177,7 +178,7 @@ async function editElementModal(player: Player, form: FormDefinition, index: num
       .dropdown("Action Type", [...ACTION_TYPES], { defaultValueIndex: ACTION_TYPES.indexOf(element.action) })
       .textField("Value", "", { defaultValue: element.value ?? "" })
       .submitButton("Save");
-    const result = await modal.show(player).catch(() => undefined);
+    const result = await safeCall(() => modal.show(player), undefined);
     if (!result || result.canceled || !result.formValues) return;
     element.label = String(result.formValues[0] ?? "").trim() || element.label;
     element.options = String(result.formValues[1] ?? "").split(",").map((v) => v.trim()).filter((v) => v.length > 0);
@@ -198,7 +199,7 @@ async function editElementModal(player: Player, form: FormDefinition, index: num
       .dropdown("Action Type", [...ACTION_TYPES], { defaultValueIndex: ACTION_TYPES.indexOf(element.action) })
       .textField("Value", "", { defaultValue: element.value ?? "" })
       .submitButton("Save");
-    const result = await modal.show(player).catch(() => undefined);
+    const result = await safeCall(() => modal.show(player), undefined);
     if (!result || result.canceled || !result.formValues) return;
     element.label = String(result.formValues[0] ?? "").trim() || element.label;
     element.placeholder = String(result.formValues[1] ?? "").trim() || undefined;
@@ -474,7 +475,7 @@ async function showCreateBaseForm(player: Player, layout: "action" | "modal") {
     .textField("Body (optional)", "Text shown below title")
     .submitButton("Create");
 
-  const response = await modal.show(player).catch(() => undefined);
+    const response = await safeCall(() => modal.show(player), undefined);
   if (!response || response.canceled || !response.formValues) return;
 
   const id = String(response.formValues[0] ?? "").trim();
@@ -511,7 +512,7 @@ async function showActionButtonCreator(player: Player, form: FormDefinition) {
     .textField("Value", "menu id, command, or shop token")
     .submitButton("Add");
 
-  const response = await modal.show(player).catch(() => undefined);
+    const response = await safeCall(() => modal.show(player), undefined);
   if (!response || response.canceled || !response.formValues) return;
 
   const text = String(response.formValues[0] ?? "").trim();
@@ -557,7 +558,7 @@ async function showModalElementCreator(player: Player, form: FormDefinition) {
       .title("Add Label")
       .textField("Text", "Section Title")
       .submitButton("Add");
-    const response = await labelForm.show(player).catch(() => undefined);
+    const response = await safeCall(() => labelForm.show(player), undefined);
     if (!response || response.canceled || !response.formValues) return;
     const text = String(response.formValues[0] ?? "").trim();
     if (!text) return;
@@ -581,7 +582,7 @@ async function showModalElementCreator(player: Player, form: FormDefinition) {
     .textField("Value", "command/menu/shop token")
     .submitButton("Continue");
 
-  const baseResponse = await base.show(player).catch(() => undefined);
+  const baseResponse = await safeCall(() => base.show(player), undefined);
   if (!baseResponse || baseResponse.canceled || !baseResponse.formValues) return;
 
   const label = String(baseResponse.formValues[0] ?? "").trim();
@@ -598,7 +599,7 @@ async function showModalElementCreator(player: Player, form: FormDefinition) {
       .title("Toggle Options")
       .toggle("Default enabled", { defaultValue: false })
       .submitButton("Add");
-    const response = await details.show(player).catch(() => undefined);
+    const response = await safeCall(() => details.show(player), undefined);
     if (!response || response.canceled || !response.formValues) return;
     form.elements.push({
       kind: "toggle",
@@ -615,7 +616,7 @@ async function showModalElementCreator(player: Player, form: FormDefinition) {
       .textField("Step", "1", { defaultValue: "1" })
       .textField("Default", "50", { defaultValue: "50" })
       .submitButton("Add");
-    const response = await details.show(player).catch(() => undefined);
+    const response = await safeCall(() => details.show(player), undefined);
     if (!response || response.canceled || !response.formValues) return;
     const min = Number(response.formValues[0] ?? 0);
     const max = Number(response.formValues[1] ?? 100);
@@ -637,7 +638,7 @@ async function showModalElementCreator(player: Player, form: FormDefinition) {
       .textField("Options (comma-separated)", "a,b,c")
       .textField("Default index", "0", { defaultValue: "0" })
       .submitButton("Add");
-    const response = await details.show(player).catch(() => undefined);
+    const response = await safeCall(() => details.show(player), undefined);
     if (!response || response.canceled || !response.formValues) return;
     const options = String(response.formValues[0] ?? "")
       .split(",")
@@ -662,7 +663,7 @@ async function showModalElementCreator(player: Player, form: FormDefinition) {
       .textField("Placeholder", "Type here")
       .textField("Default value", "")
       .submitButton("Add");
-    const response = await details.show(player).catch(() => undefined);
+    const response = await safeCall(() => details.show(player), undefined);
     if (!response || response.canceled || !response.formValues) return;
     const placeholder = String(response.formValues[0] ?? "").trim();
     const defaultValue = String(response.formValues[1] ?? "").trim();
@@ -716,7 +717,7 @@ async function showFormEditor(player: Player, formId: string) {
       editor.button(`${index + 1}. ${describeElement(element)}\n${formSummary(element)}`, iconForElement(element.kind));
     }
 
-    const response = await editor.show(player).catch(() => undefined);
+    const response = await safeCall(() => editor.show(player), undefined);
     if (!response || response.canceled || response.selection === undefined) return;
 
     if (response.selection === 0) {

@@ -11,6 +11,7 @@ import {
   writePlayerShopsIncrementalToSplitKeys,
   writeCustomAreasToSplitKeys,
   writeLootChestsToSplitKeys,
+  writeSplitDynamicJson,
 } from "./state";
 
 const pendingDynamicSaves = new Map<string, () => void>();
@@ -121,7 +122,11 @@ export function saveGenerators() {
 }
 
 export function saveModeration() {
-  scheduleDynamicSave(STORAGE_KEYS.moderation, () => safeSetDynamicJson(STORAGE_KEYS.moderation, state.moderation));
+  scheduleDynamicSave(STORAGE_KEYS.moderation, () => {
+    if (writeSplitDynamicJson(STORAGE_KEYS.moderation, state.moderation)) {
+      world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);
+    }
+  });
 }
 
 export function saveCrates() {

@@ -1,5 +1,7 @@
-import { EnchantmentTypes, ItemComponentTypes, ItemLockMode, ItemStack, type Vector3 } from "@minecraft/server";
+import { EnchantmentTypes, ItemLockMode, ItemStack, Player, type Vector3 } from "@minecraft/server";
 import { type SerializedDynamicValue, type SerializedItemStack, type SerializedVector3 } from "../types";
+import { getItemDurabilityComponent, getItemEnchantableComponent } from "./item-components";
+import { safeCall } from "./safe-call";
 
 function isSerializedVector3(value: unknown): value is SerializedVector3 {
   if (!value || typeof value !== "object") return false;
@@ -26,7 +28,7 @@ function toRuntimeDynamicValue(value: SerializedDynamicValue): boolean | number 
 }
 
 function serializeDynamicProperties(stack: ItemStack): Record<string, SerializedDynamicValue> | undefined {
-  try {
+  return safeCall(() => {
     const keys = stack.getDynamicPropertyIds();
     if (keys.length === 0) return undefined;
     const serialized: Record<string, SerializedDynamicValue> = {};
@@ -36,40 +38,34 @@ function serializeDynamicProperties(stack: ItemStack): Record<string, Serialized
       serialized[key] = value;
     }
     return Object.keys(serialized).length > 0 ? serialized : undefined;
-  } catch {
-    return undefined;
-  }
+  }, undefined);
 }
 
 function safeGetCanDestroy(stack: ItemStack): string[] | undefined {
-  try {
+  return safeCall(() => {
     const values = stack.getCanDestroy();
     return values.length > 0 ? values : undefined;
-  } catch {
-    return undefined;
-  }
+  }, undefined);
 }
 
 function safeGetCanPlaceOn(stack: ItemStack): string[] | undefined {
-  try {
+  return safeCall(() => {
     const values = stack.getCanPlaceOn();
     return values.length > 0 ? values : undefined;
-  } catch {
-    return undefined;
-  }
+  }, undefined);
 }
 
 export function serializeItemStack(stack: ItemStack): SerializedItemStack {
   const dynamicProperties = serializeDynamicProperties(stack);
-  const durability = stack.getComponent(ItemComponentTypes.Durability);
-  const enchantable = stack.getComponent(ItemComponentTypes.Enchantable);
+  const durability = getItemDurabilityComponent(stack);
+  const enchantable = getItemEnchantableComponent(stack);
 
   return {
     itemId: stack.typeId,
     amount: Math.max(1, Math.floor(stack.amount)),
     nameTag: stack.nameTag,
     lore: stack.getLore(),
-    enchantments: enchantable?.getEnchantments().map((entry) => ({ id: entry.type.id, level: entry.level })),
+    enchantments: enchantable?.getEnchantments().map((entry) => ({ id: entry.type?.id ?? entry.typeId ?? "", level: entry.level })).filter((entry) => entry.id.length > 0),
     durability: durability?.damage,
     maxDurability: durability?.maxDurability,
     canDestroy: safeGetCanDestroy(stack),
@@ -140,7 +136,7 @@ export function deserializeItemStack(data: SerializedItemStack): ItemStack {
     }
   }
 
-  const enchantable = stack.getComponent(ItemComponentTypes.Enchantable);
+  const enchantable = getItemEnchantableComponent(stack);
   if (enchantable && data.enchantments && data.enchantments.length > 0) {
     try {
       const entries = data.enchantments
@@ -150,7 +146,7 @@ export function deserializeItemStack(data: SerializedItemStack): ItemStack {
           return { type, level: Math.max(1, Math.floor(entry.level)) };
         })
         .filter((entry): entry is { type: any; level: number } => Boolean(entry));
-      if (entries.length > 0) {
+      if (entries.length > 0 && enchantable.addEnchantments) {
         enchantable.addEnchantments(entries);
       }
     } catch {
@@ -158,7 +154,7 @@ export function deserializeItemStack(data: SerializedItemStack): ItemStack {
     }
   }
 
-  const durability = stack.getComponent(ItemComponentTypes.Durability);
+  const durability = getItemDurabilityComponent(stack);
   if (durability && data.durability !== undefined) {
     try {
       const max = data.maxDurability ?? durability.maxDurability;
