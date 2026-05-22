@@ -3,6 +3,7 @@ import { TauUi } from "../ui";
 import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
 import { ICONS, type PlayerShop, type PlayerShopListing } from "../types";
 import { getInventoryContainer, getPlayerId, getScore, isOperator, savePlayerShops, setScore, state, tell } from "../storage";
+import { estimateUtf8Bytes } from "../shared/utf8";
 
 type TradeResult = {
   ok: boolean;
@@ -79,20 +80,6 @@ function getOrCreateOwnedShop(player: Player): PlayerShop {
   state.playerShops.shops[id] = created;
   savePlayerShops();
   return created;
-}
-
-function estimateUtf8Bytes(value: string): number {
-  let bytes = 0;
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 0x7f) bytes += 1;
-    else if (code <= 0x7ff) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      i++;
-    } else bytes += 3;
-  }
-  return bytes;
 }
 
 type InventorySlotEntry = {

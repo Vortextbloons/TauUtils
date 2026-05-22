@@ -25,6 +25,11 @@ import {
   saveModeration,
   tell,
 } from "../storage";
+import {
+  clearBannedInventory,
+  enforceBannedItemUse,
+  snapshotContainerExcludingBanned,
+} from "../moderation/banned-items";
 
 const generatorMenuOpenByPlayerId = new Map<string, number>();
 const pendingJoinInitializationByName = new Set<string>();
@@ -44,38 +49,6 @@ function openGeneratorMenuOnce(player: ReturnType<typeof asPlayer>, placed: { de
   system.runTimeout(() => {
     generatorMenuOpenByPlayerId.delete(playerId);
   }, 20);
-}
-
-function normalizeItemId(value: string): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function isBannedItemId(itemId: string): boolean {
-  if (state.moderation.bannedItems.length === 0) return false;
-  const normalized = normalizeItemId(itemId);
-  return state.moderation.bannedItems.some((entry) => normalizeItemId(entry.itemId) === normalized);
-}
-
-function snapshotContainer(container: { size: number; getItem(slot: number): ItemStack | undefined; isValid?: boolean }, slotCount?: number): Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> | undefined {
-  try {
-    if (container.isValid === false) return undefined;
-    const snapshot: Array<{ slot: number; itemId: string; amount: number; nameTag?: string; lore?: string[] }> = [];
-    const totalSlots = Math.max(0, Math.floor(Math.min(slotCount ?? container.size ?? 0, container.size ?? 0)));
-    for (let slot = 0; slot < totalSlots; slot++) {
-      const stack = container.getItem(slot);
-      if (!stack) continue;
-      snapshot.push({
-        slot,
-        itemId: stack.typeId,
-        amount: stack.amount,
-        nameTag: stack.nameTag?.trim() || undefined,
-        lore: stack.getLore().map((line) => String(line).trim()).filter((line) => line.length > 0),
-      });
-    }
-    return snapshot;
-  } catch {
-    return undefined;
-  }
 }
 
 function snapshotsEqual(
@@ -111,9 +84,9 @@ function cacheModerationInspectionSnapshot(player: Player | undefined): boolean 
     const key = player.name.toLowerCase();
     const current = state.moderation.inspectionSnapshots[key];
     const inventory = getInventoryContainer(player);
-    const inventorySnapshot = inventory ? (snapshotContainer(inventory) ?? (current?.inventory ?? [])) : (current?.inventory ?? []);
+    const inventorySnapshot = inventory ? (snapshotContainerExcludingBanned(inventory) ?? (current?.inventory ?? [])) : (current?.inventory ?? []);
     const enderInventory = player.getComponent(EntityComponentTypes.EnderInventory)?.container;
-    const enderChestSnapshot = enderInventory ? (snapshotContainer(enderInventory) ?? (current?.enderChest ?? [])) : (current?.enderChest ?? []);
+    const enderChestSnapshot = enderInventory ? (snapshotContainerExcludingBanned(enderInventory) ?? (current?.enderChest ?? [])) : (current?.enderChest ?? []);
     if (
       current
       && current.playerName === player.name
@@ -139,7 +112,7 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   const id = getPlayerId(player);
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
   if (isFeatureEnabled("moderation")) {
-    clearBannedInventoryItems(player);
+    clearBannedInventory(player);
     if (cacheModerationInspectionSnapshot(player)) saveModeration();
   }
   if (isFeatureEnabled("combat")) handleCombatJoin(player);
@@ -175,6 +148,14 @@ function schedulePlayerJoinInitializationRetry(playerName: string, attempt: numb
   if (attempt === 0) {
     if (pendingJoinInitializationByName.has(playerName)) return;
     pendingJoinInitializationByName.add(playerName);
+    const immediate = getCachedPlayers().find((entry) => entry.name === playerName);
+    if (immediate) {
+      system.run(() => {
+        pendingJoinInitializationByName.delete(playerName);
+        initializePlayerJoinState(immediate);
+      });
+      return;
+    }
   }
   system.runTimeout(() => {
     const player = getCachedPlayers().find((entry) => entry.name === playerName);
@@ -189,30 +170,6 @@ function schedulePlayerJoinInitializationRetry(playerName: string, attempt: numb
     }
     schedulePlayerJoinInitializationRetry(playerName, attempt + 1);
   }, 1);
-}
-
-function clearBannedHeldItem(player: ReturnType<typeof asPlayer>): void {
-  if (!player) return;
-  const container = getInventoryContainer(player);
-  if (!container) return;
-  const held = container.getItem(player.selectedSlotIndex);
-  if (!held) return;
-  if (!isBannedItemId(held.typeId)) return;
-  container.setItem(player.selectedSlotIndex, undefined);
-}
-
-function clearBannedInventoryItems(player: ReturnType<typeof asPlayer>): number {
-  if (!player) return 0;
-  const container = getInventoryContainer(player);
-  if (!container) return 0;
-  let removed = 0;
-  for (let slot = 0; slot < container.size; slot++) {
-    const stack = container.getItem(slot);
-    if (!stack || !isBannedItemId(stack.typeId)) continue;
-    removed += stack.amount;
-    container.setItem(slot, undefined);
-  }
-  return removed;
 }
 
 type DistanceSample = {
@@ -469,10 +426,16 @@ export function registerEventInterceptors() {
     });
   }
 
+  world.beforeEvents.itemUse.subscribe((event) => {
+    if (!isFeatureEnabled("moderation")) return;
+    const player = asPlayer(event.source);
+    if (!player) return;
+    enforceBannedItemUse(player, event.itemStack, event);
+  });
+
   world.afterEvents.itemUse.subscribe((event) => {
     const player = asPlayer(event.source);
     if (player && shouldCancelAreaItemUse(player)) return;
-    if (player && isFeatureEnabled("moderation")) clearBannedHeldItem(player);
 
     if (player && isFeatureEnabled("items")) {
       const handled = tryHandleTauItemTrigger(player, "use_air", event.itemStack, {
@@ -547,6 +510,8 @@ export function registerEventInterceptors() {
   });
 
   world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
+    if (isFeatureEnabled("moderation") && enforceBannedItemUse(event.player, event.itemStack, event)) return;
+
     if (shouldCancelAreaItemUse(event.player)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot use items in this area.");

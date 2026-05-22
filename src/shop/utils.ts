@@ -3,6 +3,8 @@ import { TauUi } from "../ui";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import { getInventoryContainer, normalizeCategory, getProfileCategories, saveShops } from "../storage";
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
+import { normalizeItemId } from "../shared/item-id";
+import { parseEnchantments } from "../shared/enchantments";
 
 export function iconForShopItem(item: ShopProfile["items"][number]): string | undefined {
   if (item.displayName && item.displayName.trim().length > 0) return undefined;
@@ -30,33 +32,11 @@ export function getShopItemByKey(profile: ShopProfile, key: string): ShopItemDef
   return profile.items.find((item, index) => ensureShopItemId(item, profile.id, index) === key);
 }
 
-export function normalizeItemId(value: string): string {
-  const trimmed = String(value ?? "").trim().toLowerCase();
-  return trimmed.startsWith("minecraft:") ? trimmed.slice(10) : trimmed;
-}
-
 export function splitList(raw: string | undefined): string[] {
   return String(raw ?? "")
     .split(/[\n|]/g)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-}
-
-export function parseEnchantments(raw: string | undefined): { id: string; level: number }[] {
-  const entries = String(raw ?? "")
-    .split(/[,\n;]/g)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-
-  const result: { id: string; level: number }[] = [];
-  for (const entry of entries) {
-    const [idRaw, levelRaw] = entry.split("=", 2);
-    const id = String(idRaw ?? "").trim();
-    const level = Math.max(1, Math.floor(Number(String(levelRaw ?? "1").trim())));
-    if (!id) continue;
-    result.push({ id, level });
-  }
-  return result;
 }
 
 export function formatEnchantments(enchantments?: { id: string; level: number }[]): string {

@@ -2,16 +2,10 @@ import { ItemStack, world } from "@minecraft/server";
 import { saveGenerators, state } from "../storage";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore } from "../types/game";
 import { generatorCache, GENERATOR_MARKER_PREFIX, type GeneratorItemData, type GeneratorLocation } from "./types";
+import { normalizeItemId } from "../shared/item-id";
 
 function normalizeId(value: string): string {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
-}
-
-function normalizeItemId(value: string): string {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed) return trimmed;
-  if (trimmed.includes(":")) return trimmed;
-  return `minecraft:${trimmed.toLowerCase()}`;
 }
 
 function parsePlotIndex(slotId: string): number {

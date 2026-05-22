@@ -1,4 +1,5 @@
 import { system, world } from "@minecraft/server";
+import { invalidateBannedItemCache } from "../moderation/banned-items";
 import { STORAGE_KEYS } from "../types";
 import {
   state,
@@ -122,6 +123,7 @@ export function saveGenerators() {
 }
 
 export function saveModeration() {
+  invalidateBannedItemCache();
   scheduleDynamicSave(STORAGE_KEYS.moderation, () => {
     if (writeSplitDynamicJson(STORAGE_KEYS.moderation, state.moderation)) {
       world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);

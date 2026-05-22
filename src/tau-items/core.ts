@@ -4,6 +4,7 @@ import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate as renderSharedCommandTemplate } from "../shared/templates";
 import { getEntityHealthComponent, getItemDurabilityComponent } from "../shared/item-components";
 import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "../types";
+import { normalizeItemId } from "../shared/item-id";
 
 type TriggerContext = {
   location?: { x: number; y: number; z: number };
@@ -22,13 +23,6 @@ const cooldownEndsByKey = new Map<string, number>();
 
 function normalizeId(value: string): string {
   return String(value ?? "").trim().toLowerCase();
-}
-
-function normalizeItemId(value: string): string {
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (!raw) return raw;
-  if (raw.includes(":")) return raw;
-  return `minecraft:${raw}`;
 }
 
 function markerLine(itemId: string): string {

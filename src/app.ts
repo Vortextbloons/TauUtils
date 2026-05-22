@@ -67,13 +67,13 @@ function bootstrap() {
     registerEventInterceptors();
     registerSidebarSystem();
     registerLootChestSystem();
+    initializeOnlinePlayersAfterReload();
   }, 2);
 
   system.runTimeout(() => {
     if (initialized || startupPhase !== 2) return;
     startupPhase = 3;
     if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_phase_3");
-    initializeOnlinePlayersAfterReload();
     if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_finalize");
     world.sendMessage(formatTauUtilsLoadedMessage());
     initialized = true;

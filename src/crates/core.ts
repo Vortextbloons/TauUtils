@@ -4,6 +4,16 @@ import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate } from "../shared/templates";
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
 import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "../types";
+import { normalizeBlockId, normalizeItemId } from "../shared/item-id";
+
+export type CrateBlockLocation = {
+  dimensionId: string;
+  x: number;
+  y: number;
+  z: number;
+};
+
+const CRATE_RAYCAST_DISTANCE = 8;
 
 type CrateInteractResult = {
   handled: boolean;
@@ -23,15 +33,20 @@ function normalizeId(value: string): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function normalizeItemId(value: string): string {
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (!raw) return raw;
-  if (raw.includes(":")) return raw;
-  return `minecraft:${raw}`;
-}
-
 function blockKey(dimensionId: string, x: number, y: number, z: number): string {
   return `${dimensionId}:${Math.floor(x)}:${Math.floor(y)}:${Math.floor(z)}`;
+}
+
+function blockMatchesCrate(crateBlockId: string, blockTypeId: string): boolean {
+  return normalizeBlockId(crateBlockId) === normalizeBlockId(blockTypeId);
+}
+
+function blockTypeMismatchMessage(crate: CrateDefinition, blockTypeId: string): string {
+  return `Block must be ${crate.crateBlockId} (found: ${blockTypeId}).`;
+}
+
+function locationCoordsText(x: number, y: number, z: number): string {
+  return `${Math.floor(x)} ${Math.floor(y)} ${Math.floor(z)}`;
 }
 
 function markerLine(crateId: string): string {
@@ -302,9 +317,7 @@ function findCrateAtBlock(block: Block): { crate: CrateDefinition; locationKey: 
 }
 
 function cleanupInvalidCrate(block: Block, entry: { crate: CrateDefinition; locationKey: string }): boolean {
-  const blockType = normalizeItemId(block.typeId);
-  const expectedType = normalizeItemId(entry.crate.crateBlockId);
-  if (blockType === expectedType) return false;
+  if (blockMatchesCrate(entry.crate.crateBlockId, block.typeId)) return false;
   delete state.crates.locations[entry.locationKey];
   saveCrates();
   return true;
@@ -377,57 +390,107 @@ export function giveCrateKey(player: Player, crateId: string, amount: number): {
   return { ok: true, message: `Gave ${stack.amount} key(s) for ${crate.displayName}.` };
 }
 
-export function setCrateAtBlock(player: Player, crateId: string): { ok: boolean; message: string } {
-  const crate = state.crates.crates[normalizeId(crateId)];
-  if (!crate) return { ok: false, message: "Crate not found." };
-  const target = player.getBlockFromViewDirection({ maxDistance: 6 });
-  const block = target?.block;
-  if (!block) return { ok: false, message: "Look at a block within 6 blocks." };
-  if (normalizeItemId(block.typeId) !== normalizeItemId(crate.crateBlockId)) {
-    return { ok: false, message: `Block must be ${crate.crateBlockId}.` };
+function registerCrateLocation(
+  crate: CrateDefinition,
+  dimensionId: string,
+  x: number,
+  y: number,
+  z: number,
+  blockTypeId: string
+): { ok: boolean; message: string } {
+  const fx = Math.floor(x);
+  const fy = Math.floor(y);
+  const fz = Math.floor(z);
+  const key = blockKey(dimensionId, fx, fy, fz);
+  const existing = state.crates.locations[key];
+  if (existing && normalizeId(existing.crateId) === normalizeId(crate.id)) {
+    return { ok: true, message: `Already registered at ${locationCoordsText(fx, fy, fz)}.` };
   }
-  const key = blockKey(block.dimension.id, block.location.x, block.location.y, block.location.z);
+  if (!blockMatchesCrate(crate.crateBlockId, blockTypeId)) {
+    return { ok: false, message: blockTypeMismatchMessage(crate, blockTypeId) };
+  }
   state.crates.locations[key] = {
     crateId: crate.id,
+    dimensionId,
+    x: fx,
+    y: fy,
+    z: fz,
+  };
+  saveCrates();
+  return { ok: true, message: `Registered ${crate.displayName} at ${locationCoordsText(fx, fy, fz)}.` };
+}
+
+export function getLookedAtBlockLocation(player: Player, maxDistance = CRATE_RAYCAST_DISTANCE): CrateBlockLocation | undefined {
+  const target = player.getBlockFromViewDirection({ maxDistance });
+  const block = target?.block;
+  if (!block) return undefined;
+  return {
     dimensionId: block.dimension.id,
     x: Math.floor(block.location.x),
     y: Math.floor(block.location.y),
     z: Math.floor(block.location.z),
   };
+}
+
+export function setCrateBlockIdFromLooked(player: Player, crateId: string): { ok: boolean; message: string } {
+  const crate = state.crates.crates[normalizeId(crateId)];
+  if (!crate) return { ok: false, message: "Crate not found." };
+  const target = player.getBlockFromViewDirection({ maxDistance: CRATE_RAYCAST_DISTANCE });
+  const block = target?.block;
+  if (!block) return { ok: false, message: `Look at a block within ${CRATE_RAYCAST_DISTANCE} blocks.` };
+  crate.crateBlockId = normalizeBlockId(block.typeId);
   saveCrates();
-  return { ok: true, message: `Registered ${crate.displayName} at ${Math.floor(block.location.x)} ${Math.floor(block.location.y)} ${Math.floor(block.location.z)}.` };
+  return { ok: true, message: `Crate block set to ${crate.crateBlockId}.` };
+}
+
+export function setCrateAtBlock(player: Player, crateId: string): { ok: boolean; message: string } {
+  const crate = state.crates.crates[normalizeId(crateId)];
+  if (!crate) return { ok: false, message: "Crate not found." };
+  const target = player.getBlockFromViewDirection({ maxDistance: CRATE_RAYCAST_DISTANCE });
+  const block = target?.block;
+  if (!block) return { ok: false, message: `Look at a block within ${CRATE_RAYCAST_DISTANCE} blocks.` };
+  return registerCrateLocation(
+    crate,
+    block.dimension.id,
+    block.location.x,
+    block.location.y,
+    block.location.z,
+    block.typeId
+  );
 }
 
 export function setCrateAtCoordinates(crateId: string, dimensionId: string, x: number, y: number, z: number): { ok: boolean; message: string } {
   const crate = state.crates.crates[normalizeId(crateId)];
   if (!crate) return { ok: false, message: "Crate not found." };
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+    return { ok: false, message: "Invalid coordinates." };
+  }
   try {
     const block = world.getDimension(dimensionId).getBlock({ x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) });
     if (!block) return { ok: false, message: "No block found at that location." };
-    if (normalizeItemId(block.typeId) !== normalizeItemId(crate.crateBlockId)) {
-      return { ok: false, message: `Block must be ${crate.crateBlockId}.` };
-    }
-    const key = blockKey(dimensionId, x, y, z);
-    state.crates.locations[key] = {
-      crateId: crate.id,
-      dimensionId,
-      x: Math.floor(x),
-      y: Math.floor(y),
-      z: Math.floor(z),
-    };
-    saveCrates();
-    return { ok: true, message: `Registered ${crate.displayName} at ${Math.floor(x)} ${Math.floor(y)} ${Math.floor(z)}.` };
+    return registerCrateLocation(crate, dimensionId, x, y, z, block.typeId);
   } catch {
     return { ok: false, message: "Unable to resolve that location." };
   }
 }
 
 export function removeCrateAtBlock(player: Player): { ok: boolean; message: string } {
-  const target = player.getBlockFromViewDirection({ maxDistance: 6 });
+  const target = player.getBlockFromViewDirection({ maxDistance: CRATE_RAYCAST_DISTANCE });
   const block = target?.block;
   if (!block) return { ok: false, message: "Look at a registered crate block." };
   const key = blockKey(block.dimension.id, block.location.x, block.location.y, block.location.z);
   if (!state.crates.locations[key]) return { ok: false, message: "No crate registered at that block." };
+  delete state.crates.locations[key];
+  saveCrates();
+  return { ok: true, message: "Crate registration removed." };
+}
+
+export function removeCrateAtCoordinates(dimensionId: string, x: number, y: number, z: number): { ok: boolean; message: string } {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+    return { ok: false, message: "Invalid coordinates." };
+  }
+  const key = blockKey(dimensionId, x, y, z);
+  if (!state.crates.locations[key]) return { ok: false, message: "No crate registered at those coordinates." };
   delete state.crates.locations[key];
   saveCrates();
   return { ok: true, message: "Crate registration removed." };

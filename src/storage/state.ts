@@ -7,23 +7,16 @@ import {
   type CommandBuilderStore,
   type ConfigStore,
   type CrateStore,
-  type CustomAreaDefinition,
   type CustomAreaStore,
   type FormDefinition,
   type GeneratorStore,
   type HomeStore,
-  type LootChestLocation,
-  type LootChestPool,
-  type LootChestSnapshot,
   type LootChestStore,
   type ModerationStore,
   type PayStore,
   type PlayerProfilesStore,
   type PlayerSettingsStore,
-  type PlayerShop,
-  type PlayerShopListing,
   type PlayerShopStore,
-  type PlayerStats,
   type PlotStore,
   type PruneStore,
   type RankStore,
@@ -35,1011 +28,42 @@ import {
   type TpaStore,
   type WarpStore,
 } from "../types";
-import { safeCall } from "../shared/safe-call";
+import { invalidateBannedItemCache } from "../moderation/banned-items";
+import { normalizeBlockId } from "../shared/item-id";
+import {
+  readDynamicJSON,
+  readSplitDynamicJson,
+  safeSetDynamicJson,
+} from "./dynamic-json";
+import {
+  defaultChatConfig,
+  defaultCombatStore,
+  defaultCommandBuilderStore,
+  defaultConfig,
+  defaultCrateStore,
+  defaultCustomAreaStore,
+  defaultGeneratorStore,
+  defaultHomeStore,
+  defaultLootChestStore,
+  defaultModerationStore,
+  defaultPayStore,
+  defaultPlayerSettingsStore,
+  defaultPlayerShopStore,
+  defaultPlayerStats,
+  defaultPlotStore,
+  defaultPruneStore,
+  defaultRankStore,
+  defaultTauItemsStore,
+  defaultTeamStore,
+  defaultTpaStore,
+  defaultWarpStore,
+} from "./defaults";
+import { loadStatsFromSplitKeys } from "./split-keys/stats";
+import { loadPlayerShopsFromSplitKeys, rememberPlayerShopSplitKeys } from "./split-keys/player-shops";
+import { loadCustomAreasFromSplitKeys } from "./split-keys/custom-areas";
+import { loadLootChestsFromSplitKeys } from "./split-keys/loot-chests";
+import { loadPlotsFromSplitKeys, normalizePlotStore, rememberPlotSplitKeys, migrateLegacyPlotsToSplitOneShot } from "./split-keys/plots";
 
-// ---------------------------------------------------------------------------
-// Default factory functions
-// ---------------------------------------------------------------------------
-
-export function defaultConfig(): ConfigStore {
-  return {
-    features: {
-      creator: true,
-      forms: true,
-      shops: true,
-      sidebars: true,
-      bindings: true,
-      ranks: true,
-      stats: true,
-      profiles: true,
-      plots: true,
-      tpa: true,
-      homes: true,
-      pay: true,
-      playerConfig: true,
-      teams: true,
-      prune: true,
-      warps: true,
-      plotTp: true,
-      generators: true,
-      crates: true,
-      items: true,
-      combat: true,
-      moderation: true,
-      customAreas: true,
-      lootChests: true,
-      commandBuilder: true,
-    },
-  };
-}
-
-export function defaultCommandBuilderStore(): CommandBuilderStore {
-  return {
-    config: {
-      enabled: true,
-      maxCommands: 100,
-      maxActionsPerCommand: 30,
-      maxDelayTicks: 20 * 60 * 5,
-    },
-    commands: {},
-  };
-}
-
-export function defaultLootChestStore(): LootChestStore {
-  return {
-    config: {
-      enabled: true,
-      processIntervalTicks: 20,
-      maxRefillsPerTick: 4,
-      defaultRespawnTicks: 20 * 60 * 10,
-    },
-    pools: {},
-    snapshots: {},
-    chests: {},
-  };
-}
-
-export function defaultCombatStore(): CombatStore {
-  return {
-    config: {
-      enabled: true,
-      combatTimeSeconds: 15,
-      announceLogouts: true,
-      blockCommands: true,
-      enterMessage: "§c» You are now in combat! Do not log out.",
-      exitMessage: "§a» You are no longer in combat.",
-      logoutBroadcastMessage: "§e[!] {player} quit while tagged and dropped their loot!",
-      rejoinPenaltyMessage: "§4» Your items were dropped because you logged out during combat.",
-      blockedCommandMessage: "§c» Commands are disabled while you are in combat.",
-      killConditions: {
-        enabled: true,
-        rules: [],
-      },
-    },
-  };
-}
-
-export function defaultPlayerShopStore(): PlayerShopStore {
-  return {
-    config: {
-      enabled: true,
-      defaultCurrencyObjective: "money",
-      allowCustomItems: true,
-      minPricePerUnit: 1,
-      maxPricePerUnit: 1000000,
-      taxPercent: 0,
-      maxListingsPerShop: 32,
-      defaultVisibility: "public",
-      announceSales: true,
-    },
-    shops: {},
-    listings: {},
-    earningsByPlayerId: {},
-  };
-}
-
-export function defaultTauItemsStore(): TauItemsStore {
-  return {
-    config: {
-      enabled: true,
-    },
-    items: {},
-  };
-}
-
-export function defaultCrateStore(): CrateStore {
-  return {
-    config: {
-      enabled: true,
-    },
-    crates: {
-      legendary: {
-        id: "legendary",
-        displayName: "Legendary Crate",
-        keyItemId: "minecraft:tripwire_hook",
-        keyLoreLine: "§6Legendary Key",
-        crateBlockId: "minecraft:gilded_blackstone",
-        animationPreset: "arcane",
-        particlePreset: "arcane",
-        broadcastRareWins: true,
-        rareBroadcastWeightThreshold: 5,
-        rewards: [
-          {
-            type: "item",
-            label: "Diamond x16",
-            weight: 100,
-            itemId: "minecraft:diamond",
-            amount: 16,
-          },
-          {
-            type: "item",
-            label: "Netherite Ingot x1",
-            weight: 10,
-            itemId: "minecraft:netherite_ingot",
-            amount: 1,
-          },
-          {
-            type: "item",
-            label: "Diamond Sword",
-            weight: 5,
-            itemId: "minecraft:diamond_sword",
-            amount: 1,
-            nameTag: "§bLegend Blade",
-          },
-          {
-            type: "score",
-            label: "$1000",
-            weight: 15,
-            objective: "money",
-            amount: 1000,
-          },
-          {
-            type: "tag",
-            label: "Legendary Winner Tag",
-            weight: 1,
-            tag: "tau.crate.legendary_winner",
-          },
-        ],
-      },
-    },
-    locations: {},
-  };
-}
-
-export function defaultGeneratorStore(): GeneratorStore {
-  return {
-    definitions: {},
-    placed: {},
-    config: {
-      enabled: true,
-      defaultPlaceAnywhere: true,
-      blockOnPlotOnly: false,
-      autoBreakersEnabled: true,
-    },
-  };
-}
-
-export function defaultModerationStore(): ModerationStore {
-  return {
-    bannedItems: [],
-    inspectionSnapshots: {},
-  };
-}
-
-export function defaultCustomAreaStore(): CustomAreaStore {
-  return {
-    config: {
-      enabled: true,
-      checkIntervalTicks: 10,
-      maxAreas: 250,
-      maxCommandsPerArea: 10,
-    },
-    areas: {},
-  };
-}
-
-export function defaultTeamStore(): TeamStore {
-  return {
-    enabled: true,
-    maxMembers: 10,
-    teams: {},
-    playerTeamIds: {},
-  };
-}
-
-export function defaultPruneStore(): PruneStore {
-  return {
-    config: {
-      enabled: false,
-      inactiveDays: 30,
-      flags: {
-        stats: true,
-        profiles: true,
-        teams: true,
-        plots: true,
-        homes: true,
-        tpa: true,
-        pay: true,
-        playerSettings: true,
-      },
-    },
-  };
-}
-
-export function defaultWarpStore(): WarpStore {
-  return {
-    config: {
-      enabled: true,
-      maxWarps: 100,
-      defaultPublic: true,
-      crossDimension: true,
-      cooldownSeconds: 5,
-      categories: ["spawn", "pvp", "shop", "games"],
-    },
-    warps: {},
-  };
-}
-
-export function defaultTpaStore(): TpaStore {
-  return {
-    config: {
-      enabled: true,
-      timeoutSeconds: 60,
-      cooldownSeconds: 20,
-    },
-  };
-}
-
-export function defaultHomeStore(): HomeStore {
-  return {
-    config: {
-      enabled: true,
-      maxHomesDefault: 2,
-      allowCrossDimension: false,
-    },
-    homesByPlayerId: {},
-  };
-}
-
-export function defaultPayStore(): PayStore {
-  return {
-    config: {
-      enabled: true,
-      currencyObjective: "money",
-      minAmount: 1,
-      maxAmount: 100000,
-      taxPercent: 0,
-      cooldownSeconds: 1,
-    },
-  };
-}
-
-export function defaultPlayerSettingsStore(): PlayerSettingsStore {
-  return {
-    config: {
-      enabled: true,
-      defaultAllowTpa: true,
-      defaultAllowPay: true,
-      defaultShowSocialMessages: true,
-    },
-    players: {},
-  };
-}
-
-export function defaultPlotStore(): PlotStore {
-  return {
-    config: {
-      enabled: false,
-      activePlotCount: 10,
-      size: { x: 20, y: 10, z: 20 },
-      spacing: 4,
-      dimensionId: "minecraft:overworld",
-      origin: undefined,
-      saveIntervalTicks: 20,
-      autoBuild: {
-        clearBase: true,
-        addBorders: true,
-        borderBlock: "stone",
-        borderHeight: 1,
-        floorBlock: undefined,
-        roofBlock: "barrier",
-        roofHeight: 3,
-        showEnterTitle: false,
-        titleRadius: 5,
-        titleMode: "owner",
-      },
-    },
-    slots: {},
-    playerToSlot: {},
-    snapshots: {},
-  };
-}
-
-export function defaultPlayerStats(): PlayerStats {
-  return {
-    kills: 0,
-    deaths: 0,
-    killstreak: 0,
-    longestKillstreak: 0,
-    blocksPlaced: 0,
-    blocksBroken: 0,
-    timePlayed: 0,
-    distanceTraveled: 0,
-    lastSeenAt: 0,
-  };
-}
-
-export function defaultChatConfig(): ChatConfig {
-  return {
-    enabled: true,
-    template: "[name]: [rank] [message]",
-  };
-}
-
-export function defaultRankStore(): RankStore {
-  return {
-    ranks: {
-      member: {
-        id: "member",
-        name: "Member",
-        priority: 0,
-        color: "§f",
-        permissions: [],
-      },
-    },
-    playerRanks: {},
-    defaultRankId: "member",
-  };
-}
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-export const PLAYER_SHOPS_CONFIG_KEY = `${STORAGE_KEYS.playerShops}:config`;
-export const PLAYER_SHOPS_SHOP_PREFIX = `${STORAGE_KEYS.playerShops}:shop:`;
-export const PLAYER_SHOPS_LISTING_PREFIX = `${STORAGE_KEYS.playerShops}:listing:`;
-export const PLAYER_SHOPS_EARNINGS_PREFIX = `${STORAGE_KEYS.playerShops}:earn:`;
-export const CUSTOM_AREAS_CONFIG_KEY = `${STORAGE_KEYS.customAreas}:config`;
-export const CUSTOM_AREAS_AREA_PREFIX = `${STORAGE_KEYS.customAreas}:area:`;
-export const LOOT_CHESTS_CONFIG_KEY = `${STORAGE_KEYS.lootChests}:config`;
-export const LOOT_CHESTS_POOL_PREFIX = `${STORAGE_KEYS.lootChests}:pool:`;
-export const LOOT_CHESTS_SNAPSHOT_PREFIX = `${STORAGE_KEYS.lootChests}:snapshot:`;
-export const LOOT_CHESTS_CHEST_PREFIX = `${STORAGE_KEYS.lootChests}:chest:`;
-
-export const PLOTS_CONFIG_KEY = `${STORAGE_KEYS.plots}:config`;
-export const PLOTS_SLOT_PREFIX = `${STORAGE_KEYS.plots}:slot:`;
-export const PLOTS_PLAYER_SLOT_PREFIX = `${STORAGE_KEYS.plots}:player:`;
-export const PLOTS_SNAPSHOT_PREFIX = `${STORAGE_KEYS.plots}:snapshot:`;
-export const PLOTS_MIGRATION_MARKER_KEY = `${STORAGE_KEYS.plots}:migration_v2_done`;
-
-const MAX_DYNAMIC_STRING_BYTES = 32000;
-const SPLIT_DYNAMIC_JSON_CHUNK_BYTES = 30000;
-export const STATS_PLAYER_IDS_KEY = "tau:stats:player_ids";
-export const STATS_PLAYER_PREFIX = "tau:stats:player:";
-
-// ---------------------------------------------------------------------------
-// Dirty stats tracking
-// ---------------------------------------------------------------------------
-
-const dirtyStatsPlayerIds = new Set<string>();
-const dirtyStatsPlayers = new Set<string>();
-let statsFlushScheduled = false;
-let statsFlushJobId: number | undefined;
-
-const persistedPlotJsonByKey = new Map<string, string>();
-const persistedPlayerShopJsonByKey = new Map<string, string>();
-
-// ---------------------------------------------------------------------------
-// Split-key helpers
-// ---------------------------------------------------------------------------
-
-function estimateUtf8Bytes(value: string): number {
-  let bytes = 0;
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 0x7f) bytes += 1;
-    else if (code <= 0x7ff) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      i++;
-    } else bytes += 3;
-  }
-  return bytes;
-}
-
-function dynamicJsonChunkCountKey(key: string): string {
-  return `${key}:chunks`;
-}
-
-function dynamicJsonChunkPrefix(key: string): string {
-  return `${key}:chunk:`;
-}
-
-function splitUtf8String(value: string, maxBytes: number): string[] {
-  const chunks: string[] = [];
-  let current = "";
-  let currentBytes = 0;
-
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    let char = value[i];
-    let charBytes = 1;
-    if (code <= 0x7f) charBytes = 1;
-    else if (code <= 0x7ff) charBytes = 2;
-    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
-      char += value[i + 1];
-      charBytes = 4;
-      i++;
-    } else charBytes = 3;
-
-    if (currentBytes > 0 && currentBytes + charBytes > maxBytes) {
-      chunks.push(current);
-      current = "";
-      currentBytes = 0;
-    }
-    current += char;
-    currentBytes += charBytes;
-  }
-
-  chunks.push(current);
-  return chunks;
-}
-
-export function readSplitDynamicJson<T>(key: string, fallback: T): { value: T; hasSplitData: boolean } {
-  const chunkCountRaw = world.getDynamicProperty(dynamicJsonChunkCountKey(key));
-  const chunkCount = typeof chunkCountRaw === "number" ? chunkCountRaw : Number(chunkCountRaw ?? 0);
-  if (!Number.isInteger(chunkCount) || chunkCount <= 0) return { value: fallback, hasSplitData: false };
-
-  let raw = "";
-  for (let index = 0; index < chunkCount; index++) {
-    const chunk = world.getDynamicProperty(`${dynamicJsonChunkPrefix(key)}${index}`);
-    if (typeof chunk !== "string") return { value: fallback, hasSplitData: false };
-    raw += chunk;
-  }
-
-  return { value: parseJSON<T>(raw, fallback), hasSplitData: true };
-}
-
-export function clearSplitDynamicJson(key: string, dynamicPropertyIds: string[] = world.getDynamicPropertyIds()): void {
-  const prefix = dynamicJsonChunkPrefix(key);
-  world.setDynamicProperty(dynamicJsonChunkCountKey(key), undefined);
-  for (const propertyKey of dynamicPropertyIds) {
-    if (propertyKey.startsWith(prefix)) world.setDynamicProperty(propertyKey, undefined);
-  }
-}
-
-export function writeSplitDynamicJson(key: string, value: unknown): boolean {
-  const serialized = JSON.stringify(value);
-  const chunks = splitUtf8String(serialized, SPLIT_DYNAMIC_JSON_CHUNK_BYTES);
-  const chunkPrefix = dynamicJsonChunkPrefix(key);
-  const wantedKeys = new Set<string>();
-
-  for (let index = 0; index < chunks.length; index++) {
-    const chunkKey = `${chunkPrefix}${index}`;
-    wantedKeys.add(chunkKey);
-    world.setDynamicProperty(chunkKey, chunks[index]);
-  }
-  world.setDynamicProperty(dynamicJsonChunkCountKey(key), chunks.length);
-
-  for (const propertyKey of world.getDynamicPropertyIds()) {
-    if (propertyKey.startsWith(chunkPrefix) && !wantedKeys.has(propertyKey)) {
-      world.setDynamicProperty(propertyKey, undefined);
-    }
-  }
-
-  return true;
-}
-
-export function safeSetDynamicJson(key: string, value: unknown): boolean {
-  const serialized = JSON.stringify(value);
-  if (estimateUtf8Bytes(serialized) > MAX_DYNAMIC_STRING_BYTES) {
-    console.warn(
-      `[TauUtils] DynamicProperty overflow blocked for key ${key}. Size exceeds ${MAX_DYNAMIC_STRING_BYTES} bytes.`
-    );
-    return false;
-  }
-  world.setDynamicProperty(key, serialized);
-  return true;
-}
-
-function serializeDynamicJson(key: string, value: unknown): string | undefined {
-  const serialized = JSON.stringify(value);
-  if (estimateUtf8Bytes(serialized) > MAX_DYNAMIC_STRING_BYTES) {
-    console.warn(
-      `[TauUtils] DynamicProperty overflow blocked for key ${key}. Size exceeds ${MAX_DYNAMIC_STRING_BYTES} bytes.`
-    );
-    return undefined;
-  }
-  return serialized;
-}
-
-function setDynamicJsonIfChanged(key: string, value: unknown, persisted: Map<string, string>): boolean {
-  const serialized = serializeDynamicJson(key, value);
-  if (serialized === undefined) return false;
-  if (persisted.get(key) === serialized) return true;
-  world.setDynamicProperty(key, serialized);
-  persisted.set(key, serialized);
-  return true;
-}
-
-function clearPersistedDynamicKey(key: string, persisted: Map<string, string>): void {
-  world.setDynamicProperty(key, undefined);
-  persisted.delete(key);
-}
-
-function loadStatsFromSplitKeys(dynamicPropertyIds: string[]): { store: StatsStore; hasSplitData: boolean } {
-  const stats: StatsStore = { playerIds: {}, players: {} };
-  let hasSplitData = false;
-
-  const playerIdsRaw = world.getDynamicProperty(STATS_PLAYER_IDS_KEY) as string | undefined;
-  if (playerIdsRaw) {
-    stats.playerIds = parseJSON<Record<string, string>>(playerIdsRaw, {});
-    hasSplitData = true;
-  }
-
-  for (const key of dynamicPropertyIds) {
-    if (!key.startsWith(STATS_PLAYER_PREFIX)) continue;
-    const playerId = key.slice(STATS_PLAYER_PREFIX.length);
-    if (!playerId) continue;
-    const raw = world.getDynamicProperty(key) as string | undefined;
-    const parsed = parseJSON<PlayerStats | undefined>(raw, undefined);
-    if (!parsed) continue;
-    stats.players[playerId] = parsed;
-    hasSplitData = true;
-  }
-
-  return { store: stats, hasSplitData };
-}
-
-function* flushStatsJob(): Generator<void, void, void> {
-  if (dirtyStatsPlayerIds.size > 0) {
-    safeSetDynamicJson(STATS_PLAYER_IDS_KEY, state.stats.playerIds);
-    dirtyStatsPlayerIds.clear();
-    yield;
-  }
-  if (dirtyStatsPlayers.size > 0) {
-    const playerIds = [...dirtyStatsPlayers];
-    dirtyStatsPlayers.clear();
-    for (const playerId of playerIds) {
-      const stats = state.stats.players[playerId];
-      if (!stats) continue;
-      safeSetDynamicJson(`${STATS_PLAYER_PREFIX}${playerId}`, stats);
-      yield;
-    }
-  }
-  world.setDynamicProperty("tau:stats", undefined);
-  statsFlushJobId = undefined;
-  if (dirtyStatsPlayerIds.size > 0 || dirtyStatsPlayers.size > 0) scheduleStatsFlush();
-}
-
-function scheduleStatsFlush(): void {
-  if (statsFlushScheduled) return;
-  statsFlushScheduled = true;
-  system.runTimeout(() => {
-    statsFlushScheduled = false;
-    if (statsFlushJobId !== undefined) return;
-    statsFlushJobId = system.runJob(flushStatsJob());
-  }, 20);
-}
-
-export function markStatsPlayerDirty(playerId: string): void {
-  dirtyStatsPlayers.add(playerId);
-  scheduleStatsFlush();
-}
-
-export function markStatsPlayerIdsDirty(): void {
-  dirtyStatsPlayerIds.add("playerIds");
-  scheduleStatsFlush();
-}
-
-function loadPlayerShopsFromSplitKeys(dynamicPropertyIds: string[]): { store: PlayerShopStore; hasSplitData: boolean } {
-  const base = defaultPlayerShopStore();
-  let hasSplitData = false;
-
-  const configRaw = world.getDynamicProperty(PLAYER_SHOPS_CONFIG_KEY) as string | undefined;
-  if (configRaw) {
-    hasSplitData = true;
-    const parsed = parseJSON<Partial<PlayerShopStore["config"]>>(configRaw, {});
-    base.config = { ...base.config, ...parsed };
-  }
-
-  for (const key of dynamicPropertyIds) {
-    if (key.startsWith(PLAYER_SHOPS_SHOP_PREFIX)) {
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<PlayerShop | undefined>(raw, undefined);
-      if (!parsed || !parsed.id) continue;
-      base.shops[parsed.id] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-    if (key.startsWith(PLAYER_SHOPS_LISTING_PREFIX)) {
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<PlayerShopListing | undefined>(raw, undefined);
-      if (!parsed || !parsed.id) continue;
-      base.listings[parsed.id] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-    if (key.startsWith(PLAYER_SHOPS_EARNINGS_PREFIX)) {
-      const playerId = key.slice(PLAYER_SHOPS_EARNINGS_PREFIX.length);
-      if (!playerId) continue;
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<Record<string, number> | undefined>(raw, undefined);
-      if (!parsed) continue;
-      base.earningsByPlayerId[playerId] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-  }
-
-  return { store: base, hasSplitData };
-}
-
-function loadCustomAreasFromSplitKeys(dynamicPropertyIds: string[]): { store: CustomAreaStore; hasSplitData: boolean } {
-  const base = defaultCustomAreaStore();
-  let hasSplitData = false;
-  const configRaw = world.getDynamicProperty(CUSTOM_AREAS_CONFIG_KEY) as string | undefined;
-  if (configRaw) {
-    base.config = { ...base.config, ...parseJSON<Partial<CustomAreaStore["config"]>>(configRaw, {}) };
-    hasSplitData = true;
-  }
-  for (const key of dynamicPropertyIds) {
-    if (!key.startsWith(CUSTOM_AREAS_AREA_PREFIX)) continue;
-    const raw = world.getDynamicProperty(key) as string | undefined;
-    const parsed = parseJSON<CustomAreaDefinition | undefined>(raw, undefined);
-    if (!parsed?.id) continue;
-    base.areas[parsed.id] = parsed;
-    hasSplitData = true;
-  }
-  return { store: base, hasSplitData };
-}
-
-function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { store: LootChestStore; hasSplitData: boolean } {
-  const base = defaultLootChestStore();
-  let hasSplitData = false;
-  const configRaw = world.getDynamicProperty(LOOT_CHESTS_CONFIG_KEY) as string | undefined;
-  if (configRaw) {
-    base.config = { ...base.config, ...parseJSON<Partial<LootChestStore["config"]>>(configRaw, {}) };
-    hasSplitData = true;
-  }
-  for (const key of dynamicPropertyIds) {
-    if (key.startsWith(LOOT_CHESTS_POOL_PREFIX)) {
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<LootChestPool | undefined>(raw, undefined);
-      if (!parsed?.id) continue;
-      parsed.snapshotIds ??= [];
-      parsed.enabled ??= true;
-      base.pools[parsed.id] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-    if (key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX)) {
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<LootChestSnapshot | undefined>(raw, undefined);
-      if (!parsed?.id || !parsed.poolId) continue;
-      parsed.items ??= [];
-      parsed.enabled ??= true;
-      base.snapshots[`${parsed.poolId}:${parsed.id}`] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-    if (key.startsWith(LOOT_CHESTS_CHEST_PREFIX)) {
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<LootChestLocation | undefined>(raw, undefined);
-      if (!parsed?.id || !parsed.poolId) continue;
-      parsed.name ??= parsed.id;
-      parsed.enabled ??= true;
-      if (parsed.refillMode === "empty_only" || parsed.refillMode === undefined) parsed.refillMode = "open";
-      if (parsed.refillMode === "open") {
-        parsed.nextRefillAt = Number.POSITIVE_INFINITY;
-        parsed.emptySinceAt = undefined;
-      }
-      parsed.preserveSlots ??= true;
-      parsed.refillMessageEnabled ??= false;
-      parsed.refillMessage ??= "§aLoot chest refilled at [x] [y] [z].";
-      parsed.broadcastRefillMessage ??= false;
-      parsed.refillCommandsEnabled ??= false;
-      parsed.refillCommands ??= [];
-      base.chests[parsed.id] = parsed;
-      hasSplitData = true;
-    }
-  }
-  return { store: base, hasSplitData };
-}
-
-function loadPlotsFromSplitKeys(dynamicPropertyIds: string[] = world.getDynamicPropertyIds()): { store: PlotStore; hasSplitData: boolean } {
-  const base = defaultPlotStore();
-  let hasSplitData = false;
-
-  const configRaw = world.getDynamicProperty(PLOTS_CONFIG_KEY) as string | undefined;
-  if (configRaw) {
-    const parsed = parseJSON<Partial<PlotStore["config"]>>(configRaw, {});
-    base.config = { ...base.config, ...parsed };
-    hasSplitData = true;
-  }
-
-  for (const key of dynamicPropertyIds) {
-    if (key.startsWith(PLOTS_SLOT_PREFIX)) {
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<PlotStore["slots"][string] | undefined>(raw, undefined);
-      if (!parsed || !parsed.id) continue;
-      base.slots[parsed.id] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-    if (key.startsWith(PLOTS_PLAYER_SLOT_PREFIX)) {
-      const playerId = key.slice(PLOTS_PLAYER_SLOT_PREFIX.length);
-      if (!playerId) continue;
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const slotId = parseJSON<string | undefined>(raw, undefined);
-      if (!slotId) continue;
-      base.playerToSlot[playerId] = slotId;
-      hasSplitData = true;
-      continue;
-    }
-    if (key.startsWith(PLOTS_SNAPSHOT_PREFIX)) {
-      const playerId = key.slice(PLOTS_SNAPSHOT_PREFIX.length);
-      if (!playerId) continue;
-      const raw = world.getDynamicProperty(key) as string | undefined;
-      const parsed = parseJSON<PlotStore["snapshots"][string] | undefined>(raw, undefined);
-      if (!parsed) continue;
-      base.snapshots[playerId] = parsed;
-      hasSplitData = true;
-      continue;
-    }
-  }
-
-  return { store: base, hasSplitData };
-}
-
-export function normalizePlotStore(input?: Partial<PlotStore>): PlotStore {
-  const defaults = defaultPlotStore();
-  const config = input?.config ?? {};
-  const autoBuild = (config as Partial<PlotStore["config"]>).autoBuild ?? {};
-  return {
-    config: {
-      ...defaults.config,
-      ...config,
-      autoBuild: {
-        ...defaults.config.autoBuild,
-        ...autoBuild,
-      },
-    },
-    slots: { ...(input?.slots ?? {}) },
-    playerToSlot: { ...(input?.playerToSlot ?? {}) },
-    snapshots: { ...(input?.snapshots ?? {}) },
-  };
-}
-
-export function writePlotsToSplitKeys(store: PlotStore): boolean {
-  const wantedSlotKeys = new Set<string>();
-  const wantedPlayerKeys = new Set<string>();
-  const wantedSnapshotKeys = new Set<string>();
-  let ok = true;
-
-  ok = safeSetDynamicJson(PLOTS_CONFIG_KEY, store.config) && ok;
-
-  for (const [slotId, slot] of Object.entries(store.slots)) {
-    const key = `${PLOTS_SLOT_PREFIX}${slotId}`;
-    wantedSlotKeys.add(key);
-    ok = safeSetDynamicJson(key, slot) && ok;
-  }
-  for (const [playerId, slotId] of Object.entries(store.playerToSlot)) {
-    const key = `${PLOTS_PLAYER_SLOT_PREFIX}${playerId}`;
-    wantedPlayerKeys.add(key);
-    ok = safeSetDynamicJson(key, slotId) && ok;
-  }
-  for (const [playerId, snapshot] of Object.entries(store.snapshots)) {
-    const key = `${PLOTS_SNAPSHOT_PREFIX}${playerId}`;
-    wantedSnapshotKeys.add(key);
-    ok = safeSetDynamicJson(key, snapshot) && ok;
-  }
-
-  for (const key of world.getDynamicPropertyIds()) {
-    if (key.startsWith(PLOTS_SLOT_PREFIX) && !wantedSlotKeys.has(key)) {
-      world.setDynamicProperty(key, undefined);
-      continue;
-    }
-    if (key.startsWith(PLOTS_PLAYER_SLOT_PREFIX) && !wantedPlayerKeys.has(key)) {
-      world.setDynamicProperty(key, undefined);
-      continue;
-    }
-    if (key.startsWith(PLOTS_SNAPSHOT_PREFIX) && !wantedSnapshotKeys.has(key)) {
-      world.setDynamicProperty(key, undefined);
-      continue;
-    }
-  }
-
-  return ok;
-}
-
-function rememberPlotSplitKeys(store: PlotStore): void {
-  persistedPlotJsonByKey.clear();
-  const config = serializeDynamicJson(PLOTS_CONFIG_KEY, store.config);
-  if (config !== undefined) persistedPlotJsonByKey.set(PLOTS_CONFIG_KEY, config);
-  for (const [slotId, slot] of Object.entries(store.slots)) {
-    const key = `${PLOTS_SLOT_PREFIX}${slotId}`;
-    const serialized = serializeDynamicJson(key, slot);
-    if (serialized !== undefined) persistedPlotJsonByKey.set(key, serialized);
-  }
-  for (const [playerId, slotId] of Object.entries(store.playerToSlot)) {
-    const key = `${PLOTS_PLAYER_SLOT_PREFIX}${playerId}`;
-    const serialized = serializeDynamicJson(key, slotId);
-    if (serialized !== undefined) persistedPlotJsonByKey.set(key, serialized);
-  }
-  for (const [playerId, snapshot] of Object.entries(store.snapshots)) {
-    const key = `${PLOTS_SNAPSHOT_PREFIX}${playerId}`;
-    const serialized = serializeDynamicJson(key, snapshot);
-    if (serialized !== undefined) persistedPlotJsonByKey.set(key, serialized);
-  }
-}
-
-export function writePlotsIncrementalToSplitKeys(store: PlotStore): boolean {
-  let ok = true;
-  const wantedKeys = new Set<string>();
-
-  wantedKeys.add(PLOTS_CONFIG_KEY);
-  ok = setDynamicJsonIfChanged(PLOTS_CONFIG_KEY, store.config, persistedPlotJsonByKey) && ok;
-
-  for (const [slotId, slot] of Object.entries(store.slots)) {
-    const key = `${PLOTS_SLOT_PREFIX}${slotId}`;
-    wantedKeys.add(key);
-    ok = setDynamicJsonIfChanged(key, slot, persistedPlotJsonByKey) && ok;
-  }
-  for (const [playerId, slotId] of Object.entries(store.playerToSlot)) {
-    const key = `${PLOTS_PLAYER_SLOT_PREFIX}${playerId}`;
-    wantedKeys.add(key);
-    ok = setDynamicJsonIfChanged(key, slotId, persistedPlotJsonByKey) && ok;
-  }
-  for (const [playerId, snapshot] of Object.entries(store.snapshots)) {
-    const key = `${PLOTS_SNAPSHOT_PREFIX}${playerId}`;
-    wantedKeys.add(key);
-    ok = setDynamicJsonIfChanged(key, snapshot, persistedPlotJsonByKey) && ok;
-  }
-
-  for (const key of [...persistedPlotJsonByKey.keys()]) {
-    if (!wantedKeys.has(key)) clearPersistedDynamicKey(key, persistedPlotJsonByKey);
-  }
-
-  return ok;
-}
-
-export function writePlayerShopsIncrementalToSplitKeys(store: PlayerShopStore): boolean {
-  let ok = true;
-  const wantedKeys = new Set<string>();
-
-  wantedKeys.add(PLAYER_SHOPS_CONFIG_KEY);
-  ok = setDynamicJsonIfChanged(PLAYER_SHOPS_CONFIG_KEY, store.config, persistedPlayerShopJsonByKey) && ok;
-
-  for (const [shopId, shop] of Object.entries(store.shops)) {
-    const key = `${PLAYER_SHOPS_SHOP_PREFIX}${shopId}`;
-    wantedKeys.add(key);
-    ok = setDynamicJsonIfChanged(key, shop, persistedPlayerShopJsonByKey) && ok;
-  }
-  for (const [listingId, listing] of Object.entries(store.listings)) {
-    const key = `${PLAYER_SHOPS_LISTING_PREFIX}${listingId}`;
-    wantedKeys.add(key);
-    ok = setDynamicJsonIfChanged(key, listing, persistedPlayerShopJsonByKey) && ok;
-  }
-  for (const [playerId, earnings] of Object.entries(store.earningsByPlayerId)) {
-    const key = `${PLAYER_SHOPS_EARNINGS_PREFIX}${playerId}`;
-    wantedKeys.add(key);
-    ok = setDynamicJsonIfChanged(key, earnings, persistedPlayerShopJsonByKey) && ok;
-  }
-
-  for (const key of [...persistedPlayerShopJsonByKey.keys()]) {
-    if (!wantedKeys.has(key)) clearPersistedDynamicKey(key, persistedPlayerShopJsonByKey);
-  }
-
-  return ok;
-}
-
-export function writeCustomAreasToSplitKeys(store: CustomAreaStore): boolean {
-  let ok = safeSetDynamicJson(CUSTOM_AREAS_CONFIG_KEY, store.config);
-  const wantedKeys = new Set<string>([CUSTOM_AREAS_CONFIG_KEY]);
-  for (const [areaId, area] of Object.entries(store.areas)) {
-    const key = `${CUSTOM_AREAS_AREA_PREFIX}${areaId}`;
-    wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, area) && ok;
-  }
-  for (const key of world.getDynamicPropertyIds()) {
-    if (key.startsWith(CUSTOM_AREAS_AREA_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
-  }
-  return ok;
-}
-
-export function writeLootChestsToSplitKeys(store: LootChestStore): boolean {
-  let ok = safeSetDynamicJson(LOOT_CHESTS_CONFIG_KEY, store.config);
-  const wantedKeys = new Set<string>([LOOT_CHESTS_CONFIG_KEY]);
-  for (const [poolId, pool] of Object.entries(store.pools)) {
-    const key = `${LOOT_CHESTS_POOL_PREFIX}${poolId}`;
-    wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, pool) && ok;
-  }
-  for (const snapshot of Object.values(store.snapshots)) {
-    const key = `${LOOT_CHESTS_SNAPSHOT_PREFIX}${snapshot.poolId}:${snapshot.id}`;
-    wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, snapshot) && ok;
-  }
-  for (const [chestId, chest] of Object.entries(store.chests)) {
-    const key = `${LOOT_CHESTS_CHEST_PREFIX}${chestId}`;
-    wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, chest) && ok;
-  }
-  for (const key of world.getDynamicPropertyIds()) {
-    if (key.startsWith(LOOT_CHESTS_POOL_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
-    if (key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
-    if (key.startsWith(LOOT_CHESTS_CHEST_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
-  }
-  return ok;
-}
-
-function rememberPlayerShopSplitKeys(store: PlayerShopStore): void {
-  persistedPlayerShopJsonByKey.clear();
-  const config = serializeDynamicJson(PLAYER_SHOPS_CONFIG_KEY, store.config);
-  if (config !== undefined) persistedPlayerShopJsonByKey.set(PLAYER_SHOPS_CONFIG_KEY, config);
-  for (const [shopId, shop] of Object.entries(store.shops)) {
-    const key = `${PLAYER_SHOPS_SHOP_PREFIX}${shopId}`;
-    const serialized = serializeDynamicJson(key, shop);
-    if (serialized !== undefined) persistedPlayerShopJsonByKey.set(key, serialized);
-  }
-  for (const [listingId, listing] of Object.entries(store.listings)) {
-    const key = `${PLAYER_SHOPS_LISTING_PREFIX}${listingId}`;
-    const serialized = serializeDynamicJson(key, listing);
-    if (serialized !== undefined) persistedPlayerShopJsonByKey.set(key, serialized);
-  }
-  for (const [playerId, earnings] of Object.entries(store.earningsByPlayerId)) {
-    const key = `${PLAYER_SHOPS_EARNINGS_PREFIX}${playerId}`;
-    const serialized = serializeDynamicJson(key, earnings);
-    if (serialized !== undefined) persistedPlayerShopJsonByKey.set(key, serialized);
-  }
-}
-
-// LEGACY_PLOTS_MIGRATION_REMOVE_AFTER_STABLE
-function migrateLegacyPlotsToSplitOneShot(): { migrated: boolean; failed: boolean } {
-  const marker = world.getDynamicProperty(PLOTS_MIGRATION_MARKER_KEY);
-  if (marker === true || marker === 1 || marker === "1") return { migrated: false, failed: false };
-
-  const legacyRaw = world.getDynamicProperty(STORAGE_KEYS.plots) as string | undefined;
-  if (!legacyRaw) {
-    world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
-    return { migrated: false, failed: false };
-  }
-
-  const legacyParsed = parseJSON<PlotStore | undefined>(legacyRaw, undefined);
-  if (!legacyParsed) {
-    world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
-    world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
-    return { migrated: false, failed: false };
-  }
-
-  const legacy = normalizePlotStore(legacyParsed);
-  const split = loadPlotsFromSplitKeys();
-  const merged = split.hasSplitData
-    ? {
-        config: {
-          ...legacy.config,
-          ...split.store.config,
-          autoBuild: {
-            ...legacy.config.autoBuild,
-            ...split.store.config.autoBuild,
-          },
-        },
-        slots: { ...legacy.slots, ...split.store.slots },
-        playerToSlot: { ...legacy.playerToSlot, ...split.store.playerToSlot },
-        snapshots: { ...legacy.snapshots, ...split.store.snapshots },
-      }
-    : legacy;
-
-  if (!writePlotsToSplitKeys(merged)) {
-    console.warn("[TauUtils] Plot migration failed; keeping legacy tau:plots key for safety.");
-    return { migrated: false, failed: true };
-  }
-
-  world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
-  world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
-  return { migrated: true, failed: false };
-}
 // ---------------------------------------------------------------------------
 // State object
 // ---------------------------------------------------------------------------
@@ -1099,23 +123,6 @@ export const state: {
   lootChests: defaultLootChestStore(),
   commandBuilder: defaultCommandBuilderStore(),
 };
-
-// ---------------------------------------------------------------------------
-// JSON parsing utility
-// ---------------------------------------------------------------------------
-
-export function parseJSON<T>(raw: string | undefined, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function readDynamicJSON<T>(key: string, fallback: T): T {
-  return safeCall(() => parseJSON<T>(world.getDynamicProperty(key) as string | undefined, fallback), fallback);
-}
 
 // ---------------------------------------------------------------------------
 // loadState — read everything from dynamic properties
@@ -1189,6 +196,7 @@ export function loadState() {
     snapshot.inventory ??= [];
     snapshot.enderChest ??= [];
   }
+  invalidateBannedItemCache();
   state.crates = readDynamicJSON<CrateStore>(STORAGE_KEYS.crates, defaultCrateStore());
   state.tauItems = readDynamicJSON<TauItemsStore>(STORAGE_KEYS.tauItems, defaultTauItemsStore());
   state.combat = readDynamicJSON<CombatStore>(STORAGE_KEYS.combat, defaultCombatStore());
@@ -1250,8 +258,40 @@ export function loadState() {
   state.plots.config.autoBuild.roofBlock ??= defaultPlotStore().config.autoBuild.roofBlock;
   state.plots.config.autoBuild.roofHeight ??= defaultPlotStore().config.autoBuild.roofHeight;
   state.plots.config.saveIntervalTicks ??= defaultPlotStore().config.saveIntervalTicks;
+  let cratesChanged = false;
   for (const crate of Object.values(state.crates.crates)) {
+    const legacy = crate as typeof crate & { blockId?: string };
+    if (!crate.crateBlockId && legacy.blockId) {
+      crate.crateBlockId = legacy.blockId;
+      delete legacy.blockId;
+      cratesChanged = true;
+    }
+    const normalizedBlock = normalizeBlockId(crate.crateBlockId ?? "minecraft:gilded_blackstone");
+    const normalizedKey = normalizeBlockId(crate.keyItemId ?? "minecraft:tripwire_hook");
+    if (crate.crateBlockId !== normalizedBlock) {
+      crate.crateBlockId = normalizedBlock;
+      cratesChanged = true;
+    }
+    if (crate.keyItemId !== normalizedKey) {
+      crate.keyItemId = normalizedKey;
+      cratesChanged = true;
+    }
     crate.animationPreset ??= "arcane";
     crate.particlePreset ??= "arcane";
   }
+  if (cratesChanged) {
+    safeSetDynamicJson(STORAGE_KEYS.crates, state.crates);
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Re-exports — all moved symbols so consumers see them from "./state"
+// ---------------------------------------------------------------------------
+
+export { defaultConfig, defaultRankStore, defaultChatConfig, defaultPlayerStats, defaultPlotStore, defaultTpaStore, defaultHomeStore, defaultPayStore, defaultPlayerSettingsStore, defaultTeamStore, defaultPruneStore, defaultWarpStore, defaultGeneratorStore, defaultModerationStore, defaultCrateStore, defaultTauItemsStore, defaultCombatStore, defaultCommandBuilderStore, defaultPlayerShopStore, defaultCustomAreaStore, defaultLootChestStore } from "./defaults";
+export { PLAYER_SHOPS_CONFIG_KEY, PLAYER_SHOPS_SHOP_PREFIX, PLAYER_SHOPS_LISTING_PREFIX, PLAYER_SHOPS_EARNINGS_PREFIX, CUSTOM_AREAS_CONFIG_KEY, CUSTOM_AREAS_AREA_PREFIX, LOOT_CHESTS_CONFIG_KEY, LOOT_CHESTS_POOL_PREFIX, LOOT_CHESTS_SNAPSHOT_PREFIX, LOOT_CHESTS_CHEST_PREFIX, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, STATS_PLAYER_IDS_KEY, STATS_PLAYER_PREFIX, readSplitDynamicJson, clearSplitDynamicJson, writeSplitDynamicJson, safeSetDynamicJson, parseJSON } from "./dynamic-json";
+export { markStatsPlayerDirty, markStatsPlayerIdsDirty } from "./split-keys/stats";
+export { writePlayerShopsIncrementalToSplitKeys } from "./split-keys/player-shops";
+export { writeCustomAreasToSplitKeys } from "./split-keys/custom-areas";
+export { writeLootChestsToSplitKeys } from "./split-keys/loot-chests";
+export { normalizePlotStore, writePlotsToSplitKeys, writePlotsIncrementalToSplitKeys } from "./split-keys/plots";

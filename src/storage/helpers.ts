@@ -47,6 +47,7 @@ import {
   STATS_PLAYER_PREFIX,
   clearSplitDynamicJson,
 } from "./state";
+export { normalizeItemId } from "../shared/item-id";
 
 export function tell(player: Player, message: string) {
   player.sendMessage(`${CHAT_PREFIX} ${message}`);
@@ -160,10 +161,6 @@ export function setScore(
   if (!identity) return false;
   objective.setScore(identity, value);
   return true;
-}
-
-export function normalizeItemId(value: string): string {
-  return String(value ?? "").trim().toLowerCase();
 }
 
 export function isFeatureEnabled(feature: keyof ConfigStore["features"]) {

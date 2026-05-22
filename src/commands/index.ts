@@ -1,1 +1,1 @@
-export { registerCustomCommands } from "./commands-core";
+export { registerCustomCommands } from "./register";
