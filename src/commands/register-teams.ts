@@ -8,7 +8,7 @@ import {
 } from "@minecraft/server";
 import { requirePlayerResult } from "./helpers";
 import { commandOriginToPlayer, isFeatureEnabled, tell } from "../storage";
-import { acceptTeamInvite, createTeam, disbandTeam, getPlayerTeam, inviteToTeam, joinTeam, kickFromTeam, leaveTeam } from "../teams";
+import { acceptTeamInvite, createTeam, demoteTeamMember, disbandTeam, getPlayerTeam, inviteToTeam, joinTeam, kickFromTeam, leaveTeam, promoteTeamMember } from "../teams";
 
 export function registerTeamsCommands(registry: CustomCommandRegistry): void {
   registry.registerCommand(
@@ -77,8 +77,16 @@ export function registerTeamsCommands(registry: CustomCommandRegistry): void {
         const result = disbandTeam(player);
         return { status: result.ok ? 0 : 1, message: result.message };
       }
+      if (act === "promote") {
+        const result = promoteTeamMember(player, String(arg1 ?? "").trim());
+        return { status: result.ok ? 0 : 1, message: result.message };
+      }
+      if (act === "demote") {
+        const result = demoteTeamMember(player, String(arg1 ?? "").trim());
+        return { status: result.ok ? 0 : 1, message: result.message };
+      }
 
-      return { status: 1, message: "Actions: ui, create, join, leave, accept, invite, kick, disband" };
+      return { status: 1, message: "Actions: ui, create, join, leave, accept, invite, kick, disband, promote, demote" };
     }
   );
 }

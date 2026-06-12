@@ -25,8 +25,10 @@ import {
   defaultPayStore,
   defaultPlayerSettingsStore,
   defaultTeamStore,
+  defaultTeamHomeStore,
   defaultPruneStore,
   defaultWarpStore,
+  defaultRtpStore,
   defaultGeneratorStore,
   defaultModerationStore,
   defaultCrateStore,
@@ -34,6 +36,7 @@ import {
   defaultCombatStore,
   defaultCommandBuilderStore,
   defaultPlayerShopStore,
+  defaultClaimStore,
   PLOTS_CONFIG_KEY,
   PLOTS_MIGRATION_MARKER_KEY,
   PLOTS_SLOT_PREFIX,
@@ -242,6 +245,8 @@ export function clearAllData() {
   world.setDynamicProperty(STORAGE_KEYS.teams, undefined);
   world.setDynamicProperty("tau:prune", undefined);
   world.setDynamicProperty(STORAGE_KEYS.warps, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.teamHomes, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.rtp, undefined);
   world.setDynamicProperty(STORAGE_KEYS.generators, undefined);
   world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);
   clearSplitDynamicJson(STORAGE_KEYS.moderation);
@@ -284,6 +289,8 @@ export function clearAllData() {
   state.teams = defaultTeamStore();
   state.prune = defaultPruneStore();
   state.warps = defaultWarpStore();
+  state.teamHomes = defaultTeamHomeStore();
+  state.rtp = defaultRtpStore();
   state.generators = defaultGeneratorStore();
   state.moderation = defaultModerationStore();
   state.crates = defaultCrateStore();
@@ -291,6 +298,7 @@ export function clearAllData() {
   state.combat = defaultCombatStore();
   state.commandBuilder = defaultCommandBuilderStore();
   state.playerShops = defaultPlayerShopStore();
+  state.claims = defaultClaimStore();
 }
 
 export function asPlayer(entity?: Entity): Player | undefined {

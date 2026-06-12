@@ -12,6 +12,7 @@ export type TeamDefinition = {
   friendlyFire: boolean;
   teamPlotEnabled: boolean;
   personalPlotSlotIds?: Record<string, string>;
+  adminPlayerIds?: string[];
 };
 
 export type TeamStore = {
@@ -74,6 +75,25 @@ export type HomeConfig = {
 export type HomeStore = {
   config: HomeConfig;
   homesByPlayerId: Record<string, Record<string, HomeLocation>>;
+};
+
+export type TeamHomeLocation = {
+  x: number;
+  y: number;
+  z: number;
+  dimensionId: string;
+};
+
+export type TeamHomeConfig = {
+  enabled: boolean;
+  maxHomesPerTeam: number;
+  allowCrossDimension: boolean;
+  blockWhileInCombat: boolean;
+};
+
+export type TeamHomeStore = {
+  config: TeamHomeConfig;
+  homesByTeamId: Record<string, Record<string, TeamHomeLocation>>;
 };
 
 export type PayConfig = {

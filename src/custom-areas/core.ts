@@ -290,6 +290,10 @@ export function shouldCancelAreaPvp(victim: Player, attacker: Player): boolean {
   return Boolean(attackerArea && !attackerArea.permissions.pvp);
 }
 
+export function getCustomAreaAtLocation(location: Vector3, dimensionId: string): CustomAreaDefinition | undefined {
+  return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId))?.area;
+}
+
 export function normalizeAreaBounds(a: Vector3, b: Vector3): { min: Vector3; max: Vector3 } {
   return {
     min: { x: Math.min(Math.floor(a.x), Math.floor(b.x)), y: Math.min(Math.floor(a.y), Math.floor(b.y)), z: Math.min(Math.floor(a.z), Math.floor(b.z)) },

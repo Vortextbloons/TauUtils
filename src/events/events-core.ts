@@ -5,6 +5,7 @@ import { tryHandleCrateInteract } from "../crates";
 import { tryHandleTauItemTrigger } from "../tau-items";
 import { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
 import { processClaims, shouldCancelClaimBlockBreak, shouldCancelClaimBlockPlace, shouldCancelClaimEntityInteract, shouldCancelClaimItemUse, shouldCancelClaimPvp } from "../claims";
+import { clearRtpRuntimeForPlayer, shouldCancelRtpDamage } from "../rtp";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
 import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../loot-chests";
@@ -426,6 +427,7 @@ export function registerEventInterceptors() {
     const playerId = state.stats.playerIds[event.playerName];
     if (playerId) {
       generatorMenuOpenByPlayerId.delete(playerId);
+      clearRtpRuntimeForPlayer(playerId);
       delete lastSampleByPlayerId[playerId];
       delete lastSeenPlotByPlayerId[playerId];
       delete lastPlotTitleSampleByPlayerId[playerId];
@@ -701,6 +703,10 @@ export function registerEventInterceptors() {
 
   world.beforeEvents.entityHurt.subscribe((event) => {
     const victim = asPlayer(event.hurtEntity);
+    if (victim && shouldCancelRtpDamage(victim, event.damageSource.cause)) {
+      event.cancel = true;
+      return;
+    }
     const attacker = asPlayer(event.damageSource.damagingEntity);
     if (!victim || !attacker) return;
     if (shouldCancelAreaPvp(victim, attacker)) {

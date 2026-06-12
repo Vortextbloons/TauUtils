@@ -3,6 +3,7 @@ import { TauUi } from "../tau-ui";
 import { ICONS, type KillConditionAction, type KillConditionRule, type KillConditionScoreAction } from "../../types";
 import { getPlayerId, isOperator, normalizeKey, saveCombat, state, tell } from "../../storage";
 import { updateHomesConfig, updatePayConfig, updatePlayerSettingsConfig, updateTpaConfig } from "../../social";
+import { updateTeamHomesConfig } from "../../team-homes";
 import { acceptTeamInvite, getPlayerTeam, getTeamSummary, inviteToTeam, listTeams, revokeTeamInvite } from "../../teams";
 
 export async function showSocialSettingsAdmin(player: Player) {
@@ -11,6 +12,7 @@ export async function showSocialSettingsAdmin(player: Player) {
   const homes = state.homes.config;
   const pay = state.pay.config;
   const playerCfg = state.playerSettings.config;
+  const teamHomes = state.teamHomes.config;
 
   const result = await TauUi.modal("Social Settings")
     .toggle("tpaEnabled", "TPA enabled", tpa.enabled)
@@ -25,6 +27,10 @@ export async function showSocialSettingsAdmin(player: Player) {
     .text("maxPay", "Max pay", { placeholder: "100000", defaultValue: String(pay.maxAmount) })
     .text("taxPercent", "Tax %", { placeholder: "0", defaultValue: String(pay.taxPercent) })
     .toggle("playerCfgEnabled", "Player config enabled", playerCfg.enabled)
+    .toggle("teamHomesEnabled", "Team homes enabled", teamHomes.enabled)
+    .text("maxTeamHomes", "Max team homes per team", { placeholder: "5", defaultValue: String(teamHomes.maxHomesPerTeam) })
+    .toggle("allowCrossDimTeamHomes", "Allow cross-dimension team homes", teamHomes.allowCrossDimension)
+    .toggle("blockTeamHomesInCombat", "Block team-home TP while in combat", teamHomes.blockWhileInCombat)
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
@@ -48,6 +54,12 @@ export async function showSocialSettingsAdmin(player: Player) {
   });
   updatePlayerSettingsConfig({
     enabled: Boolean(result.values.playerCfgEnabled),
+  });
+  updateTeamHomesConfig({
+    enabled: Boolean(result.values.teamHomesEnabled),
+    maxHomesPerTeam: Math.max(1, Math.floor(Number(result.values.maxTeamHomes ?? 5))),
+    allowCrossDimension: Boolean(result.values.allowCrossDimTeamHomes),
+    blockWhileInCombat: Boolean(result.values.blockTeamHomesInCombat),
   });
   tell(player, "Social settings saved.");
 }

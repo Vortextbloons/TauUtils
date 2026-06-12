@@ -172,6 +172,7 @@ async function showWorldSystems(player: Player) {
     const response = await TauUi.action("World Systems")
       .button("plots", "Plots", { iconPath: ICONS.plot })
       .button("claims", "Claims", { iconPath: ICONS.plot })
+      .button("rtp", "RTP", { iconPath: ICONS.sidebar })
       .button("customAreas", "Custom Areas", { iconPath: ICONS.sidebar })
       .button("lootChests", "Loot Chests", { iconPath: ICONS.item })
       .button("generators", "Generators", { iconPath: ICONS.shop })
@@ -190,6 +191,11 @@ async function showWorldSystems(player: Player) {
     if (response.id === "claims") {
       const { showClaimsAdminMenu } = await import("../claims-ui");
       await showClaimsAdminMenu(player);
+      continue;
+    }
+    if (response.id === "rtp") {
+      const { showRtpAdminMenu } = await import("../rtp-ui");
+      await showRtpAdminMenu(player);
       continue;
     }
     if (response.id === "customAreas") {

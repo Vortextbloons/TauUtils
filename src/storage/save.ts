@@ -111,12 +111,20 @@ export function saveTeams() {
   scheduleDynamicSave(STORAGE_KEYS.teams, () => safeSetDynamicJson(STORAGE_KEYS.teams, state.teams));
 }
 
+export function saveTeamHomes() {
+  scheduleDynamicSave(STORAGE_KEYS.teamHomes, () => safeSetDynamicJson(STORAGE_KEYS.teamHomes, state.teamHomes));
+}
+
 export function savePrune() {
   scheduleDynamicSave("tau:prune", () => safeSetDynamicJson("tau:prune", state.prune));
 }
 
 export function saveWarps() {
   scheduleDynamicSave(STORAGE_KEYS.warps, () => safeSetDynamicJson(STORAGE_KEYS.warps, state.warps));
+}
+
+export function saveRtp() {
+  scheduleDynamicSave(STORAGE_KEYS.rtp, () => safeSetDynamicJson(STORAGE_KEYS.rtp, state.rtp));
 }
 
 export function saveGenerators() {

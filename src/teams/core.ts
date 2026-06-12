@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { getOnlinePlayerById, getPlayerId, savePlots, saveTeams, state } from "../storage";
+import { getOnlinePlayerById, getPlayerId, getOnlinePlayerByName, isOperator, savePlots, saveTeams, state } from "../storage";
 import { type TeamDefinition } from "../types";
 import { clearPlayerPlot, reconcileAllPlotState } from "../plots";
 
@@ -56,6 +56,63 @@ function suspendMemberPersonalPlot(team: TeamDefinition, memberId: string): stri
 
 export function getPlayerTeam(player: Player): TeamDefinition | undefined {
   return getTeamByPlayerId(getPlayerId(player));
+}
+
+export function isTeamAdmin(player: Player, team: TeamDefinition): boolean {
+  if (isOperator(player)) return true;
+  return team.adminPlayerIds?.includes(getPlayerId(player)) ?? false;
+}
+
+export function isTeamOwnerOrAdmin(player: Player, team: TeamDefinition): boolean {
+  if (isOperator(player)) return true;
+  const id = getPlayerId(player);
+  if (team.ownerPlayerId === id) return true;
+  return team.adminPlayerIds?.includes(id) ?? false;
+}
+
+export function isTeamMember(player: Player, team: TeamDefinition): boolean {
+  if (isOperator(player)) return true;
+  const id = getPlayerId(player);
+  if (team.ownerPlayerId === id) return true;
+  if (team.adminPlayerIds?.includes(id) ?? false) return true;
+  return team.memberPlayerIds.includes(id);
+}
+
+export function promoteTeamMember(owner: Player, targetName: string): { ok: boolean; message: string } {
+  if (!state.teams.enabled) return { ok: false, message: "Teams are disabled." };
+  const team = getPlayerTeam(owner);
+  if (!team) return { ok: false, message: "You are not in a team." };
+  if (team.ownerPlayerId !== getPlayerId(owner)) return { ok: false, message: "Only the owner can change roles." };
+  const targetNameTrim = String(targetName ?? "").trim();
+  if (!targetNameTrim) return { ok: false, message: "Target player name is required." };
+  const target = getOnlinePlayerByName(targetNameTrim);
+  if (!target) return { ok: false, message: `Player "${targetNameTrim}" is not online.` };
+  const targetId = getPlayerId(target);
+  if (targetId === team.ownerPlayerId) return { ok: false, message: "The owner is already the highest role." };
+  if (team.adminPlayerIds?.includes(targetId)) return { ok: false, message: `${target.name} is already an admin.` };
+  if (!team.memberPlayerIds.includes(targetId)) return { ok: false, message: `${target.name} is not a member of this team.` };
+  if (!team.adminPlayerIds) team.adminPlayerIds = [];
+  team.adminPlayerIds.push(targetId);
+  saveTeams();
+  return { ok: true, message: `Promoted ${target.name} to admin.` };
+}
+
+export function demoteTeamMember(owner: Player, targetName: string): { ok: boolean; message: string } {
+  if (!state.teams.enabled) return { ok: false, message: "Teams are disabled." };
+  const team = getPlayerTeam(owner);
+  if (!team) return { ok: false, message: "You are not in a team." };
+  if (team.ownerPlayerId !== getPlayerId(owner)) return { ok: false, message: "Only the owner can change roles." };
+  const targetNameTrim = String(targetName ?? "").trim();
+  if (!targetNameTrim) return { ok: false, message: "Target player name is required." };
+  const target = getOnlinePlayerByName(targetNameTrim);
+  if (!target) return { ok: false, message: `Player "${targetNameTrim}" is not online.` };
+  const targetId = getPlayerId(target);
+  if (targetId === team.ownerPlayerId) return { ok: false, message: "The owner cannot demote themselves." };
+  if (!team.adminPlayerIds?.includes(targetId)) return { ok: false, message: `${target.name} is not an admin.` };
+  team.adminPlayerIds = team.adminPlayerIds.filter((id) => id !== targetId);
+  if (team.adminPlayerIds.length === 0) delete team.adminPlayerIds;
+  saveTeams();
+  return { ok: true, message: `Demoted ${target.name} to member.` };
 }
 
 export function reconcileTeamAssignments(): { ok: boolean; fixed: number; removed: number } {

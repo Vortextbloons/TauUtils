@@ -5,6 +5,7 @@ import { getPlayerId, isOperator, state, tell } from "../../storage";
 import { createTeam, disbandTeam, getPlayerTeam, getTeamSummary, joinTeam, kickFromTeam, leaveTeam, listTeams, setTeamFriendlyFire, setTeamPlotEnabled } from "../../teams";
 import { createWarp, deleteWarp, listWarps, setWarpLocation, teleportToWarp } from "../../warps";
 import { showTeamInviteCenter, showPendingTeamInvites } from "./combat-admin";
+import { showTeamHomesMenu } from "./team-homes";
 
 export async function showTeamMenu(player: Player) {
   while (true) {
@@ -17,6 +18,7 @@ export async function showTeamMenu(player: Player) {
       form
         .button("inviteCenter", "Invite Center", { iconPath: ICONS.binding })
         .button("teamMembers", "Team Members", { iconPath: ICONS.menu })
+        .button("teamHomes", "Team Homes", { iconPath: ICONS.confirm })
         .button("teamSettings", "Team Settings", { iconPath: ICONS.settings })
         .button("leaveTeam", "Leave Team", { iconPath: ICONS.delete })
         .button("teamList", "Team List", { iconPath: ICONS.sidebar })
@@ -43,6 +45,10 @@ export async function showTeamMenu(player: Player) {
           .map((memberId) => world.getAllPlayers().find((p) => getPlayerId(p) === memberId)?.name ?? memberId)
           .slice(0, 20);
         for (const member of members) tell(player, `§7- §e${member}`);
+        continue;
+      }
+      if (response.id === "teamHomes") {
+        await showTeamHomesMenu(player);
         continue;
       }
       if (response.id === "teamSettings") {

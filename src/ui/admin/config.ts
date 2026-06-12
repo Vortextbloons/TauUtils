@@ -355,6 +355,7 @@ export async function showConfigMenu(player: Player) {
       .button("pay", `Pay: ${features.pay ? "On" : "Off"}`, { iconPath: ICONS.shop })
       .button("playerConfig", `Player Config: ${features.playerConfig ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("teams", `Teams: ${features.teams ? "On" : "Off"}`, { iconPath: ICONS.menu })
+      .button("teamHomes", `Team Homes: ${features.teamHomes ? "On" : "Off"}`, { iconPath: ICONS.confirm })
       .button("warps", `Warps: ${features.warps ? "On" : "Off"}`, { iconPath: ICONS.sidebar })
       .button("plotTp", `Plot TP: ${features.plotTp ? "On" : "Off"}`, { iconPath: ICONS.sidebar })
       .button("generators", `Generators: ${features.generators ? "On" : "Off"}`, { iconPath: ICONS.shop })
@@ -365,6 +366,7 @@ export async function showConfigMenu(player: Player) {
       .button("lootChests", `Loot Chests: ${features.lootChests ? "On" : "Off"}`, { iconPath: ICONS.item })
       .button("commandBuilder", `Command Builder: ${features.commandBuilder ? "On" : "Off"}`, { iconPath: ICONS.utility })
       .button("claims", `Claims: ${features.claims ? "On" : "Off"}`, { iconPath: ICONS.plot })
+      .button("rtp", `RTP: ${features.rtp ? "On" : "Off"}`, { iconPath: ICONS.sidebar })
       .button("prune", "Prune Data", { iconPath: ICONS.delete })
       .button("socialSettings", "Social Settings", { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
@@ -429,7 +431,8 @@ export async function showConfigMenu(player: Player) {
       creator: "creator", forms: "forms", shops: "shops", sidebars: "sidebars",
       bindings: "bindings", stats: "stats", plots: "plots", tpa: "tpa",
       homes: "homes", pay: "pay", playerConfig: "playerConfig", teams: "teams",
-      lootChests: "lootChests", commandBuilder: "commandBuilder", claims: "claims",
+      lootChests: "lootChests", commandBuilder: "commandBuilder", claims: "claims", rtp: "rtp",
+      teamHomes: "teamHomes",
     };
     const key = keys[response.id];
     if (!key) continue;
@@ -459,6 +462,7 @@ export async function showPruneDataMenu(player: Player) {
       .button("tpa", `TPA: ${prune.flags.tpa ? "On" : "Off"}`, { iconPath: ICONS.menu })
       .button("pay", `Pay: ${prune.flags.pay ? "On" : "Off"}`, { iconPath: ICONS.shop })
       .button("playerSettings", `Player Settings: ${prune.flags.playerSettings ? "On" : "Off"}`, { iconPath: ICONS.settings })
+      .button("teamHomes", `Team Homes: ${prune.flags.teamHomes ? "On" : "Off"}`, { iconPath: ICONS.confirm })
       .button("dryRun", "Dry Run", { iconPath: ICONS.confirm })
       .button("executePrune", "Execute Prune", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
@@ -485,6 +489,7 @@ export async function showPruneDataMenu(player: Player) {
     const flagKeys: Record<string, keyof typeof prune.flags> = {
       stats: "stats", profiles: "profiles", teams: "teams", plots: "plots", claims: "claims",
       homes: "homes", tpa: "tpa", pay: "pay", playerSettings: "playerSettings",
+      teamHomes: "teamHomes",
     };
     const flagKey = flagKeys[response.id];
     if (flagKey) {

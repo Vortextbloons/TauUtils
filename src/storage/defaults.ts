@@ -1,4 +1,4 @@
-import { type BindingStore, type ChatConfig, type ClaimFlags, type ClaimStore, type CombatStore, type CommandBuilderStore, type ConfigStore, type CrateStore, type CustomAreaStore, type GeneratorStore, type HomeStore, type LootChestStore, type ModerationStore, type PayStore, type PlayerProfilesStore, type PlayerSettingsStore, type PlayerShopStore, type PlayerStats, type PlotStore, type PruneStore, type RankStore, type SidebarStore, type TauItemsStore, type TeamStore, type TpaStore, type WarpStore } from "../types";
+import { type BindingStore, type ChatConfig, type ClaimFlags, type ClaimStore, type CombatStore, type CommandBuilderStore, type ConfigStore, type CrateStore, type CustomAreaStore, type GeneratorStore, type HomeStore, type LootChestStore, type ModerationStore, type PayStore, type PlayerProfilesStore, type PlayerSettingsStore, type PlayerShopStore, type PlayerStats, type PlotStore, type PruneStore, type RankStore, type RtpProtection, type RtpStore, type SidebarStore, type TauItemsStore, type TeamHomeStore, type TeamStore, type TpaStore, type WarpStore } from "../types";
 
 export function defaultConfig(): ConfigStore {
   return {
@@ -29,7 +29,39 @@ export function defaultConfig(): ConfigStore {
       lootChests: true,
       commandBuilder: true,
       claims: true,
+      rtp: true,
+      teamHomes: true,
     },
+  };
+}
+
+function defaultRtpProtection(): RtpProtection {
+  return {
+    enabled: true,
+    durationSeconds: 15,
+    preventFallDamage: true,
+    preventPvpDamage: true,
+    preventMobDamage: true,
+    preventFireDamage: true,
+    resistanceEffect: true,
+    slowFallingEffect: false,
+  };
+}
+
+export function defaultRtpStore(): RtpStore {
+  return {
+    config: {
+      enabled: true,
+      cooldownSeconds: 60,
+      maxAttempts: 32,
+      allowCrossDimension: true,
+      defaultFallFromSky: true,
+      defaultSkyHeightOffset: 40,
+      avoidClaims: true,
+      avoidCustomAreas: true,
+      defaultProtection: defaultRtpProtection(),
+    },
+    regions: {},
   };
 }
 
@@ -266,6 +298,7 @@ export function defaultPruneStore(): PruneStore {
         tpa: true,
         pay: true,
         playerSettings: true,
+        teamHomes: true,
       },
     },
   };
@@ -303,6 +336,18 @@ export function defaultHomeStore(): HomeStore {
       allowCrossDimension: false,
     },
     homesByPlayerId: {},
+  };
+}
+
+export function defaultTeamHomeStore(): TeamHomeStore {
+  return {
+    config: {
+      enabled: true,
+      maxHomesPerTeam: 5,
+      allowCrossDimension: false,
+      blockWhileInCombat: true,
+    },
+    homesByTeamId: {},
   };
 }
 

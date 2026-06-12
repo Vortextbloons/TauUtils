@@ -1,7 +1,7 @@
 import { Player } from "@minecraft/server";
-import { state, savePrune, saveProfiles, saveStats, saveTeams, savePlots, saveClaims, saveHomes, savePlayerSettings, tell } from "../storage";
+import { state, savePrune, saveProfiles, saveStats, saveTeams, saveTeamHomes, savePlots, saveClaims, saveHomes, savePlayerSettings, tell } from "../storage";
 
-export type PruneCategory = "stats" | "profiles" | "teams" | "plots" | "claims" | "homes" | "tpa" | "pay" | "playerSettings";
+export type PruneCategory = "stats" | "profiles" | "teams" | "plots" | "claims" | "homes" | "tpa" | "pay" | "playerSettings" | "teamHomes";
 
 export type PruneResult = {
   removed: number;
@@ -144,6 +144,26 @@ export function pruneData(dryRun = true): PruneResult {
 
   if (prune.tpa || prune.pay) {
     // Social config is retained; only the prune flags are being toggled.
+  }
+
+  if (prune.teamHomes) {
+    for (const [teamId, team] of Object.entries(state.teams.teams)) {
+      if (!state.teamHomes.homesByTeamId[teamId]) continue;
+      const ownerInactive = isInactive(team.ownerPlayerId);
+      if (ownerInactive || Object.keys(state.teamHomes.homesByTeamId[teamId]).length === 0) {
+        removed += 1;
+        details.push(`teamHomes:${teamId}`);
+        if (!dryRun) delete state.teamHomes.homesByTeamId[teamId];
+      }
+    }
+    for (const teamId of Object.keys(state.teamHomes.homesByTeamId)) {
+      if (!state.teams.teams[teamId]) {
+        removed += 1;
+        details.push(`teamHomes:${teamId}:orphan`);
+        if (!dryRun) delete state.teamHomes.homesByTeamId[teamId];
+      }
+    }
+    if (!dryRun) saveTeamHomes();
   }
 
   if (!dryRun) savePrune();

@@ -559,6 +559,7 @@ export type PruneFlags = {
   tpa: boolean;
   pay: boolean;
   playerSettings: boolean;
+  teamHomes: boolean;
 };
 
 export type PruneConfig = {

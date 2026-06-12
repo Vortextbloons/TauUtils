@@ -21,10 +21,12 @@ import {
   type PlotStore,
   type PruneStore,
   type RankStore,
+  type RtpStore,
   type ShopProfile,
   type SidebarStore,
   type StatsStore,
   type TauItemsStore,
+  type TeamHomeStore,
   type TeamStore,
   type TpaStore,
   type WarpStore,
@@ -55,7 +57,9 @@ import {
   defaultPlotStore,
   defaultPruneStore,
   defaultRankStore,
+  defaultRtpStore,
   defaultTauItemsStore,
+  defaultTeamHomeStore,
   defaultTeamStore,
   defaultTpaStore,
   defaultWarpStore,
@@ -88,6 +92,7 @@ export const state: {
   playerSettings: PlayerSettingsStore;
   teams: TeamStore;
   prune: PruneStore;
+  teamHomes: TeamHomeStore;
   warps: WarpStore;
   generators: GeneratorStore;
   moderation: ModerationStore;
@@ -99,6 +104,7 @@ export const state: {
   lootChests: LootChestStore;
   commandBuilder: CommandBuilderStore;
   claims: ClaimStore;
+  rtp: RtpStore;
 } = {
   forms: {},
   shops: {},
@@ -116,6 +122,7 @@ export const state: {
   playerSettings: defaultPlayerSettingsStore(),
   teams: defaultTeamStore(),
   prune: defaultPruneStore(),
+  teamHomes: defaultTeamHomeStore(),
   warps: defaultWarpStore(),
   generators: defaultGeneratorStore(),
   moderation: defaultModerationStore(),
@@ -127,6 +134,7 @@ export const state: {
   lootChests: defaultLootChestStore(),
   commandBuilder: defaultCommandBuilderStore(),
   claims: defaultClaimStore(),
+  rtp: defaultRtpStore(),
 };
 
 function applyMissingDefaults<T extends Record<string, unknown>>(target: T | undefined, defaults: T): T {
@@ -180,6 +188,22 @@ export function loadState() {
   state.prune.config = applyMissingDefaults(state.prune.config as unknown as Record<string, unknown>, defaultPruneStore().config as unknown as Record<string, unknown>) as unknown as PruneStore["config"];
   state.prune.config.flags = applyMissingDefaults(state.prune.config.flags as unknown as Record<string, unknown>, defaultPruneStore().config.flags as unknown as Record<string, unknown>) as unknown as PruneStore["config"]["flags"];
   state.warps = readDynamicJSON<WarpStore>(STORAGE_KEYS.warps, defaultWarpStore());
+  state.teamHomes = readDynamicJSON<TeamHomeStore>(STORAGE_KEYS.teamHomes, defaultTeamHomeStore());
+  state.rtp = readDynamicJSON<RtpStore>(STORAGE_KEYS.rtp, defaultRtpStore());
+  state.rtp.config = applyMissingDefaults(state.rtp.config as unknown as Record<string, unknown>, defaultRtpStore().config as unknown as Record<string, unknown>) as unknown as RtpStore["config"];
+  state.rtp.config.defaultProtection = applyMissingDefaults(state.rtp.config.defaultProtection as unknown as Record<string, unknown>, defaultRtpStore().config.defaultProtection as unknown as Record<string, unknown>) as unknown as RtpStore["config"]["defaultProtection"];
+  state.rtp.regions ??= {};
+  for (const region of Object.values(state.rtp.regions)) {
+    region.protection = applyMissingDefaults(region.protection as unknown as Record<string, unknown>, state.rtp.config.defaultProtection as unknown as Record<string, unknown>) as unknown as RtpStore["regions"][string]["protection"];
+    region.protection.resistanceEffect = true;
+    region.protection.slowFallingEffect = false;
+    region.fallFromSky = true;
+    region.safeLanding = true;
+    region.min.y = -64;
+    region.max.y = 320;
+    region.avoidClaims ??= state.rtp.config.avoidClaims;
+    region.avoidCustomAreas ??= state.rtp.config.avoidCustomAreas;
+  }
   state.generators = readDynamicJSON<GeneratorStore>(STORAGE_KEYS.generators, defaultGeneratorStore());
   let generatorsChanged = false;
   const placementsByDefinitionId = new Map<string, typeof state.generators.placed[string][]>();
@@ -331,7 +355,7 @@ export function loadState() {
 // Re-exports — all moved symbols so consumers see them from "./state"
 // ---------------------------------------------------------------------------
 
-export { defaultConfig, defaultRankStore, defaultChatConfig, defaultPlayerStats, defaultPlotStore, defaultTpaStore, defaultHomeStore, defaultPayStore, defaultPlayerSettingsStore, defaultTeamStore, defaultPruneStore, defaultWarpStore, defaultGeneratorStore, defaultModerationStore, defaultCrateStore, defaultTauItemsStore, defaultCombatStore, defaultCommandBuilderStore, defaultPlayerShopStore, defaultCustomAreaStore, defaultLootChestStore, defaultClaimStore } from "./defaults";
+export { defaultConfig, defaultRankStore, defaultChatConfig, defaultPlayerStats, defaultPlotStore, defaultTpaStore, defaultHomeStore, defaultPayStore, defaultPlayerSettingsStore, defaultTeamStore, defaultTeamHomeStore, defaultPruneStore, defaultWarpStore, defaultGeneratorStore, defaultModerationStore, defaultCrateStore, defaultTauItemsStore, defaultCombatStore, defaultCommandBuilderStore, defaultPlayerShopStore, defaultCustomAreaStore, defaultLootChestStore, defaultClaimStore, defaultRtpStore } from "./defaults";
 export { PLAYER_SHOPS_CONFIG_KEY, PLAYER_SHOPS_SHOP_PREFIX, PLAYER_SHOPS_LISTING_PREFIX, PLAYER_SHOPS_EARNINGS_PREFIX, CUSTOM_AREAS_AREA_PREFIX, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, STATS_PLAYER_IDS_KEY, STATS_PLAYER_PREFIX, readSplitDynamicJson, clearSplitDynamicJson, writeSplitDynamicJson, safeSetDynamicJson, parseJSON } from "./dynamic-json";
 export { markStatsPlayerDirty, markStatsPlayerIdsDirty } from "./split-keys/stats";
 export { writePlayerShopsIncrementalToSplitKeys } from "./split-keys/player-shops";

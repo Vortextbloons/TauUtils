@@ -1,1 +1,1 @@
-export { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaItemUse, shouldCancelAreaEntityInteract, shouldCancelAreaPvp, normalizeAreaBounds, invalidateCustomAreaRuntimeState, commitCustomArea, applyAreaTickingArea } from "./core";
+export { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaItemUse, shouldCancelAreaEntityInteract, shouldCancelAreaPvp, getCustomAreaAtLocation, normalizeAreaBounds, invalidateCustomAreaRuntimeState, commitCustomArea, applyAreaTickingArea } from "./core";

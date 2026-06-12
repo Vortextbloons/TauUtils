@@ -1,1 +1,1 @@
-export { getPlayerTeam, reconcileTeamAssignments, listTeams, createTeam, inviteToTeam, revokeTeamInvite, joinTeam, leaveTeam, kickFromTeam, disbandTeam, acceptTeamInvite, getTeamSummary, setTeamFriendlyFire, setTeamPlotEnabled } from "./core";
+export { getPlayerTeam, isTeamAdmin, isTeamOwnerOrAdmin, isTeamMember, promoteTeamMember, demoteTeamMember, reconcileTeamAssignments, listTeams, createTeam, inviteToTeam, revokeTeamInvite, joinTeam, leaveTeam, kickFromTeam, disbandTeam, acceptTeamInvite, getTeamSummary, setTeamFriendlyFire, setTeamPlotEnabled } from "./core";
