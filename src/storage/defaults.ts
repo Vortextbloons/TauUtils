@@ -1,4 +1,4 @@
-import { type BindingStore, type ChatConfig, type CombatStore, type CommandBuilderStore, type ConfigStore, type CrateStore, type CustomAreaStore, type GeneratorStore, type HomeStore, type LootChestStore, type ModerationStore, type PayStore, type PlayerProfilesStore, type PlayerSettingsStore, type PlayerShopStore, type PlayerStats, type PlotStore, type PruneStore, type RankStore, type SidebarStore, type TauItemsStore, type TeamStore, type TpaStore, type WarpStore } from "../types";
+import { type BindingStore, type ChatConfig, type ClaimFlags, type ClaimStore, type CombatStore, type CommandBuilderStore, type ConfigStore, type CrateStore, type CustomAreaStore, type GeneratorStore, type HomeStore, type LootChestStore, type ModerationStore, type PayStore, type PlayerProfilesStore, type PlayerSettingsStore, type PlayerShopStore, type PlayerStats, type PlotStore, type PruneStore, type RankStore, type SidebarStore, type TauItemsStore, type TeamStore, type TpaStore, type WarpStore } from "../types";
 
 export function defaultConfig(): ConfigStore {
   return {
@@ -28,7 +28,51 @@ export function defaultConfig(): ConfigStore {
       customAreas: true,
       lootChests: true,
       commandBuilder: true,
+      claims: true,
     },
+  };
+}
+
+function defaultClaimFlags(): ClaimFlags {
+  return {
+    protectionEnabled: true,
+    blockBreak: false,
+    blockPlace: false,
+    itemUse: false,
+    entityInteract: false,
+    pvp: false,
+    allowTeamAccess: true,
+  };
+}
+
+export function defaultClaimStore(): ClaimStore {
+  return {
+    config: {
+      enabled: true,
+      protectionEnabled: true,
+      allowPlayersToToggleProtection: true,
+      maxClaimsPerPlayer: 3,
+      maxClaimsPerTeam: 10,
+      minClaimSize: { x: 5, y: 1, z: 5 },
+      maxClaimSize: { x: 100, y: 100, z: 100 },
+      maxClaimVolume: 262144,
+      allowOverlaps: false,
+      checkIntervalTicks: 10,
+      defaultFlags: defaultClaimFlags(),
+      playerEditableFlags: {
+        protectionEnabled: true,
+        blockBreak: true,
+        blockPlace: true,
+        itemUse: true,
+        entityInteract: true,
+        pvp: true,
+        allowTeamAccess: true,
+      },
+      announcementTargets: ["player", "owner", "claim_members", "team", "global"],
+    },
+    claims: {},
+    playerClaimIds: {},
+    teamClaimIds: {},
   };
 }
 
@@ -174,6 +218,7 @@ export function defaultGeneratorStore(): GeneratorStore {
       defaultPlaceAnywhere: true,
       blockOnPlotOnly: false,
       autoBreakersEnabled: true,
+      maxTurboSpawnsPerCycle: 32,
     },
   };
 }
@@ -216,6 +261,7 @@ export function defaultPruneStore(): PruneStore {
         profiles: true,
         teams: true,
         plots: true,
+        claims: true,
         homes: true,
         tpa: true,
         pay: true,

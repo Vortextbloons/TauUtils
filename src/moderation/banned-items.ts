@@ -22,15 +22,6 @@ export function isBannedItemId(itemId: string): boolean {
   return ensureBannedItemCache().has(normalizeItemId(itemId));
 }
 
-export function clearBannedHeldSlot(player: Player): boolean {
-  const container = getInventoryContainer(player);
-  if (!container) return false;
-  const held = container.getItem(player.selectedSlotIndex);
-  if (!held || !isBannedItemId(held.typeId)) return false;
-  container.setItem(player.selectedSlotIndex, undefined);
-  return true;
-}
-
 export function clearBannedInventory(player: Player): number {
   const container = getInventoryContainer(player);
   if (!container) return 0;

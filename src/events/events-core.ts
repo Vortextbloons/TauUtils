@@ -1,10 +1,10 @@
-// test 
 import { EntityComponentTypes, ItemStack, Player, world, system } from "@minecraft/server";
 import { ensurePlayerPlotAssigned, getAssignedSlotIdForOwner, getPlotForLocation, getPlotOwnerIdForPlayer, getPlotSlotsList, getPlotTitle, processQueuedPlotBuildJobs, processQueuedPlotSnapshots, reconcileAllPlotState, releasePlayerPlotById, saveAssignedPlayerPlot, showPlotError, teleportPlayerToSlot } from "../plots";
 import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUseOnBlock, isGeneratorBlock, processGenerators } from "../generators";
 import { tryHandleCrateInteract } from "../crates";
 import { tryHandleTauItemTrigger } from "../tau-items";
 import { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
+import { processClaims, shouldCancelClaimBlockBreak, shouldCancelClaimBlockPlace, shouldCancelClaimEntityInteract, shouldCancelClaimItemUse, shouldCancelClaimPvp } from "../claims";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
 import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../loot-chests";
@@ -21,6 +21,8 @@ import {
   getMenuIdFromNameTag,
   isFeatureEnabled,
   normalizeKey,
+  collectCurrencyObjectives,
+  ensureScoreboardObjective,
   state,
   saveModeration,
   tell,
@@ -107,10 +109,41 @@ function cacheModerationInspectionSnapshot(player: Player | undefined): boolean 
   }
 }
 
+function ensurePlayerCurrencyScoreboards(player: Player): void {
+  system.runTimeout(() => {
+    if (!player.isValid) return;
+    runPlayerCurrencyInit(player);
+  }, 1);
+}
+
+function runPlayerCurrencyInit(player: Player): void {
+  try {
+    const objectives = collectCurrencyObjectives();
+    if (objectives.length === 0) return;
+    for (const objectiveId of objectives) {
+      const created = ensureScoreboardObjective(objectiveId);
+      if (!created) {
+        tell(player, `§c[tau-debug] failed to ensure objective "${objectiveId}"`);
+        continue;
+      }
+      try {
+        player.runCommand(`scoreboard players set @s ${objectiveId} 0`);
+      } catch (e) {
+        tell(player, `§c[tau-debug] failed to set row for "${objectiveId}": ${String(e)}`);
+      }
+    }
+  } catch (e) {
+    tell(player, `§c[tau-debug] currency init crashed: ${String(e)}`);
+  }
+}
+
 function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   if (!player) return;
   const id = getPlayerId(player);
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
+
+  ensurePlayerCurrencyScoreboards(player);
+
   if (isFeatureEnabled("moderation")) {
     clearBannedInventory(player);
     if (cacheModerationInspectionSnapshot(player)) saveModeration();
@@ -389,13 +422,24 @@ export function registerEventInterceptors() {
   });
 
   world.afterEvents.playerLeave.subscribe((event) => {
-    if (!isFeatureEnabled("plots")) return;
+    pendingJoinInitializationByName.delete(event.playerName);
     const playerId = state.stats.playerIds[event.playerName];
+    if (playerId) {
+      generatorMenuOpenByPlayerId.delete(playerId);
+      delete lastSampleByPlayerId[playerId];
+      delete lastSeenPlotByPlayerId[playerId];
+      delete lastPlotTitleSampleByPlayerId[playerId];
+    }
+
+    if (!isFeatureEnabled("plots")) return;
     if (playerId) {
       const team = Object.values(state.teams.teams).find((entry) => entry.ownerPlayerId === playerId || entry.memberPlayerIds.includes(playerId));
       if (team && team.teamPlotEnabled) {
-        const anyMemberOnline = world.getAllPlayers().some((online) => team.memberPlayerIds.includes(getPlayerId(online)));
-        if (anyMemberOnline) return;
+        const anyTeamPlayerOnline = world.getAllPlayers().some((online) => {
+          const onlineId = getPlayerId(online);
+          return onlineId === team.ownerPlayerId || team.memberPlayerIds.includes(onlineId);
+        });
+        if (anyTeamPlayerOnline) return;
         releasePlayerPlotById(team.ownerPlayerId);
         return;
       }
@@ -436,6 +480,7 @@ export function registerEventInterceptors() {
   world.afterEvents.itemUse.subscribe((event) => {
     const player = asPlayer(event.source);
     if (player && shouldCancelAreaItemUse(player)) return;
+    if (player && shouldCancelClaimItemUse(player)) return;
 
     if (player && isFeatureEnabled("items")) {
       const handled = tryHandleTauItemTrigger(player, "use_air", event.itemStack, {
@@ -455,6 +500,7 @@ export function registerEventInterceptors() {
 
   world.afterEvents.playerInteractWithEntity.subscribe((event) => {
     if (shouldCancelAreaEntityInteract(event.player)) return;
+    if (shouldCancelClaimEntityInteract(event.player)) return;
     if (!isFeatureEnabled("forms")) return;
     const menuId = resolveEntityMenu(event.target);
     if (!menuId) return;
@@ -497,6 +543,7 @@ export function registerEventInterceptors() {
 
   world.afterEvents.playerPlaceBlock.subscribe((event) => {
     if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id, event.block.typeId)) return;
+    if (shouldCancelClaimBlockPlace(event.player, event.block.location, event.player.dimension.id)) return;
     if (!isFeatureEnabled("stats")) return;
     incrementStat(event.player, "blocksPlaced", 1);
   });
@@ -506,6 +553,11 @@ export function registerEventInterceptors() {
     if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id, event.permutationToPlace.type.id)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot place blocks in this area.");
+      return;
+    }
+    if (shouldCancelClaimBlockPlace(event.player, event.block.location, event.player.dimension.id)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot place blocks in this claim.");
     }
   });
 
@@ -515,6 +567,11 @@ export function registerEventInterceptors() {
     if (shouldCancelAreaItemUse(event.player)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot use items in this area.");
+      return;
+    }
+    if (shouldCancelClaimItemUse(event.player)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot use items in this claim.");
       return;
     }
     if (isFeatureEnabled("items")) {
@@ -578,6 +635,11 @@ export function registerEventInterceptors() {
     if (shouldCancelAreaBlockBreak(event.player, event.block.location, event.player.dimension.id, event.block.typeId)) {
       event.cancel = true;
       tell(event.player, "§cYou cannot break blocks in this area.");
+      return;
+    }
+    if (shouldCancelClaimBlockBreak(event.player, event.block.location, event.player.dimension.id)) {
+      event.cancel = true;
+      tell(event.player, "§cYou cannot break blocks in this claim.");
       return;
     }
     if (isFeatureEnabled("items")) {
@@ -645,6 +707,10 @@ export function registerEventInterceptors() {
       event.cancel = true;
       return;
     }
+    if (shouldCancelClaimPvp(victim, attacker)) {
+      event.cancel = true;
+      return;
+    }
     if (!isFeatureEnabled("teams")) return;
 
     const victimTeam = getPlayerTeam(victim);
@@ -692,6 +758,10 @@ export function registerEventInterceptors() {
   registerBackgroundTask("custom-areas", () => Math.max(1, state.customAreas.config.checkIntervalTicks), () => {
     processCustomAreas();
   }, 4);
+
+  registerBackgroundTask("claims", () => Math.max(1, state.claims.config.checkIntervalTicks), () => {
+    processClaims();
+  }, 6);
 
   registerBackgroundTask("stats-sample", 20, processStatsSample, 7);
 

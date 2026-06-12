@@ -1,5 +1,6 @@
 import { Player, world } from "@minecraft/server";
 import {
+  getOnlinePlayerById,
   getPlayerId,
   getScore,
   saveHomes,
@@ -101,7 +102,7 @@ export function acceptTpaRequest(target: Player): { ok: boolean; message: string
   delete tpaPendingByTargetId[targetId];
 
   if (req.expiresAt < nowMs()) return { ok: false, message: "TPA request expired." };
-  const requester = world.getAllPlayers().find((p) => getPlayerId(p) === req.fromPlayerId);
+  const requester = getOnlinePlayerById(req.fromPlayerId);
   if (!requester) return { ok: false, message: `${req.fromName} is not online.` };
 
   requester.teleport(target.location, { dimension: target.dimension });

@@ -1,18 +1,18 @@
-import { Player, world } from "@minecraft/server";
+import { Player } from "@minecraft/server";
 import { TauUi } from "../tau-ui";
 import { ICONS } from "../../types";
-import { getPlayerId, state, tell } from "../../storage";
+import { getOnlinePlayersExcept, getPlayerId, state, tell } from "../../storage";
 import { createTpaRequest, deleteHome, listHomes, payPlayer, setHome, teleportHome, updatePlayerSettings } from "../../social";
 
 export async function showTpaMenu(player: Player) {
-  const players = world.getAllPlayers().filter((p) => p.id !== player.id);
+  const players = getOnlinePlayersExcept(player);
   if (players.length === 0) {
     tell(player, "No online players available.");
     return;
   }
   const form = TauUi.action<{ index: number }>("TPA").body("Send a teleport request.");
   players.forEach((p, i) => form.button("player", p.name, { iconPath: ICONS.menu, value: { index: i } }));
-  form.button("back", "Back", { iconPath: ICONS.back });
+  form.back("Back", ICONS.back);
   const res = await form.show(player);
   if (res.canceled || res.id === "back" || !res.value) return;
   const target = players[res.value.index];
@@ -29,7 +29,7 @@ export async function showHomesMenu(player: Player) {
       .button("set", "Set Home", { iconPath: ICONS.confirm })
       .button("tp", "Teleport Home", { iconPath: ICONS.sidebar })
       .button("delete", "Delete Home", { iconPath: ICONS.delete })
-      .button("back", "Back", { iconPath: ICONS.back });
+      .back("Back", ICONS.back);
     const res = await form.show(player);
     if (res.canceled || res.id === "back") return;
 
@@ -47,7 +47,7 @@ export async function showHomesMenu(player: Player) {
 
     const pick = TauUi.action<{ index: number }>(res.id === "tp" ? "Teleport Home" : "Delete Home");
     homes.forEach((name, i) => pick.button("home", name, { iconPath: ICONS.menu, value: { index: i } }));
-    pick.button("back", "Back", { iconPath: ICONS.back });
+    pick.back("Back", ICONS.back);
     const picked = await pick.show(player);
     if (picked.canceled || picked.id === "back" || !picked.value) continue;
     const name = homes[picked.value.index];
@@ -57,14 +57,14 @@ export async function showHomesMenu(player: Player) {
 }
 
 export async function showPayMenu(player: Player) {
-  const players = world.getAllPlayers().filter((p) => p.id !== player.id);
+  const players = getOnlinePlayersExcept(player);
   if (players.length === 0) {
     tell(player, "No online players available.");
     return;
   }
   const pick = TauUi.action<{ index: number }>("Pay Player").body("Select a player to pay.");
   players.forEach((p, i) => pick.button("player", p.name, { iconPath: ICONS.shop, value: { index: i } }));
-  pick.button("back", "Back", { iconPath: ICONS.back });
+  pick.back("Back", ICONS.back);
   const picked = await pick.show(player);
   if (picked.canceled || picked.id === "back" || !picked.value) return;
   const target = players[picked.value.index];

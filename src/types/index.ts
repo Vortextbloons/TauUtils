@@ -145,6 +145,16 @@ export {
 } from "./plot";
 
 export {
+  type ClaimVector,
+  type ClaimAnnouncementTarget,
+  type ClaimMemberRole,
+  type ClaimFlags,
+  type ClaimDefinition,
+  type ClaimConfig,
+  type ClaimStore,
+} from "./claims";
+
+export {
   ICONS,
   WORKING_ICON_OPTIONS,
   ICON_DEV_OPTIONS,

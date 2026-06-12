@@ -116,6 +116,13 @@ export type TauPage<T> = {
   hasNext: boolean;
 };
 
+export type TauPickItem<TValue> = {
+  id: string;
+  text: TauText;
+  iconPath?: string;
+  value: TValue;
+};
+
 type ModalValueKey = Extract<TauModalField, { key: string }>;
 
 function canceledAction<TValue>(reason?: FormCancelationReason, error?: unknown): TauActionResult<TValue> {
@@ -181,6 +188,10 @@ export class TauActionForm<TValue = undefined> {
       button: { id, text, iconPath: options.iconPath, value: options.value },
     });
     return this;
+  }
+
+  back(text: TauText = "Back", iconPath = "textures/ui/arrow_left"): this {
+    return this.button("back", text, { iconPath });
   }
 
   buttons(buttons: readonly TauButton<TValue>[]): this {
@@ -441,6 +452,28 @@ export function message(title: TauText): TauMessageForm {
   return new TauMessageForm(title);
 }
 
+export function isBack(result: TauActionResult<unknown>): boolean {
+  return !result.canceled && result.id === "back";
+}
+
+export function isCanceledOrBack(result: TauActionResult<unknown>): boolean {
+  return result.canceled || result.id === "back";
+}
+
+export async function pickFromList<TValue>(
+  player: Player,
+  options: { title: TauText; body?: TauText; items: readonly TauPickItem<TValue>[]; backText?: TauText; backIconPath?: string },
+): Promise<TValue | undefined> {
+  const form = action<TValue>(options.title);
+  if (options.body !== undefined) form.body(options.body);
+  for (const item of options.items) {
+    form.button(item.id, item.text, { iconPath: item.iconPath, value: item.value });
+  }
+  const result = await form.back(options.backText, options.backIconPath).show(player);
+  if (isCanceledOrBack(result)) return undefined;
+  return result.value;
+}
+
 export async function confirm(
   player: Player,
   options: { title: TauText; body: TauText; confirmText?: TauText; cancelText?: TauText },
@@ -460,4 +493,7 @@ export const TauUi = {
   message,
   confirm,
   paginate,
+  isBack,
+  isCanceledOrBack,
+  pickFromList,
 };

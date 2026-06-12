@@ -1,5 +1,5 @@
-import { Player, world } from "@minecraft/server";
-import { getPlayerId, savePlots, saveTeams, state } from "../storage";
+import { Player } from "@minecraft/server";
+import { getOnlinePlayerById, getPlayerId, savePlots, saveTeams, state } from "../storage";
 import { type TeamDefinition } from "../types";
 import { clearPlayerPlot, reconcileAllPlotState } from "../plots";
 
@@ -19,10 +19,6 @@ function getTeamByPlayerId(playerId: string): TeamDefinition | undefined {
   if (team.ownerPlayerId === playerId) return team;
   if (!team.memberPlayerIds.includes(playerId)) return undefined;
   return team;
-}
-
-function getOnlinePlayerById(playerId: string): Player | undefined {
-  return world.getAllPlayers().find((player) => getPlayerId(player) === playerId);
 }
 
 function getTeamPlotSlotId(team: TeamDefinition): string | undefined {

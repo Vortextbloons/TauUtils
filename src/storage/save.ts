@@ -11,6 +11,7 @@ import {
   PLOTS_MIGRATION_MARKER_KEY,
   writePlayerShopsIncrementalToSplitKeys,
   writeCustomAreasToSplitKeys,
+  writeClaimsToSplitKeys,
   writeLootChestsToSplitKeys,
   writeSplitDynamicJson,
 } from "./state";
@@ -157,6 +158,12 @@ export function saveLootChests(): boolean {
 
 export function saveCommandBuilder() {
   scheduleDynamicSave(STORAGE_KEYS.commandBuilder, () => safeSetDynamicJson(STORAGE_KEYS.commandBuilder, state.commandBuilder));
+}
+
+export function saveClaims(): boolean {
+  const ok = writeClaimsToSplitKeys(state.claims);
+  world.setDynamicProperty(STORAGE_KEYS.claims, undefined);
+  return ok;
 }
 
 export function savePlayerShops() {

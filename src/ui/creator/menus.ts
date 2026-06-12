@@ -62,6 +62,7 @@ async function showMenuUiManagement(player: Player) {
       .button("editForm", "Edit Existing Form", { iconPath: ICONS.edit })
       .button("previewForm", "Preview Form", { iconPath: ICONS.menu })
       .button("bindings", "Bindings", { iconPath: ICONS.binding })
+      .button("viewBindings", "View Bindings", { iconPath: ICONS.binding })
       .button("commandBuilder", "Command Builder", { iconPath: ICONS.utility })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
@@ -110,6 +111,11 @@ async function showMenuUiManagement(player: Player) {
     if (response.id === "bindings") {
       const { showBindingsEditor } = await import("../admin-ui");
       await showBindingsEditor(player);
+      continue;
+    }
+    if (response.id === "viewBindings") {
+      const { showBindingsViewer } = await import("../admin-ui");
+      await showBindingsViewer(player);
       continue;
     }
     if (response.id === "commandBuilder") {
@@ -165,6 +171,7 @@ async function showWorldSystems(player: Player) {
   while (true) {
     const response = await TauUi.action("World Systems")
       .button("plots", "Plots", { iconPath: ICONS.plot })
+      .button("claims", "Claims", { iconPath: ICONS.plot })
       .button("customAreas", "Custom Areas", { iconPath: ICONS.sidebar })
       .button("lootChests", "Loot Chests", { iconPath: ICONS.item })
       .button("generators", "Generators", { iconPath: ICONS.shop })
@@ -178,6 +185,11 @@ async function showWorldSystems(player: Player) {
     if (response.id === "plots") {
       const { showPlotManager } = await import("../plots-ui");
       await showPlotManager(player);
+      continue;
+    }
+    if (response.id === "claims") {
+      const { showClaimsAdminMenu } = await import("../claims-ui");
+      await showClaimsAdminMenu(player);
       continue;
     }
     if (response.id === "customAreas") {

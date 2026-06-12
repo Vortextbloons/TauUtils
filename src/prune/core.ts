@@ -1,7 +1,7 @@
 import { Player } from "@minecraft/server";
-import { state, savePrune, saveProfiles, saveStats, saveTeams, savePlots, saveHomes, savePlayerSettings, tell } from "../storage";
+import { state, savePrune, saveProfiles, saveStats, saveTeams, savePlots, saveClaims, saveHomes, savePlayerSettings, tell } from "../storage";
 
-export type PruneCategory = "stats" | "profiles" | "teams" | "plots" | "homes" | "tpa" | "pay" | "playerSettings";
+export type PruneCategory = "stats" | "profiles" | "teams" | "plots" | "claims" | "homes" | "tpa" | "pay" | "playerSettings";
 
 export type PruneResult = {
   removed: number;
@@ -91,6 +91,29 @@ export function pruneData(dryRun = true): PruneResult {
       }
     }
     if (!dryRun) savePlots();
+  }
+
+  if (prune.claims) {
+    for (const [claimId, claim] of Object.entries(state.claims.claims)) {
+      if (isInactive(claim.ownerPlayerId)) {
+        removed += 1;
+        details.push(`claims:${claimId}`);
+        if (!dryRun) delete state.claims.claims[claimId];
+      }
+    }
+    if (!dryRun) {
+      state.claims.playerClaimIds = {};
+      state.claims.teamClaimIds = {};
+      for (const claim of Object.values(state.claims.claims)) {
+        state.claims.playerClaimIds[claim.ownerPlayerId] ??= [];
+        state.claims.playerClaimIds[claim.ownerPlayerId].push(claim.id);
+        if (claim.teamId) {
+          state.claims.teamClaimIds[claim.teamId] ??= [];
+          state.claims.teamClaimIds[claim.teamId].push(claim.id);
+        }
+      }
+      saveClaims();
+    }
   }
 
   if (prune.homes) {

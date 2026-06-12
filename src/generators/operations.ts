@@ -5,7 +5,10 @@ import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from 
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent } from "../shared/item-components";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
-import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, normalizeId, normalizeItemId, parsePlotIndex, readGeneratorItemData } from "./definitions";
+import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, isGeneratorAdminProtected, normalizeId, normalizeItemId, readGeneratorItemData } from "./definitions";
+import { getGeneratorOutputFallback, getGeneratorProducesSummary, pickGeneratorOutput } from "./output-pick";
+
+const TURBO_BURST_PER_VISIT = 8;
 
 let generatorProcessCursor = 0;
 let generatorProcessJobId: number | undefined;
@@ -83,6 +86,16 @@ function isGeneratorOwnerActive(placed: PlacedGenerator, onlineIds: Set<string>,
   return activeTeamOwnerIds.has(placed.ownerPlayerId);
 }
 
+export function canPlayerManagePlacedGenerator(player: Player, definition: GeneratorDefinition): boolean {
+  if (!isGeneratorAdminProtected(definition)) return true;
+  return isOperator(player);
+}
+
+export function canPlayerPlaceGeneratorDefinition(player: Player, definition: GeneratorDefinition): boolean {
+  if (!isGeneratorAdminProtected(definition)) return true;
+  return isOperator(player);
+}
+
 function isAutoBreakerUnlocked(placed: PlacedGenerator, definition: GeneratorDefinition): boolean {
   return state.generators.config.autoBreakersEnabled && Boolean(placed.autoBreakerPurchased) && Boolean(placed.autoBreakerEnabled) && placed.tier >= getMaxTier(definition);
 }
@@ -104,7 +117,7 @@ function createPlacedGenerator(def: GeneratorDefinition, ownerPlayerId: string, 
     y: loc.y,
     z: loc.z,
     tier,
-    nextSpawnAt: Date.now() + (tierEntry?.rateTicks ?? 100) * 50,
+    nextSpawnAt: scheduleInitialSpawnAt(tierEntry?.rateTicks ?? 100),
     autoBreakerPurchased: autoBreaker.purchased,
     autoBreakerEnabled: autoBreaker.enabled,
   };
@@ -119,6 +132,7 @@ function buildGeneratorLore(def: GeneratorDefinition, tier: number, autoBreakerP
   if (autoBreakerPurchased) {
     lore.push(`§eAutobreaker§r: §f${autoBreakerEnabled ? "On" : "Off"}`);
   }
+  if (def.adminProtected) lore.push(`§6Admin generator§r: §fprotected`);
   lore.push(`${GENERATOR_MARKER_PREFIX}${def.id}:${tier}:${autoBreakerPurchased ? 1 : 0}:${autoBreakerEnabled ? 1 : 0}]`);
   return lore;
 }
@@ -207,12 +221,7 @@ function getGeneratorAtLocationKey(key: string): PlacedGenerator | undefined {
 
 function canPlaceAt(location: GeneratorLocation, player?: Player): boolean {
   if (state.generators.config.blockOnPlotOnly && !(player && isOperator(player))) {
-    const slot = Object.values(state.plots.slots).slice().sort((a, b) => parsePlotIndex(a.id) - parsePlotIndex(b.id) || a.id.localeCompare(b.id)).find((entry) =>
-      location.x >= entry.min.x && location.x <= entry.max.x &&
-      location.y >= entry.min.y && location.y <= entry.max.y &&
-      location.z >= entry.min.z && location.z <= entry.max.z
-    );
-    if (!slot) return false;
+    if (!getPlotForLocation(location)) return false;
   }
   return !getGeneratorAtLocation(location);
 }
@@ -233,23 +242,41 @@ function getTopBlock(location: GeneratorLocation) {
   }
 }
 
-function spawnGeneratorOutput(location: GeneratorLocation, definition: GeneratorDefinition, amount: number): boolean {
+function isGeneratorOutputSlotEmpty(location: GeneratorLocation): boolean {
+  const outputBlock = getTopBlock(location);
+  if (!outputBlock) return false;
+  return outputBlock.typeId === "minecraft:air";
+}
+
+function scheduleInitialSpawnAt(rateTicks: number): number {
+  const now = Date.now();
+  if (rateTicks <= 0) return now;
+  return now + rateTicks * 50;
+}
+
+function scheduleNextSpawnAt(rateTicks: number, now: number, spawned: boolean): number {
+  if (rateTicks <= 0) return now;
+  if (!spawned) return now + Math.max(1, rateTicks) * 50;
+  return now + rateTicks * 50;
+}
+
+function spawnGeneratorOutput(location: GeneratorLocation, outputItemId: string): boolean {
   try {
     const dim = world.getDimension(location.dimensionId);
     const baseBlock = dim.getBlock({ x: location.x, y: location.y, z: location.z });
     const outputBlock = dim.getBlock({ x: location.x, y: location.y + 1, z: location.z });
     if (!baseBlock || !outputBlock) return false;
     baseBlock.setPermutation(BlockPermutation.resolve("minecraft:bedrock"));
-    outputBlock.setPermutation(BlockPermutation.resolve(normalizeItemId(definition.outputItemId)));
+    outputBlock.setPermutation(BlockPermutation.resolve(normalizeItemId(outputItemId)));
     return true;
   } catch {
     return false;
   }
 }
 
-function collectGeneratorOutput(player: Player, definition: GeneratorDefinition, amount: number): void {
+function collectGeneratorOutput(player: Player, outputItemId: string, amount: number): void {
   try {
-    const stack = new ItemStack(normalizeItemId(definition.outputItemId), Math.max(1, Math.floor(amount)));
+    const stack = new ItemStack(normalizeItemId(outputItemId), Math.max(1, Math.floor(amount)));
     const inventory = player.getComponent("minecraft:inventory")?.container;
     if (!inventory) {
       player.dimension.spawnItem(stack, player.location);
@@ -273,7 +300,7 @@ export function giveGenerator(player: Player, defId: string, amount = 1): { ok: 
   if (destroyComp && def.canDestroy && def.canDestroy.length > 0) destroyComp.blocks = def.canDestroy;
   const inventory = player.getComponent("minecraft:inventory")?.container;
   if (!inventory) return { ok: false, message: "Inventory unavailable." };
-   if (!addItemWithoutMergingMetadata(inventory, stack)) return { ok: false, message: "Not enough inventory space." };
+  if (!addItemWithoutMergingMetadata(inventory, stack)) return { ok: false, message: "Not enough inventory space." };
   return { ok: true, message: `Gave ${amount}x ${def.name}.` };
 }
 
@@ -288,9 +315,13 @@ export function getPlacedGeneratorInfoLines(location: Vector3, dimensionId: stri
   lines.push(`§6Owner§r: §f${ownerName}`);
   lines.push(`§bTier§r: §f${placed.tier}`);
   lines.push(`§aSpeed§r: §f${tier?.rateTicks ?? 0} ticks`);
-  lines.push(`§dProduces§r: §f${def.outputItemId}`);
+  lines.push(`§dProduces§r: §f${getGeneratorProducesSummary(def)}`);
+  if (tier?.rateTicks === 0) lines.push(`§cTurbo§r: §fmax speed`);
   lines.push(`§6Autobreaker§r: §f${placed.autoBreakerPurchased ? (placed.autoBreakerEnabled ? "On" : "Off") : "Locked"}${placed.tier >= getMaxTier(def) ? "" : " (locked until max tier)"}`);
-  lines.push(`§eNext spawn§r: §f${Math.max(0, Math.ceil((placed.nextSpawnAt - Date.now()) / 50))} ticks`);
+  const outputLoc: GeneratorLocation = { dimensionId, x: placed.x, y: placed.y, z: placed.z };
+  const hasOutput = !isGeneratorOutputSlotEmpty(outputLoc);
+  lines.push(hasOutput ? `§eOutput§r: §fready (break to refill)` : `§eNext spawn§r: §f${Math.max(0, Math.ceil((placed.nextSpawnAt - Date.now()) / 50))} ticks`);
+  if (def.adminProtected) lines.push(`§6Admin generator§r: §fview only (operators manage)`);
   return lines;
 }
 
@@ -304,6 +335,9 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
   if (!stack) return { ok: false, message: "Hold a generator item to place it." };
   const def = getDefinitionByStack(stack);
   if (!def) return { ok: false, message: "That item is not a generator." };
+  if (!canPlayerPlaceGeneratorDefinition(player, def)) {
+    return { ok: false, message: "Only operators can place admin generators." };
+  }
   const outputLoc = { dimensionId: loc.dimensionId, x: loc.x, y: loc.y + 1, z: loc.z };
   if (!isSamePlotFootprint(loc, outputLoc)) return { ok: false, message: "Generators cannot cross plot boundaries." };
   const isAdmin = isOperator(player);
@@ -315,7 +349,8 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
 
   const placed = createPlacedGenerator(def, plotOwnerId, dimensionId, loc, stack);
 
-  if (!spawnGeneratorOutput(loc, def, 1)) {
+  const initialOutput = pickGeneratorOutput(def) ?? getGeneratorOutputFallback(def);
+  if (!spawnGeneratorOutput(loc, initialOutput)) {
     return { ok: false, message: "Unable to place generator blocks." };
   }
 
@@ -343,6 +378,9 @@ export function pickupGenerator(player: Player, location: Vector3, dimensionId: 
   if (!isOwner && !isOperator(player) && !isTeamMember) return { ok: false, message: "Only the owner, team members on team plot, or an operator can pick this up." };
   const def = state.generators.definitions[placed.definitionId];
   if (!def) return { ok: false, message: "Generator definition missing." };
+  if (!canPlayerManagePlacedGenerator(player, def)) {
+    return { ok: false, message: "This admin generator cannot be picked up." };
+  }
 
   const inventory = player.getComponent("minecraft:inventory")?.container;
   if (!inventory) return { ok: false, message: "Inventory unavailable." };
@@ -368,6 +406,9 @@ export function handleGeneratorUseOnBlock(player: Player, location: Vector3, dim
   if (!stack) return { ok: false, message: "Hold a generator item to place it." };
   const def = getDefinitionByStack(stack);
   if (!def) return { ok: false, message: "That item is not a generator." };
+  if (!canPlayerPlaceGeneratorDefinition(player, def)) {
+    return { ok: false, message: "Only operators can place admin generators." };
+  }
   const loc = offsetByFace(location, dimensionId, face);
   if (!canPlaceAt(loc, player)) return { ok: false, message: "You cannot place a generator here." };
   return placeGenerator(player, loc, dimensionId, stack);
@@ -423,6 +464,9 @@ export function upgradeGenerator(player: Player, location: Vector3, dimensionId:
   if (!isOwner && !isOperator(player) && !isTeamAccess) return { ok: false, message: "Only the owner, team members on team plot, or an operator can upgrade this generator." };
   const def = state.generators.definitions[placed.definitionId];
   if (!def) return { ok: false, message: "Generator definition missing." };
+  if (!canPlayerManagePlacedGenerator(player, def)) {
+    return { ok: false, message: "This admin generator cannot be upgraded." };
+  }
   const nextUpgrade = getNextUpgradeCost(location, dimensionId);
   const nextTier = nextUpgrade ? getTier(def, nextUpgrade.nextTier) : undefined;
   if (!nextTier) return { ok: false, message: "Generator is already at max tier." };
@@ -435,7 +479,7 @@ export function upgradeGenerator(player: Player, location: Vector3, dimensionId:
   }
 
   placed.tier += 1;
-  placed.nextSpawnAt = Date.now() + nextTier.rateTicks * 50;
+  placed.nextSpawnAt = scheduleInitialSpawnAt(nextTier.rateTicks);
   markGeneratorIndexesDirty();
   saveGenerators();
   savePlotAtLocation(loc);
@@ -451,6 +495,9 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
   if (!isOwner && !isOperator(player) && !isTeamAccess) return { ok: false, message: "Only the owner, team members on team plot, or an operator can change this generator." };
   const def = state.generators.definitions[placed.definitionId];
   if (!def) return { ok: false, message: "Generator definition missing." };
+  if (!canPlayerManagePlacedGenerator(player, def)) {
+    return { ok: false, message: "This admin generator cannot be changed." };
+  }
   if (!state.generators.config.autoBreakersEnabled) return { ok: false, message: "Autobreakers are disabled globally." };
   if (placed.tier < getMaxTier(def)) return { ok: false, message: "Autobreaker unlocks at max tier." };
 
@@ -491,6 +538,49 @@ export function processGenerators(): void {
   generatorProcessJobId = system.runJob(processGeneratorsJob(now, indexes));
 }
 
+function runGeneratorSpawnCycle(
+  placed: PlacedGenerator,
+  def: GeneratorDefinition,
+  tier: GeneratorTierDefinition,
+  now: number,
+  onlinePlayersById: Map<string, Player>
+): boolean {
+  const location: GeneratorLocation = { dimensionId: placed.dimensionId, x: placed.x, y: placed.y, z: placed.z };
+  const outputBlock = getTopBlock(location);
+
+  if (outputBlock && !isGeneratorOutputSlotEmpty(location)) {
+    if (placed.autoBreakerPurchased && placed.autoBreakerEnabled && isAutoBreakerUnlocked(placed, def)) {
+      const owner = onlinePlayersById.get(placed.ownerPlayerId);
+      if (owner) {
+        collectGeneratorOutput(owner, outputBlock.typeId, 1);
+        clearGeneratorOutput(location, true);
+        placed.nextSpawnAt = scheduleNextSpawnAt(tier.rateTicks, now, true);
+        return true;
+      }
+    }
+    placed.nextSpawnAt = scheduleNextSpawnAt(tier.rateTicks, now, false);
+    return false;
+  }
+
+  const outputId = pickGeneratorOutput(def) ?? getGeneratorOutputFallback(def);
+  const spawned = spawnGeneratorOutput(location, outputId);
+  if (!spawned) {
+    placed.nextSpawnAt = scheduleNextSpawnAt(tier.rateTicks, now, false);
+    return false;
+  }
+
+  if (placed.autoBreakerPurchased && placed.autoBreakerEnabled && isAutoBreakerUnlocked(placed, def)) {
+    const owner = onlinePlayersById.get(placed.ownerPlayerId);
+    if (owner) {
+      collectGeneratorOutput(owner, outputId, 1);
+      clearGeneratorOutput(location, true);
+    }
+  }
+
+  placed.nextSpawnAt = scheduleNextSpawnAt(tier.rateTicks, now, true);
+  return true;
+}
+
 function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generator<void, void, void> {
   if (!isFeatureEnabled("generators")) {
     generatorProcessJobId = undefined;
@@ -518,8 +608,52 @@ function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generato
   }
 
   const placedGenerators = indexes.dueSorted;
+  const maxTurboSpawns = Math.max(1, Math.floor(state.generators.config.maxTurboSpawnsPerCycle ?? 32));
 
   let changedSchedule = false;
+  let turboSpawnsThisCycle = 0;
+  let turboCursor = generatorProcessCursor;
+
+  for (let turboIndex = 0; turboIndex < placedGenerators.length && turboSpawnsThisCycle < maxTurboSpawns; turboIndex++) {
+    if (!isFeatureEnabled("generators")) break;
+    const placed = placedGenerators[turboCursor % placedGenerators.length];
+    turboCursor = (turboCursor + 1) % Math.max(1, placedGenerators.length);
+    if (!placed) {
+      yield;
+      continue;
+    }
+    if (!isGeneratorOwnerActive(placed, onlineIds, activeTeamOwnerIds)) {
+      yield;
+      continue;
+    }
+    const def = state.generators.definitions[placed.definitionId];
+    if (!def) {
+      yield;
+      continue;
+    }
+    const tier = getTier(def, placed.tier);
+    if (!tier || tier.rateTicks !== 0) {
+      yield;
+      continue;
+    }
+    if (now < placed.nextSpawnAt) {
+      yield;
+      continue;
+    }
+
+    let burstCount = 0;
+    while (burstCount < TURBO_BURST_PER_VISIT && turboSpawnsThisCycle < maxTurboSpawns) {
+      if (!isFeatureEnabled("generators")) break;
+      if (now < placed.nextSpawnAt) break;
+      const spawned = runGeneratorSpawnCycle(placed, def, tier, now, onlinePlayersById);
+      changedSchedule = true;
+      turboSpawnsThisCycle += 1;
+      burstCount += 1;
+      yield;
+      if (!spawned) break;
+    }
+  }
+
   const processBudget = Math.min(placedGenerators.length, Math.max(64, onlinePlayers.length * 16));
   for (let index = 0; index < processBudget; index++) {
     if (!isFeatureEnabled("generators")) break;
@@ -543,28 +677,16 @@ function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generato
       yield;
       continue;
     }
+    if (tier.rateTicks === 0) {
+      yield;
+      continue;
+    }
     if (now < placed.nextSpawnAt) {
       yield;
       continue;
     }
 
-    const spawned = spawnGeneratorOutput({ dimensionId: placed.dimensionId, x: placed.x, y: placed.y, z: placed.z }, def, 1);
-    if (!spawned) {
-      placed.nextSpawnAt = now + Math.max(1, tier.rateTicks) * 50;
-      changedSchedule = true;
-      yield;
-      continue;
-    }
-
-    if (placed.autoBreakerPurchased && placed.autoBreakerEnabled && isAutoBreakerUnlocked(placed, def)) {
-      const owner = onlinePlayersById.get(placed.ownerPlayerId);
-      if (owner) {
-        collectGeneratorOutput(owner, def, 1);
-        clearGeneratorOutput({ dimensionId: placed.dimensionId, x: placed.x, y: placed.y, z: placed.z }, true);
-      }
-    }
-
-    placed.nextSpawnAt = now + Math.max(0, tier.rateTicks) * 50;
+    runGeneratorSpawnCycle(placed, def, tier, now, onlinePlayersById);
     changedSchedule = true;
     yield;
   }

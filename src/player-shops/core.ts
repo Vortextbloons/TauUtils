@@ -1,8 +1,8 @@
-import { EntityComponentTypes, ItemStack, Player, world } from "@minecraft/server";
+import { EntityComponentTypes, ItemStack, Player } from "@minecraft/server";
 import { TauUi } from "../ui";
 import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
 import { ICONS, type PlayerShop, type PlayerShopListing } from "../types";
-import { getInventoryContainer, getPlayerId, getScore, isOperator, savePlayerShops, setScore, state, tell } from "../storage";
+import { getInventoryContainer, getOnlinePlayerById, getPlayerId, getScore, isOperator, savePlayerShops, setScore, state, tell } from "../storage";
 import { estimateUtf8Bytes } from "../shared/utf8";
 
 type TradeResult = {
@@ -205,7 +205,7 @@ export function claimPlayerShopEarnings(player: Player): TradeResult {
 }
 
 function notifySaleIfOnline(sellerPlayerId: string, text: string): void {
-  const online = world.getAllPlayers().find((entry) => getPlayerId(entry) === sellerPlayerId);
+  const online = getOnlinePlayerById(sellerPlayerId);
   if (!online) return;
   tell(online, text);
 }

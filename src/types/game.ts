@@ -360,11 +360,20 @@ export type GeneratorTierDefinition = {
   upgradeCost: number;
 };
 
+export type GeneratorKind = "fixed" | "weighted";
+
+export type GeneratorOutputEntry = {
+  itemId: string;
+  weight: number;
+};
+
 export type GeneratorDefinition = {
   id: string;
   name: string;
+  kind: GeneratorKind;
   baseItemId: string;
   outputItemId: string;
+  outputPool?: GeneratorOutputEntry[];
   displayName?: string;
   icon?: string;
   lore?: string[];
@@ -377,6 +386,8 @@ export type GeneratorDefinition = {
   tiers: GeneratorTierDefinition[];
   placeAnywhere: boolean;
   autoBreakerCost?: number;
+  /** When true, only operators can place, upgrade, pickup, or change autobreaker; others can view info only. */
+  adminProtected?: boolean;
 };
 
 export type PlacedGenerator = {
@@ -403,6 +414,7 @@ export type GeneratorStore = {
     defaultPlaceAnywhere: boolean;
     blockOnPlotOnly: boolean;
     autoBreakersEnabled: boolean;
+    maxTurboSpawnsPerCycle: number;
   };
 };
 
@@ -542,6 +554,7 @@ export type PruneFlags = {
   profiles: boolean;
   teams: boolean;
   plots: boolean;
+  claims: boolean;
   homes: boolean;
   tpa: boolean;
   pay: boolean;

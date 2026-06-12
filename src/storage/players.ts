@@ -1,4 +1,4 @@
-import { Player } from "@minecraft/server";
+import { Player, world } from "@minecraft/server";
 import {
   type PlayerStats,
   type RankDefinition,
@@ -144,4 +144,18 @@ export function setPlayerStatById(playerId: string, key: keyof PlayerStats, valu
 
 export function getKnownPlayerIds(): string[] {
   return Object.values(state.stats.playerIds);
+}
+
+export function getOnlinePlayerByName(name: string): Player | undefined {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return world.getAllPlayers().find((player) => player.name.toLowerCase() === normalized);
+}
+
+export function getOnlinePlayerById(playerId: string): Player | undefined {
+  return world.getAllPlayers().find((player) => getPlayerId(player) === playerId);
+}
+
+export function getOnlinePlayersExcept(player: Player): Player[] {
+  return world.getAllPlayers().filter((entry) => entry.id !== player.id);
 }

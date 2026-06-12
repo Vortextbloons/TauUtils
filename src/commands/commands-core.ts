@@ -1,1 +1,0 @@
-export { registerCustomCommands } from "./register";

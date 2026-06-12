@@ -17,6 +17,8 @@ export const LOOT_CHESTS_CONFIG_KEY = `${STORAGE_KEYS.lootChests}:config`;
 export const LOOT_CHESTS_POOL_PREFIX = `${STORAGE_KEYS.lootChests}:pool:`;
 export const LOOT_CHESTS_SNAPSHOT_PREFIX = `${STORAGE_KEYS.lootChests}:snapshot:`;
 export const LOOT_CHESTS_CHEST_PREFIX = `${STORAGE_KEYS.lootChests}:chest:`;
+export const CLAIMS_CONFIG_KEY = `${STORAGE_KEYS.claims}:config`;
+export const CLAIMS_CLAIM_PREFIX = `${STORAGE_KEYS.claims}:claim:`;
 
 export const PLOTS_CONFIG_KEY = `${STORAGE_KEYS.plots}:config`;
 export const PLOTS_SLOT_PREFIX = `${STORAGE_KEYS.plots}:slot:`;

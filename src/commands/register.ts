@@ -8,6 +8,7 @@ import { registerTeamsCommands } from "./register-teams";
 import { registerWarpsCommands } from "./register-warps";
 import { registerWorldCommands } from "./register-world";
 import { registerStatsCommands } from "./register-stats";
+import { registerClaimsCommands } from "./register-claims";
 
 export function registerCustomCommands(startupEvent: { customCommandRegistry: CustomCommandRegistry }): void {
   const registry = startupEvent.customCommandRegistry;
@@ -20,4 +21,5 @@ export function registerCustomCommands(startupEvent: { customCommandRegistry: Cu
   registerWarpsCommands(registry);
   registerWorldCommands(registry);
   registerStatsCommands(registry);
+  registerClaimsCommands(registry);
 }

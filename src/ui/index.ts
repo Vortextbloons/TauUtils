@@ -7,5 +7,6 @@ export { showConfigMenu, showPruneDataMenu, showBindingsEditor, showModerationMe
 export { showCustomAreasAdminMenu } from "./custom-areas-ui";
 export { showLootChestsAdminMenu } from "./loot-chests-ui";
 export { showCommandBuilderMenu } from "./command-builder-ui";
-export { TauUi, TauActionForm, TauModalForm, TauMessageForm, action as tauAction, modal as tauModal, message as tauMessage, confirm as tauConfirm, paginate as tauPaginate } from "./tau-ui";
-export type { TauActionElement, TauActionResult, TauButton, TauMessageResult, TauModalField, TauModalResult, TauModalValue, TauPage, TauText } from "./tau-ui";
+export { showClaimMenu, showClaimsAdminMenu } from "./claims-ui";
+export { TauUi, TauActionForm, TauModalForm, TauMessageForm, action as tauAction, modal as tauModal, message as tauMessage, confirm as tauConfirm, isBack as tauIsBack, isCanceledOrBack as tauIsCanceledOrBack, paginate as tauPaginate, pickFromList as tauPickFromList } from "./tau-ui";
+export type { TauActionElement, TauActionResult, TauButton, TauMessageResult, TauModalField, TauModalResult, TauModalValue, TauPage, TauPickItem, TauText } from "./tau-ui";

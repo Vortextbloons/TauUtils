@@ -163,6 +163,63 @@ export function setScore(
   return true;
 }
 
+export function ensureScoreboardObjective(objectiveId: string): boolean {
+  const id = String(objectiveId ?? "").trim();
+  if (!id) return false;
+  if (world.scoreboard.getObjective(id)) return true;
+  try {
+    world.scoreboard.addObjective(id, id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function collectCurrencyObjectives(): string[] {
+  const out = new Set<string>();
+  const add = (id?: string) => {
+    const trimmed = String(id ?? "").trim();
+    if (trimmed) out.add(trimmed);
+  };
+
+  add(state.pay.config.currencyObjective);
+
+  for (const profile of Object.values(state.shops)) add(profile.currencyObjective);
+
+  add(state.playerShops.config.defaultCurrencyObjective);
+  for (const shop of Object.values(state.playerShops.shops)) add(shop.currencyObjective);
+  for (const listing of Object.values(state.playerShops.listings)) add(listing.currencyObjective);
+
+  for (const sidebar of Object.values(state.sidebars.sidebars)) add(sidebar.moneyObjective);
+
+  for (const crate of Object.values(state.crates.crates)) {
+    for (const reward of crate.rewards ?? []) {
+      if (reward.type === "score") add(reward.objective);
+    }
+  }
+
+  for (const rule of state.combat.config.killConditions?.rules ?? []) {
+    for (const action of rule.actions ?? []) {
+      if (action.type === "score") add(action.objective);
+    }
+  }
+
+  for (const command of Object.values(state.commandBuilder.commands)) {
+    for (const cond of command.conditions ?? []) {
+      if (cond.type === "score") add(cond.objective);
+    }
+    for (const action of command.actions ?? []) {
+      if (action.type === "score") add(action.objective);
+    }
+  }
+
+  for (const item of Object.values(state.tauItems.items)) {
+    if (item.cost?.type === "money") add(item.cost.objective);
+  }
+
+  return [...out];
+}
+
 export function isFeatureEnabled(feature: keyof ConfigStore["features"]) {
   return state.config.features[feature] !== false;
 }

@@ -1,13 +1,13 @@
 {
   "format_version": 2,
   "header": {
-    "name": "TauUtils Beta 2.4.6-Beta",
+    "name": "TauUtils Beta 2.6.0-Beta",
     "description": "A light weight addon to help run your world and servers better.",
     "uuid": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
     "version": [
       2,
-      4,
-      6
+      6,
+      0
     ],
     "min_engine_version": [
       1,
@@ -22,8 +22,8 @@
       "uuid": "b2c3d4e5-f6a7-4b6c-9d0e-1f2a3b4c5d6e",
       "version": [
         2,
-        4,
-        6
+        6,
+        0
       ]
     },
     {
@@ -33,8 +33,8 @@
       "uuid": "c3d4e5f6-a7b8-4c7d-8e1f-2a3b4c5d6e7f",
       "version": [
         2,
-        4,
-        6
+        6,
+        0
       ],
       "entry": "scripts/main.js"
     }
@@ -52,8 +52,8 @@
       "uuid": "66bc8fed-910d-4525-b790-4ff247865234",
       "version": [
         2,
-        4,
-        6
+        6,
+        0
       ]
     }
   ]
