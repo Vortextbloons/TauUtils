@@ -46,6 +46,16 @@ function scheduleDynamicSave(key: string, flush: () => void): void {
   scheduleDynamicSaveFlush();
 }
 
+export function flushPendingDynamicSaves(): void {
+  const saves = [...pendingDynamicSaves.values()];
+  pendingDynamicSaves.clear();
+  for (const save of saves) save();
+}
+
+export function clearPendingDynamicSaves(): void {
+  pendingDynamicSaves.clear();
+}
+
 export function saveForms() {
   scheduleDynamicSave(STORAGE_KEYS.forms, () => safeSetDynamicJson(STORAGE_KEYS.forms, state.forms));
 }

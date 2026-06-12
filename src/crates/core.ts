@@ -340,13 +340,23 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
     if (activePlayers.has(pid)) return;
     if (activeLocations.has(entry.locationKey)) return;
     if (!isKeyForCrateInHand(player, entry.crate)) return;
-    if (!consumeHeldItem(player)) return;
-
     const reward = chooseWeightedReward(entry.crate.rewards);
-    if (!reward) return;
+    if (!reward) {
+      try {
+        player.sendMessage("§c[Crate] This crate has no valid rewards configured.");
+      } catch {
+        // ignore
+      }
+      return;
+    }
 
     activePlayers.add(pid);
     activeLocations.add(entry.locationKey);
+    if (!consumeHeldItem(player)) {
+      activePlayers.delete(pid);
+      activeLocations.delete(entry.locationKey);
+      return;
+    }
 
     runRevealSequence(player, entry.crate, reward, () => {
       const result = giveReward(player, entry.crate, reward);
@@ -370,6 +380,10 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
   }, 1);
 
   return { handled: true };
+}
+
+export function clearCrateRuntimeForPlayer(playerId: string): void {
+  activePlayers.delete(playerId);
 }
 
 export function giveCrateKey(player: Player, crateId: string, amount: number): { ok: boolean; message: string } {

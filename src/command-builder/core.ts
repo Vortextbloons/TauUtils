@@ -196,7 +196,7 @@ export function runBuiltCommand(player: Player, id: string, options: RunOptions 
   const command = getBuiltCommand(id);
   if (!command) return { ok: false, message: `Command "${id}" not found.` };
   if (!command.enabled) return { ok: false, message: `Command "${command.id}" is disabled.` };
-  if (command.adminOnly !== true && !options.allowNonOperator) return { ok: false, message: "Operator required." };
+  if (command.adminOnly === true && options.allowNonOperator && !isOperator(player)) return { ok: false, message: "Operator required." };
 
   for (const condition of command.conditions.slice(0, 50)) {
     if (!conditionPasses(player, condition)) return { ok: false, message: "Command conditions were not met." };

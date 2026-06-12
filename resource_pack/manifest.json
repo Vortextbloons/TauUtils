@@ -1,13 +1,13 @@
 {
   "format_version": 2,
   "header": {
-    "name": "TauUtils Resources 2.6.5-Beta",
+    "name": "TauUtils Resources 2.7.0-Beta",
     "description": "Resources for TauUtils",
     "uuid": "66bc8fed-910d-4525-b790-4ff247865234",
     "version": [
       2,
-      6,
-      5
+      7,
+      0
     ],
     "min_engine_version": [
       1,
@@ -21,8 +21,8 @@
       "uuid": "2b03ea19-d9cb-4476-a6c3-6b5441afb651",
       "version": [
         2,
-        6,
-        5
+        7,
+        0
       ]
     }
   ]

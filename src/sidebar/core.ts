@@ -90,6 +90,10 @@ export function invalidatePlayerSidebarCache(player: Player): void {
   playerRenderCache.delete(getPlayerCacheKey(player));
 }
 
+export function clearSidebarRuntimeForPlayer(playerId: string): void {
+  playerRenderCache.delete(playerId);
+}
+
 function saveSidebarsAndInvalidate(): void {
   saveSidebars();
   invalidateSidebarCaches();

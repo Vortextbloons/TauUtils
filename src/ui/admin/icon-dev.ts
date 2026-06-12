@@ -1,8 +1,13 @@
 import { Player } from "@minecraft/server";
 import { TauUi } from "../tau-ui";
 import { ICONS, ICON_DEV_OPTIONS } from "../../types";
+import { isOperator, tell } from "../../storage";
 
 export async function showIconDevMenu(player: Player) {
+  if (!isOperator(player)) {
+    tell(player, "Operator permissions are required.");
+    return;
+  }
   while (true) {
     const form = TauUi.action<{ index: number }>("§6Icon Dev§r")
       .body("§7Preview the allowlisted working icons.§r");

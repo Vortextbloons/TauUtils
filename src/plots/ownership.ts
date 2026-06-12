@@ -74,9 +74,12 @@ export function repairOwnedPlotSlots(ownerPlayerId: string, authoritativeSlotId:
   for (const slot of getPlotSlots()) {
     if (slot.id === authoritativeSlotId) continue;
     if (slot.occupiedByPlayerId !== ownerPlayerId) continue;
-    clearSlot(slot);
-    slot.occupiedByPlayerId = undefined;
-    changed = true;
+    if (saveAndClearSlot(slot, ownerPlayerId)) {
+      slot.occupiedByPlayerId = undefined;
+      changed = true;
+    } else {
+      snapshotQueue.push({ playerId: ownerPlayerId, slotId: slot.id, mode: "save", attempts: 0, generators: captureSlotGenerators(slot, ownerPlayerId) });
+    }
   }
 
   const authoritativeSlot = state.plots.slots[authoritativeSlotId];
@@ -129,8 +132,13 @@ export function reconcilePlotOwnershipData(): { ok: boolean; mappingsFixed: numb
   for (const [playerId, snapshot] of Object.entries(state.plots.snapshots)) {
     const ownerPlayerId = getPlotOwnerIdForPlayerId(playerId);
     const current = nextSnapshots[ownerPlayerId];
-    if (!current || (snapshot.savedAt ?? 0) >= (current.savedAt ?? 0)) {
+    if (!current) {
       nextSnapshots[ownerPlayerId] = snapshot;
+    } else if ((snapshot.savedAt ?? 0) >= (current.savedAt ?? 0)) {
+      if (ownerPlayerId !== playerId && nextSnapshots[playerId] === undefined) nextSnapshots[playerId] = current;
+      nextSnapshots[ownerPlayerId] = snapshot;
+    } else if (ownerPlayerId !== playerId && nextSnapshots[playerId] === undefined) {
+      nextSnapshots[playerId] = snapshot;
     }
     if (ownerPlayerId !== playerId) snapshotsFixed += 1;
   }

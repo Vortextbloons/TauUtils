@@ -378,14 +378,21 @@ function runAction(player: Player, action: TauItemAction, context: TriggerContex
 }
 
 function executeTauItem(player: Player, def: TauItemDefinition, context: TriggerContext): void {
-  if (!payCost(player, def)) {
-    actionBar(player, "§cUnable to pay item cost.");
+  const req = hasRequirements(player, def);
+  if (!req.ok) {
+    actionBar(player, req.message ?? "§cCannot use this item right now.");
     playFizzle(player);
     return;
   }
 
   if (!applyConsumption(player, def, def.consumption)) {
     actionBar(player, "§cUnable to consume item use.");
+    playFizzle(player);
+    return;
+  }
+
+  if (!payCost(player, def)) {
+    actionBar(player, "§cUnable to pay item cost.");
     playFizzle(player);
     return;
   }

@@ -10,6 +10,7 @@ import {
   setScore,
   state,
 } from "../storage";
+import { canTeleportTo } from "../shared/teleport-guard";
 
 type TpaRequest = {
   fromPlayerId: string;
@@ -104,6 +105,8 @@ export function acceptTpaRequest(target: Player): { ok: boolean; message: string
   if (req.expiresAt < nowMs()) return { ok: false, message: "TPA request expired." };
   const requester = getOnlinePlayerById(req.fromPlayerId);
   if (!requester) return { ok: false, message: `${req.fromName} is not online.` };
+  const guard = canTeleportTo(requester, { ...target.location, dimensionId: target.dimension.id }, { blockCombat: true });
+  if (!guard.ok) return guard;
 
   requester.teleport(target.location, { dimension: target.dimension });
   return { ok: true, message: `${req.fromName} teleported to you.`, requesterName: req.fromName };
@@ -115,6 +118,15 @@ export function denyTpaRequest(target: Player): { ok: boolean; message: string; 
   if (!req) return { ok: false, message: "No pending TPA request." };
   delete tpaPendingByTargetId[targetId];
   return { ok: true, message: "TPA request denied.", requesterName: req.fromName };
+}
+
+export function clearSocialRuntimeForPlayer(playerId: string): void {
+  delete tpaPendingByTargetId[playerId];
+  delete tpaCooldownBySenderId[playerId];
+  delete payCooldownBySenderId[playerId];
+  for (const [targetId, request] of Object.entries(tpaPendingByTargetId)) {
+    if (request.fromPlayerId === playerId || request.toPlayerId === playerId) delete tpaPendingByTargetId[targetId];
+  }
 }
 
 export function setHome(player: Player, rawName?: string): { ok: boolean; message: string } {
@@ -161,6 +173,8 @@ export function teleportHome(player: Player, rawName?: string): { ok: boolean; m
   if (!state.homes.config.allowCrossDimension && player.dimension.id !== home.dimensionId) {
     return { ok: false, message: "Cross-dimension homes are disabled." };
   }
+  const guard = canTeleportTo(player, { ...home, dimensionId: home.dimensionId }, { blockCombat: true });
+  if (!guard.ok) return guard;
   const dimension = world.getDimension(home.dimensionId);
   player.teleport({ x: home.x, y: home.y, z: home.z }, { dimension });
   return { ok: true, message: `Teleported to "${name}".` };

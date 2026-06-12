@@ -15,7 +15,7 @@ type EveryTickTask = {
   run: () => void;
 };
 
-const MAX_BACKGROUND_TASKS_PER_TICK = 2;
+const MAX_BACKGROUND_TASKS_PER_TICK = 6;
 
 const backgroundTasks = new Map<string, BackgroundTask>();
 const everyTickTasks = new Map<string, EveryTickTask>();

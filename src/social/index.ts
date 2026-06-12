@@ -1,1 +1,1 @@
-export { getPlayerSettings, updatePlayerSettings, updateTpaConfig, updateHomesConfig, updatePayConfig, updatePlayerSettingsConfig, createTpaRequest, acceptTpaRequest, denyTpaRequest, setHome, listHomes, deleteHome, teleportHome, payPlayer } from "./core";
+export { getPlayerSettings, updatePlayerSettings, updateTpaConfig, updateHomesConfig, updatePayConfig, updatePlayerSettingsConfig, createTpaRequest, acceptTpaRequest, denyTpaRequest, clearSocialRuntimeForPlayer, setHome, listHomes, deleteHome, teleportHome, payPlayer } from "./core";

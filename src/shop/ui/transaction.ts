@@ -176,6 +176,7 @@ export async function sellAllSellableItems(player: Player, profileId: string) {
       }
       const snapshot = snapshotContainer(container);
       if (!applySellAllPlan(player, latest.entries)) {
+        restoreContainer(container, snapshot);
         tell(player, "Inventory changed before the sale could complete. Try again.");
         return;
       }
@@ -212,12 +213,9 @@ export async function openShopTransaction(
 
   const itemToken = String(itemOrUndefined ?? "").trim();
   const keyMatch = /^key:(.+)$/i.exec(itemToken);
-  const idxMatch = /^idx:(\d+)$/i.exec(itemToken);
   const item = keyMatch
     ? getShopItemByKey(profile, keyMatch[1].trim())
-    : idxMatch
-      ? profile.items[Math.floor(Number(idxMatch[1]))]
-      : profile.items.find((entry, index) => ensureShopItemId(entry, profile.id, index) === itemToken || normalizeItemId(entry.itemId) === normalizeItemId(itemOrUndefined));
+    : profile.items.find((entry, index) => ensureShopItemId(entry, profile.id, index) === itemToken || normalizeItemId(entry.itemId) === normalizeItemId(itemOrUndefined));
   if (!item) {
     tell(
       player,

@@ -299,7 +299,12 @@ export function captureLootChestSnapshot(poolId: string, source: LocationInput, 
   };
   state.lootChests.snapshots[snapshotKey(pool.id, id)] = snapshot;
   if (!pool.snapshotIds.includes(id)) pool.snapshotIds.push(id);
-  if (!saveLootChests()) return { ok: false, message: "Snapshot was too large to save. Remove some complex items and retry." };
+  if (!saveLootChests()) {
+    delete state.lootChests.snapshots[snapshotKey(pool.id, id)];
+    pool.snapshotIds = pool.snapshotIds.filter((snapshotId) => snapshotId !== id);
+    invalidateLootChestRuntimeCache();
+    return { ok: false, message: "Snapshot was too large to save. Remove some complex items and retry." };
+  }
   invalidateLootChestRuntimeCache();
   return { ok: true, message: `Captured ${items.length} item stack(s) as ${snapshot.name}.`, snapshot };
 }

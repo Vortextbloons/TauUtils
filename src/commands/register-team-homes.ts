@@ -1,6 +1,8 @@
 import { CommandPermissionLevel, CustomCommandParamType, CustomCommandRegistry, system } from "@minecraft/server";
-import { ok, registerPlayerCommand, resultFrom, tell } from "./helpers";
-import { deleteTeamHome, getPlayerTeam, listTeamHomeNames, setTeamHome, summarizeTeamHomes, teleportTeamHome } from "../team-homes";
+import { ok, registerPlayerCommand, resultFrom } from "./helpers";
+import { tell } from "../storage";
+import { getPlayerTeam } from "../teams";
+import { deleteTeamHome, listTeamHomeNames, setTeamHome, summarizeTeamHomes, teleportTeamHome } from "../team-homes";
 
 export function registerTeamHomesCommands(registry: CustomCommandRegistry): void {
   registerPlayerCommand<[string | undefined]>(

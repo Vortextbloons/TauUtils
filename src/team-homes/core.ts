@@ -1,7 +1,9 @@
 import { Player, world } from "@minecraft/server";
-import { isFeatureEnabled, isPlayerInCombat, isTeamMember, isTeamOwnerOrAdmin, saveTeamHomes, state } from "../storage";
+import { isFeatureEnabled, saveTeamHomes, state } from "../storage";
 import { type TeamDefinition, type TeamHomeConfig, type TeamHomeLocation, type TeamHomeStore } from "../types";
-import { getPlayerTeam } from "../teams";
+import { isPlayerInCombat } from "../combat";
+import { getPlayerTeam, isTeamMember, isTeamOwnerOrAdmin } from "../teams";
+import { canTeleportTo } from "../shared/teleport-guard";
 
 function ensureHomesForTeam(team: TeamDefinition): Record<string, TeamHomeLocation> {
   if (!state.teamHomes.homesByTeamId[team.id]) state.teamHomes.homesByTeamId[team.id] = {};
@@ -83,6 +85,8 @@ export function teleportTeamHome(player: Player, rawName?: string): { ok: boolea
   if (!state.teamHomes.config.allowCrossDimension && player.dimension.id !== home.dimensionId) {
     return { ok: false, message: "Cross-dimension team homes are disabled." };
   }
+  const guard = canTeleportTo(player, { ...home, dimensionId: home.dimensionId });
+  if (!guard.ok) return guard;
   const dimension = world.getDimension(home.dimensionId);
   player.teleport({ x: home.x, y: home.y, z: home.z }, { dimension });
   return { ok: true, message: `Teleported to team home "${name}".` };

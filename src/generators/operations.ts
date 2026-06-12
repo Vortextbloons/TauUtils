@@ -340,6 +340,7 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
   }
   const outputLoc = { dimensionId: loc.dimensionId, x: loc.x, y: loc.y + 1, z: loc.z };
   if (!isSamePlotFootprint(loc, outputLoc)) return { ok: false, message: "Generators cannot cross plot boundaries." };
+  if (!isGeneratorOutputSlotEmpty(loc)) return { ok: false, message: "The block above the generator must be empty." };
   const isAdmin = isOperator(player);
   const plotOwnerId = getPlotOwnerIdForPlayer(player) ?? getPlayerId(player);
   if (!def.placeAnywhere && !isAdmin) {

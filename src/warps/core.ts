@@ -1,6 +1,7 @@
 import { Player, world } from "@minecraft/server";
 import { getPlayerId, saveWarps, state } from "../storage";
 import { type WarpDefinition } from "../types";
+import { canTeleportTo } from "../shared/teleport-guard";
 
 function normalizeWarpId(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "_");
@@ -62,6 +63,8 @@ export function teleportToWarp(player: Player, warpIdOrName: string): { ok: bool
   if (!state.warps.config.crossDimension && player.dimension.id !== warp.dimensionId) {
     return { ok: false, message: "Cross-dimension warps are disabled." };
   }
+  const guard = canTeleportTo(player, { ...warp.position, dimensionId: warp.dimensionId }, { blockCombat: true });
+  if (!guard.ok) return guard;
   const dimension = player.dimension.id === warp.dimensionId ? player.dimension : world.getDimension(warp.dimensionId);
   player.teleport(warp.position, { dimension });
   return { ok: true, message: `Teleported to ${warp.name}.` };

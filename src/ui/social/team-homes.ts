@@ -1,9 +1,9 @@
 import { Player, world } from "@minecraft/server";
 import { TauUi } from "../tau-ui";
-import { ICONS } from "../../types";
+import { ICONS, type TeamDefinition } from "../../types";
 import { getPlayerId, state, tell } from "../../storage";
 import { deleteTeamHome, listTeamHomeNames, setTeamHome, teleportTeamHome } from "../../team-homes";
-import { demoteTeamMember, getPlayerTeam, isTeamOwnerOrAdmin, promoteTeamMember, type TeamDefinition } from "../../teams";
+import { demoteTeamMember, getPlayerTeam, isTeamOwnerOrAdmin, promoteTeamMember } from "../../teams";
 
 export async function showTeamHomesMenu(player: Player): Promise<void> {
   if (!state.teamHomes.config.enabled) {
@@ -105,7 +105,7 @@ export async function showTeamRolesMenu(player: Player, team: TeamDefinition): P
       return { id: memberId, name: online?.name ?? memberId, online: !!online };
     });
 
-    const form = TauUi.action(`Roles: ${team.name}`).body("Select a member to change their role.");
+    const form = TauUi.action<string>(`Roles: ${team.name}`).body("Select a member to change their role.");
 
     for (const entry of memberEntries) {
       form.button("member", `${entry.name} - ${roleLabel(team, entry.id)}${entry.online ? "" : " (offline)"}`, { iconPath: ICONS.rank, value: entry.id });

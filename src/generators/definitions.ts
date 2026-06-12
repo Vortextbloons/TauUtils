@@ -8,7 +8,7 @@ import { getValidOutputPool } from "./output-pick";
 export const MAX_GENERATOR_POOL_SIZE = 32;
 
 function normalizeId(value: string): string {
-  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_-]/g, "");
 }
 
 function parsePlotIndex(slotId: string): number {

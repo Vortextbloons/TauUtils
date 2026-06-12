@@ -1,15 +1,17 @@
 import { EntityComponentTypes, ItemStack, Player, world, system } from "@minecraft/server";
 import { ensurePlayerPlotAssigned, getAssignedSlotIdForOwner, getPlotForLocation, getPlotOwnerIdForPlayer, getPlotSlotsList, getPlotTitle, processQueuedPlotBuildJobs, processQueuedPlotSnapshots, reconcileAllPlotState, releasePlayerPlotById, saveAssignedPlayerPlot, showPlotError, teleportPlayerToSlot } from "../plots";
 import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUseOnBlock, isGeneratorBlock, processGenerators } from "../generators";
-import { tryHandleCrateInteract } from "../crates";
+import { clearCrateRuntimeForPlayer, tryHandleCrateInteract } from "../crates";
 import { tryHandleTauItemTrigger } from "../tau-items";
-import { processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
+import { clearCustomAreaRuntimeForPlayer, processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
 import { processClaims, shouldCancelClaimBlockBreak, shouldCancelClaimBlockPlace, shouldCancelClaimEntityInteract, shouldCancelClaimItemUse, shouldCancelClaimPvp } from "../claims";
 import { clearRtpRuntimeForPlayer, shouldCancelRtpDamage } from "../rtp";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
 import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../loot-chests";
 import { registerBackgroundTask } from "../scheduler";
+import { clearSocialRuntimeForPlayer } from "../social";
+import { clearSidebarRuntimeForPlayer } from "../sidebar";
 import {
   asPlayer,
   incrementStat,
@@ -27,6 +29,8 @@ import {
   state,
   saveModeration,
   tell,
+  isOperator,
+  flushPendingDynamicSaves,
 } from "../storage";
 import {
   clearBannedInventory,
@@ -403,6 +407,11 @@ function resolveEntityMenu(entity: { getTags(): string[]; nameTag?: string; hasT
 }
 
 export function registerEventInterceptors() {
+  const shutdownEvent = (world.beforeEvents as unknown as { shutdown?: { subscribe(callback: () => void): void } }).shutdown;
+  shutdownEvent?.subscribe(() => {
+    flushPendingDynamicSaves();
+  });
+
   world.afterEvents.playerJoin.subscribe((event) => {
     const player = getCachedPlayers().find((entry) => entry.name === event.playerName);
     if (!player) {
@@ -424,10 +433,14 @@ export function registerEventInterceptors() {
 
   world.afterEvents.playerLeave.subscribe((event) => {
     pendingJoinInitializationByName.delete(event.playerName);
-    const playerId = state.stats.playerIds[event.playerName];
+    const playerId = (event as { playerId?: string }).playerId ?? state.stats.playerIds[event.playerName];
     if (playerId) {
+      clearCrateRuntimeForPlayer(playerId);
+      clearCustomAreaRuntimeForPlayer(playerId);
       generatorMenuOpenByPlayerId.delete(playerId);
       clearRtpRuntimeForPlayer(playerId);
+      clearSocialRuntimeForPlayer(playerId);
+      clearSidebarRuntimeForPlayer(playerId);
       delete lastSampleByPlayerId[playerId];
       delete lastSeenPlotByPlayerId[playerId];
       delete lastPlotTitleSampleByPlayerId[playerId];
@@ -491,7 +504,7 @@ export function registerEventInterceptors() {
       if (handled.matched && handled.message) tell(player, handled.message);
     }
 
-    if (!isFeatureEnabled("forms")) return;
+    if (!isFeatureEnabled("forms") || !isFeatureEnabled("bindings")) return;
     const menuId = resolveItemMenu(event.itemStack);
     if (!menuId) return;
     system.run(async () => {
@@ -503,7 +516,7 @@ export function registerEventInterceptors() {
   world.afterEvents.playerInteractWithEntity.subscribe((event) => {
     if (shouldCancelAreaEntityInteract(event.player)) return;
     if (shouldCancelClaimEntityInteract(event.player)) return;
-    if (!isFeatureEnabled("forms")) return;
+    if (!isFeatureEnabled("forms") || !isFeatureEnabled("bindings")) return;
     const menuId = resolveEntityMenu(event.target);
     if (!menuId) return;
     system.run(async () => {
@@ -516,6 +529,10 @@ export function registerEventInterceptors() {
     if (event.id !== "tau") return;
     const player = asPlayer(event.sourceEntity) ?? asPlayer(event.initiator);
     if (!player) return;
+    if (!isOperator(player)) {
+      tell(player, "Operator permissions are required.");
+      return;
+    }
     const [subcommand, ...rest] = event.message.trim().split(/\s+/);
     const arg = rest.join(" ").trim();
     if (subcommand === "open") {
@@ -668,15 +685,13 @@ export function registerEventInterceptors() {
       if (isFeatureEnabled("stats")) {
         saveAssignedPlayerPlot(dead);
         void getPlayerStatsById(getPlayerId(dead));
-      }
-      if (isFeatureEnabled("stats") && isFeatureEnabled("combat")) {
         incrementStat(dead, "deaths", 1);
         const deadStats = getPlayerStats(dead);
         if (deadStats.longestKillstreak < deadStats.killstreak) deadStats.longestKillstreak = deadStats.killstreak;
         deadStats.killstreak = 0;
       }
       if (killer && killer.id !== dead.id) {
-        if (isFeatureEnabled("stats") && isFeatureEnabled("combat")) {
+        if (isFeatureEnabled("stats")) {
           const streak = incrementStat(killer, "killstreak", 1);
           incrementStat(killer, "kills", 1);
           const killerStats = getPlayerStats(killer);
@@ -691,7 +706,6 @@ export function registerEventInterceptors() {
     }
 
     if (!isFeatureEnabled("stats")) return;
-    if (!isFeatureEnabled("combat")) return;
     const killer = asPlayer(event.damageSource.damagingEntity);
     if (killer) {
       incrementStat(killer, "kills", 1);

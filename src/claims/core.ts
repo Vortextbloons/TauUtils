@@ -113,12 +113,12 @@ export function shouldCancelClaimBlockPlace(player: Player, location: Vector3, d
   return shouldCancel(player, location, dimensionId, "blockPlace");
 }
 
-export function shouldCancelClaimItemUse(player: Player): boolean {
-  return shouldCancel(player, player.location, player.dimension.id, "itemUse");
+export function shouldCancelClaimItemUse(player: Player, location = player.location, dimensionId = player.dimension.id): boolean {
+  return shouldCancel(player, location, dimensionId, "itemUse");
 }
 
-export function shouldCancelClaimEntityInteract(player: Player): boolean {
-  return shouldCancel(player, player.location, player.dimension.id, "entityInteract");
+export function shouldCancelClaimEntityInteract(player: Player, location = player.location, dimensionId = player.dimension.id): boolean {
+  return shouldCancel(player, location, dimensionId, "entityInteract");
 }
 
 export function shouldCancelClaimPvp(victim: Player, attacker: Player): boolean {

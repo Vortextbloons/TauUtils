@@ -1,5 +1,5 @@
 import { world } from "@minecraft/server";
-import { serializeDynamicJson, setDynamicJsonIfChanged, clearPersistedDynamicKey, safeSetDynamicJson, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, parseJSON } from "../dynamic-json";
+import { serializeDynamicJson, setDynamicJsonIfChanged, clearPersistedDynamicKey, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, parseJSON } from "../dynamic-json";
 import { STORAGE_KEYS } from "../../types";
 import { type PlotStore } from "../../types";
 import { defaultPlotStore } from "../defaults";
@@ -74,24 +74,37 @@ export function writePlotsToSplitKeys(store: PlotStore): boolean {
   const wantedSlotKeys = new Set<string>();
   const wantedPlayerKeys = new Set<string>();
   const wantedSnapshotKeys = new Set<string>();
+  const serializedByKey = new Map<string, string>();
   let ok = true;
 
-  ok = safeSetDynamicJson(PLOTS_CONFIG_KEY, store.config) && ok;
+  const config = serializeDynamicJson(PLOTS_CONFIG_KEY, store.config);
+  if (config === undefined) return false;
+  serializedByKey.set(PLOTS_CONFIG_KEY, config);
 
   for (const [slotId, slot] of Object.entries(store.slots)) {
     const key = `${PLOTS_SLOT_PREFIX}${slotId}`;
     wantedSlotKeys.add(key);
-    ok = safeSetDynamicJson(key, slot) && ok;
+    const serialized = serializeDynamicJson(key, slot);
+    if (serialized === undefined) return false;
+    serializedByKey.set(key, serialized);
   }
   for (const [playerId, slotId] of Object.entries(store.playerToSlot)) {
     const key = `${PLOTS_PLAYER_SLOT_PREFIX}${playerId}`;
     wantedPlayerKeys.add(key);
-    ok = safeSetDynamicJson(key, slotId) && ok;
+    const serialized = serializeDynamicJson(key, slotId);
+    if (serialized === undefined) return false;
+    serializedByKey.set(key, serialized);
   }
   for (const [playerId, snapshot] of Object.entries(store.snapshots)) {
     const key = `${PLOTS_SNAPSHOT_PREFIX}${playerId}`;
     wantedSnapshotKeys.add(key);
-    ok = safeSetDynamicJson(key, snapshot) && ok;
+    const serialized = serializeDynamicJson(key, snapshot);
+    if (serialized === undefined) return false;
+    serializedByKey.set(key, serialized);
+  }
+
+  for (const [key, serialized] of serializedByKey) {
+    world.setDynamicProperty(key, serialized);
   }
 
   for (const key of world.getDynamicPropertyIds()) {

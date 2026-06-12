@@ -5,6 +5,10 @@ import { findForm, isFeatureEnabled, isOperator, normalizeKey, saveBinds, saveCo
 import { pruneData, tellPruneResult } from "../../prune";
 
 export async function showBindingsEditor(player: Player) {
+  if (!isOperator(player)) {
+    tell(player, "Operator permissions are required.");
+    return;
+  }
   if (!isFeatureEnabled("bindings")) {
     tell(player, "Bindings are disabled.");
     return;

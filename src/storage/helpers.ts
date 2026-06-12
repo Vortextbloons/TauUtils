@@ -37,6 +37,8 @@ import {
   defaultCommandBuilderStore,
   defaultPlayerShopStore,
   defaultClaimStore,
+  defaultCustomAreaStore,
+  defaultLootChestStore,
   PLOTS_CONFIG_KEY,
   PLOTS_MIGRATION_MARKER_KEY,
   PLOTS_SLOT_PREFIX,
@@ -50,6 +52,17 @@ import {
   STATS_PLAYER_PREFIX,
   clearSplitDynamicJson,
 } from "./state";
+import { clearPendingDynamicSaves } from "./save";
+import {
+  CLAIMS_CLAIM_PREFIX,
+  CLAIMS_CONFIG_KEY,
+  CUSTOM_AREAS_AREA_PREFIX,
+  CUSTOM_AREAS_CONFIG_KEY,
+  LOOT_CHESTS_CHEST_PREFIX,
+  LOOT_CHESTS_CONFIG_KEY,
+  LOOT_CHESTS_POOL_PREFIX,
+  LOOT_CHESTS_SNAPSHOT_PREFIX,
+} from "./dynamic-json";
 export { normalizeItemId } from "../shared/item-id";
 
 export function tell(player: Player, message: string) {
@@ -162,7 +175,8 @@ export function setScore(
   if (!objective) return false;
   const identity = player.scoreboardIdentity;
   if (!identity) return false;
-  objective.setScore(identity, value);
+  const safeValue = Math.max(-2147483648, Math.min(2147483647, Math.trunc(value)));
+  objective.setScore(identity, safeValue);
   return true;
 }
 
@@ -228,6 +242,7 @@ export function isFeatureEnabled(feature: keyof ConfigStore["features"]) {
 }
 
 export function clearAllData() {
+  clearPendingDynamicSaves();
   world.setDynamicProperty(STORAGE_KEYS.forms, undefined);
   world.setDynamicProperty(STORAGE_KEYS.shops, undefined);
   world.setDynamicProperty(STORAGE_KEYS.binds, undefined);
@@ -255,8 +270,14 @@ export function clearAllData() {
   world.setDynamicProperty(STORAGE_KEYS.combat, undefined);
   world.setDynamicProperty(STORAGE_KEYS.commandBuilder, undefined);
   world.setDynamicProperty(STORAGE_KEYS.playerShops, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.customAreas, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.claims, undefined);
   world.setDynamicProperty(PLAYER_SHOPS_CONFIG_KEY, undefined);
   world.setDynamicProperty(PLOTS_CONFIG_KEY, undefined);
+  world.setDynamicProperty(CUSTOM_AREAS_CONFIG_KEY, undefined);
+  world.setDynamicProperty(LOOT_CHESTS_CONFIG_KEY, undefined);
+  world.setDynamicProperty(CLAIMS_CONFIG_KEY, undefined);
   world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, undefined);
   for (const key of world.getDynamicPropertyIds()) {
     if (
@@ -267,7 +288,12 @@ export function clearAllData() {
       key.startsWith(PLOTS_SNAPSHOT_PREFIX) ||
       key.startsWith(PLAYER_SHOPS_SHOP_PREFIX) ||
       key.startsWith(PLAYER_SHOPS_LISTING_PREFIX) ||
-      key.startsWith(PLAYER_SHOPS_EARNINGS_PREFIX)
+      key.startsWith(PLAYER_SHOPS_EARNINGS_PREFIX) ||
+      key.startsWith(CUSTOM_AREAS_AREA_PREFIX) ||
+      key.startsWith(LOOT_CHESTS_POOL_PREFIX) ||
+      key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) ||
+      key.startsWith(LOOT_CHESTS_CHEST_PREFIX) ||
+      key.startsWith(CLAIMS_CLAIM_PREFIX)
     ) {
       world.setDynamicProperty(key, undefined);
     }
@@ -298,6 +324,8 @@ export function clearAllData() {
   state.combat = defaultCombatStore();
   state.commandBuilder = defaultCommandBuilderStore();
   state.playerShops = defaultPlayerShopStore();
+  state.customAreas = defaultCustomAreaStore();
+  state.lootChests = defaultLootChestStore();
   state.claims = defaultClaimStore();
 }
 

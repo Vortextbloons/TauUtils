@@ -88,6 +88,10 @@ export const snapshotQueue: SnapshotJob[] = [];
 const SNAPSHOT_JOBS_PER_TICK = 1;
 const PLOT_SPATIAL_CELL_SIZE = 64;
 
+function hasActiveFillWork(): boolean {
+  return fillJobId !== undefined || fillQueue.length > 0;
+}
+
 type PlotSpatialIndex = {
   signature: string;
   buckets: Map<string, PlotSlot[]>;
@@ -363,6 +367,7 @@ function enqueueLayoutClear(slots: PlotSlot[]): void {
 }
 
 export function buildPlotGeometry(slotId?: string): { ok: boolean; message: string } {
+  if (hasActiveFillWork()) return { ok: false, message: "A plot build is already in progress. Try again after it finishes." };
   const slot = slotId ? state.plots.slots[slotId] : undefined;
   if (slotId && !slot) return { ok: false, message: "Slot not found." };
   if (slot) {

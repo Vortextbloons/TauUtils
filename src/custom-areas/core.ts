@@ -270,15 +270,15 @@ export function shouldCancelAreaBlockPlace(player: Player, location: Vector3, di
   return !(blockId && runtime.blockPlaceExceptions.has(blockId));
 }
 
-export function shouldCancelAreaItemUse(player: Player): boolean {
+export function shouldCancelAreaItemUse(player: Player, location = player.location, dimensionId = player.dimension.id): boolean {
   if (isOperator(player)) return false;
-  const area = getAreaForPlayer(player);
+  const area = getAreaForPlayer(player, location, dimensionId);
   return Boolean(area && !area.permissions.itemUse);
 }
 
-export function shouldCancelAreaEntityInteract(player: Player): boolean {
+export function shouldCancelAreaEntityInteract(player: Player, location = player.location, dimensionId = player.dimension.id): boolean {
   if (isOperator(player)) return false;
-  const area = getAreaForPlayer(player);
+  const area = getAreaForPlayer(player, location, dimensionId);
   return Boolean(area && !area.permissions.entityInteract);
 }
 
@@ -349,6 +349,13 @@ export function invalidateCustomAreaRuntimeState(areaId?: string): void {
   for (const key of lastRuleRunByPlayerArea.keys()) if (key.includes(marker)) lastRuleRunByPlayerArea.delete(key);
   for (const key of lastEffectRunByPlayerArea.keys()) if (key.includes(marker)) lastEffectRunByPlayerArea.delete(key);
   for (const key of pendingCombatAreaDrops.keys()) if (key.endsWith(areaSuffix)) pendingCombatAreaDrops.delete(key);
+}
+
+export function clearCustomAreaRuntimeForPlayer(playerId: string): void {
+  playerAreaState.delete(playerId);
+  for (const key of [...lastRuleRunByPlayerArea.keys()]) if (key.startsWith(`${playerId}:`)) lastRuleRunByPlayerArea.delete(key);
+  for (const key of [...lastEffectRunByPlayerArea.keys()]) if (key.startsWith(`${playerId}:`)) lastEffectRunByPlayerArea.delete(key);
+  for (const key of [...pendingCombatAreaDrops.keys()]) if (key.startsWith(`${playerId}:`)) pendingCombatAreaDrops.delete(key);
 }
 
 export function commitCustomArea(area: CustomAreaDefinition): { ok: boolean; message: string; area?: CustomAreaDefinition } {

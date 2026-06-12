@@ -1,1 +1,1 @@
-export { registerSidebarSystem, showSidebarEditor, invalidatePlayerSidebarCache } from "./core";
+export { registerSidebarSystem, showSidebarEditor, invalidatePlayerSidebarCache, clearSidebarRuntimeForPlayer } from "./core";

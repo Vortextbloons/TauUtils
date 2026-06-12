@@ -50,7 +50,12 @@ export function pruneData(dryRun = true): PruneResult {
       if ((stats.lastSeenAt ?? 0) < cutoff) {
         removed += 1;
         details.push(`stats:${playerId}`);
-        if (!dryRun) delete state.stats.players[playerId];
+        if (!dryRun) {
+          delete state.stats.players[playerId];
+          for (const [name, mappedPlayerId] of Object.entries(state.stats.playerIds)) {
+            if (mappedPlayerId === playerId) delete state.stats.playerIds[name];
+          }
+        }
       }
     }
     if (!dryRun) saveStats();
@@ -69,7 +74,7 @@ export function pruneData(dryRun = true): PruneResult {
 
   if (prune.teams) {
     for (const [teamId, team] of Object.entries(state.teams.teams)) {
-      if (team.memberPlayerIds.length === 0 || (team.memberPlayerIds.length === 1 && team.ownerPlayerId)) {
+      if (team.memberPlayerIds.length === 0 || isInactive(team.ownerPlayerId)) {
         removed += 1;
         details.push(`teams:${teamId}`);
         if (!dryRun) delete state.teams.teams[teamId];
@@ -140,10 +145,6 @@ export function pruneData(dryRun = true): PruneResult {
       }
     }
     if (!dryRun) savePlayerSettings();
-  }
-
-  if (prune.tpa || prune.pay) {
-    // Social config is retained; only the prune flags are being toggled.
   }
 
   if (prune.teamHomes) {

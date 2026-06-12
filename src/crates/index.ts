@@ -1,5 +1,6 @@
 export {
   tryHandleCrateInteract,
+  clearCrateRuntimeForPlayer,
   giveCrateKey,
   setCrateAtBlock,
   setCrateAtCoordinates,

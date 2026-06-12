@@ -180,15 +180,21 @@ export function loadState() {
   state.plots = splitPlots.hasSplitData ? normalizePlotStore(splitPlots.store) : defaultPlotStore();
   rememberPlotSplitKeys(state.plots);
   state.tpa = readDynamicJSON<TpaStore>(STORAGE_KEYS.tpa, defaultTpaStore());
+  state.tpa.config = applyMissingDefaults(state.tpa.config as unknown as Record<string, unknown>, defaultTpaStore().config as unknown as Record<string, unknown>) as unknown as TpaStore["config"];
   state.homes = readDynamicJSON<HomeStore>(STORAGE_KEYS.homes, defaultHomeStore());
+  state.homes.config = applyMissingDefaults(state.homes.config as unknown as Record<string, unknown>, defaultHomeStore().config as unknown as Record<string, unknown>) as unknown as HomeStore["config"];
   state.pay = readDynamicJSON<PayStore>(STORAGE_KEYS.pay, defaultPayStore());
+  state.pay.config = applyMissingDefaults(state.pay.config as unknown as Record<string, unknown>, defaultPayStore().config as unknown as Record<string, unknown>) as unknown as PayStore["config"];
   state.playerSettings = readDynamicJSON<PlayerSettingsStore>(STORAGE_KEYS.playerSettings, defaultPlayerSettingsStore());
+  state.playerSettings.config = applyMissingDefaults(state.playerSettings.config as unknown as Record<string, unknown>, defaultPlayerSettingsStore().config as unknown as Record<string, unknown>) as unknown as PlayerSettingsStore["config"];
   state.teams = readDynamicJSON<TeamStore>(STORAGE_KEYS.teams, defaultTeamStore());
   state.prune = readDynamicJSON<PruneStore>("tau:prune", defaultPruneStore());
   state.prune.config = applyMissingDefaults(state.prune.config as unknown as Record<string, unknown>, defaultPruneStore().config as unknown as Record<string, unknown>) as unknown as PruneStore["config"];
   state.prune.config.flags = applyMissingDefaults(state.prune.config.flags as unknown as Record<string, unknown>, defaultPruneStore().config.flags as unknown as Record<string, unknown>) as unknown as PruneStore["config"]["flags"];
   state.warps = readDynamicJSON<WarpStore>(STORAGE_KEYS.warps, defaultWarpStore());
+  state.warps.config = applyMissingDefaults(state.warps.config as unknown as Record<string, unknown>, defaultWarpStore().config as unknown as Record<string, unknown>) as unknown as WarpStore["config"];
   state.teamHomes = readDynamicJSON<TeamHomeStore>(STORAGE_KEYS.teamHomes, defaultTeamHomeStore());
+  state.teamHomes.config = applyMissingDefaults(state.teamHomes.config as unknown as Record<string, unknown>, defaultTeamHomeStore().config as unknown as Record<string, unknown>) as unknown as TeamHomeStore["config"];
   state.rtp = readDynamicJSON<RtpStore>(STORAGE_KEYS.rtp, defaultRtpStore());
   state.rtp.config = applyMissingDefaults(state.rtp.config as unknown as Record<string, unknown>, defaultRtpStore().config as unknown as Record<string, unknown>) as unknown as RtpStore["config"];
   state.rtp.config.defaultProtection = applyMissingDefaults(state.rtp.config.defaultProtection as unknown as Record<string, unknown>, defaultRtpStore().config.defaultProtection as unknown as Record<string, unknown>) as unknown as RtpStore["config"]["defaultProtection"];
@@ -205,6 +211,7 @@ export function loadState() {
     region.avoidCustomAreas ??= state.rtp.config.avoidCustomAreas;
   }
   state.generators = readDynamicJSON<GeneratorStore>(STORAGE_KEYS.generators, defaultGeneratorStore());
+  state.generators.config = applyMissingDefaults(state.generators.config as unknown as Record<string, unknown>, defaultGeneratorStore().config as unknown as Record<string, unknown>) as unknown as GeneratorStore["config"];
   let generatorsChanged = false;
   const placementsByDefinitionId = new Map<string, typeof state.generators.placed[string][]>();
   for (const placed of Object.values(state.generators.placed)) {
@@ -266,7 +273,9 @@ export function loadState() {
   }
   invalidateBannedItemCache();
   state.crates = readDynamicJSON<CrateStore>(STORAGE_KEYS.crates, defaultCrateStore());
+  state.crates.config = applyMissingDefaults(state.crates.config as unknown as Record<string, unknown>, defaultCrateStore().config as unknown as Record<string, unknown>) as unknown as CrateStore["config"];
   state.tauItems = readDynamicJSON<TauItemsStore>(STORAGE_KEYS.tauItems, defaultTauItemsStore());
+  state.tauItems.config = applyMissingDefaults(state.tauItems.config as unknown as Record<string, unknown>, defaultTauItemsStore().config as unknown as Record<string, unknown>) as unknown as TauItemsStore["config"];
   state.combat = readDynamicJSON<CombatStore>(STORAGE_KEYS.combat, defaultCombatStore());
   state.combat.config = applyMissingDefaults(state.combat.config as unknown as Record<string, unknown>, defaultCombatStore().config as unknown as Record<string, unknown>) as unknown as CombatStore["config"];
   const splitShops = loadPlayerShopsFromSplitKeys(dynamicPropertyIds);

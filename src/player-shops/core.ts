@@ -239,7 +239,8 @@ function purchaseListing(buyer: Player, listing: PlayerShopListing): TradeResult
     const { sellerNet } = applyTax(totalPrice);
     pushOfflineEarnings(listing.sellerPlayerId, objective, sellerNet);
 
-    listing.quantity -= 1;
+    const purchasedQuantity = listing.quantity;
+    listing.quantity = 0;
     listing.updatedAt = nowMs();
     if (listing.quantity <= 0) {
       delete state.playerShops.listings[listing.id];
@@ -255,11 +256,11 @@ function purchaseListing(buyer: Player, listing: PlayerShopListing): TradeResult
     if (state.playerShops.config.announceSales) {
       notifySaleIfOnline(
         listing.sellerPlayerId,
-        `§a${buyer.name} bought 1x ${listing.title} for ${listing.pricePerUnit} ${objective}.`
+        `§a${buyer.name} bought ${purchasedQuantity}x ${listing.title} for ${totalPrice} ${objective}.`
       );
     }
 
-    return { ok: true, message: `Purchased ${listing.quantity}x ${listing.title} for ${totalPrice} ${objective}.` };
+    return { ok: true, message: `Purchased ${purchasedQuantity}x ${listing.title} for ${totalPrice} ${objective}.` };
   } finally {
     listingLocks.delete(listing.id);
   }

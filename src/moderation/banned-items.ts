@@ -1,5 +1,5 @@
 import { ItemStack, Player, world } from "@minecraft/server";
-import { getInventoryContainer, state } from "../storage";
+import { getInventoryContainer, isOperator, state } from "../storage";
 import { normalizeItemId } from "../shared/item-id";
 
 let bannedItemIds = new Set<string>();
@@ -23,6 +23,7 @@ export function isBannedItemId(itemId: string): boolean {
 }
 
 export function clearBannedInventory(player: Player): number {
+  if (isOperator(player)) return 0;
   const container = getInventoryContainer(player);
   if (!container) return 0;
   let removed = 0;
@@ -38,6 +39,7 @@ export function clearBannedInventory(player: Player): number {
 type Cancelable = { cancel: boolean };
 
 export function enforceBannedItemUse(player: Player, itemStack?: ItemStack, cancelTarget?: Cancelable): boolean {
+  if (isOperator(player)) return false;
   if (state.moderation.bannedItems.length === 0) return false;
   const container = getInventoryContainer(player);
   if (!container) return false;
