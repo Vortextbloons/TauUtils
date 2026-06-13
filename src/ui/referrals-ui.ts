@@ -22,8 +22,10 @@ async function showReferralAdminMenu(player: Player): Promise<void> {
       return;
     }
     const cfg = state.referrals.config;
+    const maxLabel = cfg.maxReferralsPerPlayer > 0 ? String(cfg.maxReferralsPerPlayer) : "Unlimited";
+    const cooldownLabel = cfg.cooldownSeconds > 0 ? `${cfg.cooldownSeconds}s` : "None";
     const response = await TauUi.action("Referral Admin")
-      .body(`Enabled: ${cfg.enabled ? "On" : "Off"}\nMode: ${cfg.allowMultipleRedemptions ? "multiple codes" : "one code only"}\nMax redemptions/player: ${cfg.maxReferralsPerPlayer}\nCooldown: ${cfg.cooldownSeconds}s\nReferee rewards: ${cfg.refereeRewardIds.join(", ") || "none"}\nReferrer rewards: ${cfg.referrerRewardIds.join(", ") || "none"}`)
+      .body(`Enabled: ${cfg.enabled ? "On" : "Off"}\nMode: ${cfg.allowMultipleRedemptions ? "multiple codes" : "one code only"}\nMax redemptions/player: ${maxLabel}\nCooldown: ${cooldownLabel}\nReferee rewards: ${cfg.refereeRewardIds.join(", ") || "none"}\nReferrer rewards: ${cfg.referrerRewardIds.join(", ") || "none"}`)
       .button("toggle", `Enabled: ${cfg.enabled ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("multiple", `Redeem mode: ${cfg.allowMultipleRedemptions ? "Many" : "One"}`, { iconPath: ICONS.settings })
       .button("rewards", "Reward IDs", { iconPath: ICONS.shop })
@@ -41,15 +43,15 @@ async function showReferralAdminMenu(player: Player): Promise<void> {
       const result = await TauUi.modal("Referral Rewards")
         .text("referee", "Player entering code reward IDs", { placeholder: "referral_bonus", defaultValue: cfg.refereeRewardIds.join(",") })
         .text("referrer", "Code owner reward IDs", { placeholder: "referral_bonus", defaultValue: cfg.referrerRewardIds.join(",") })
-        .text("maxReferrals", "Max redemptions per player", { placeholder: "5", defaultValue: String(cfg.maxReferralsPerPlayer) })
-        .text("cooldownSeconds", "Cooldown seconds", { placeholder: "3600", defaultValue: String(cfg.cooldownSeconds) })
+        .text("maxReferrals", "Max redemptions per player (0 = unlimited)", { placeholder: "0 = unlimited", defaultValue: String(cfg.maxReferralsPerPlayer) })
+        .text("cooldownSeconds", "Cooldown seconds (0 = none)", { placeholder: "0 = none", defaultValue: String(cfg.cooldownSeconds) })
         .text("history", "Max redemption history", { placeholder: "500", defaultValue: String(cfg.maxRedemptionHistory) })
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
       cfg.refereeRewardIds = parseRewardIds(result.values.referee);
       cfg.referrerRewardIds = parseRewardIds(result.values.referrer);
-      cfg.maxReferralsPerPlayer = Math.max(1, Math.floor(Number(result.values.maxReferrals) || 5));
+      cfg.maxReferralsPerPlayer = Math.max(0, Math.floor(Number(result.values.maxReferrals) || 0));
       cfg.cooldownSeconds = Math.max(0, Math.floor(Number(result.values.cooldownSeconds) || 0));
       const maxHistory = Math.floor(Number(result.values.history));
       cfg.maxRedemptionHistory = Number.isFinite(maxHistory) ? Math.max(1, maxHistory) : 500;

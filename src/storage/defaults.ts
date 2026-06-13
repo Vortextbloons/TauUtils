@@ -61,9 +61,9 @@ export function defaultReferralStore(): ReferralStore {
   return {
     config: {
       enabled: true,
-      allowMultipleRedemptions: false,
-      maxReferralsPerPlayer: 5,
-      cooldownSeconds: 60 * 60,
+      allowMultipleRedemptions: true,
+      maxReferralsPerPlayer: 0,
+      cooldownSeconds: 10,
       refereeRewardIds: ["referral_bonus"],
       referrerRewardIds: ["referral_bonus"],
       broadcastMessage: false,
@@ -385,7 +385,7 @@ export function defaultTeamHomeStore(): TeamHomeStore {
     config: {
       enabled: true,
       maxHomesPerTeam: 5,
-      allowCrossDimension: false,
+      allowCrossDimension: true,
       blockWhileInCombat: true,
     },
     homesByTeamId: {},

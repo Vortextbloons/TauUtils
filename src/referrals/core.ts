@@ -49,8 +49,13 @@ export function getOrCreateReferralRecord(player: Player): ReferralPlayerRecord 
   return record;
 }
 
-function runRewardIds(player: Player, rewardIds: string[], extra: Record<string, string | number | boolean | undefined>): void {
-  for (const rewardId of rewardIds) runCustomReward(player, rewardId, { internal: true, extra });
+function runRewardIds(player: Player, rewardIds: string[], extra: Record<string, string | number | boolean | undefined>): boolean {
+  let allOk = true;
+  for (const rewardId of rewardIds) {
+    const result = runCustomReward(player, rewardId, { internal: true, extra });
+    if (!result.ok) allOk = false;
+  }
+  return allOk;
 }
 
 export function flushPendingReferralRewards(player: Player): void {
@@ -79,9 +84,10 @@ export function redeemReferralCode(player: Player, rawCode: string): ReferralRes
   if (!state.referrals.config.allowMultipleRedemptions && refereeRecord.redeemedCodes.length > 0) {
     return { ok: false, message: "You have already redeemed a referral code." };
   }
-  const maxReferrals = Math.max(1, Math.floor(Number(state.referrals.config.maxReferralsPerPlayer) || 1));
-  if (refereeRecord.referredByPlayerIds.length >= maxReferrals) {
-    return { ok: false, message: `You can only redeem ${maxReferrals} referral code(s).` };
+  const maxReferralsRaw = Math.floor(Number(state.referrals.config.maxReferralsPerPlayer) || 0);
+  const maxReferralsUnlimited = maxReferralsRaw <= 0;
+  if (!maxReferralsUnlimited && refereeRecord.referredByPlayerIds.length >= maxReferralsRaw) {
+    return { ok: false, message: `You can only redeem ${maxReferralsRaw} referral code(s).` };
   }
   const cooldownMs = Math.max(0, Math.floor(Number(state.referrals.config.cooldownSeconds) || 0)) * 1000;
   const now = Date.now();
@@ -97,16 +103,26 @@ export function redeemReferralCode(player: Player, rawCode: string): ReferralRes
   const referrerRecord = referrer ? getOrCreateReferralRecord(referrer) : state.referrals.players[referrerPlayerId];
   if (!referrerRecord) return { ok: false, message: "Referral owner data is missing." };
 
+  const referrerName = referrer?.name ?? referrerRecord.lastKnownName ?? "Unknown";
+  const extra = { referee: player.name, referrer: referrerName, code };
+  const refereeRewards = state.referrals.config.refereeRewardIds;
+  const referrerRewards = state.referrals.config.referrerRewardIds;
+
+  if (refereeRewards.length > 0 && !isFeatureEnabled("customRewards")) {
+    return { ok: false, message: "Referral rewards are unavailable (custom rewards are disabled)." };
+  }
+  const refereeOk = runRewardIds(player, refereeRewards, extra);
+  if (!refereeOk) {
+    return { ok: false, message: "Referral reward delivery failed; the code was not consumed. Try again or contact an admin." };
+  }
+
   refereeRecord.redeemedCodes.push(code);
   refereeRecord.referredByPlayerIds.push(referrerPlayerId);
   refereeRecord.lastRedemptionAt = now;
   referrerRecord.referralCount = Math.max(0, Number(referrerRecord.referralCount) || 0) + 1;
 
-  const referrerName = referrer?.name ?? referrerRecord.lastKnownName ?? "Unknown";
-  const extra = { referee: player.name, referrer: referrerName, code };
-  runRewardIds(player, state.referrals.config.refereeRewardIds, extra);
-  if (referrer) runRewardIds(referrer, state.referrals.config.referrerRewardIds, extra);
-  else referrerRecord.pendingRewardIds.push(...state.referrals.config.referrerRewardIds);
+  if (referrer) runRewardIds(referrer, referrerRewards, extra);
+  else if (referrerRewards.length > 0) referrerRecord.pendingRewardIds.push(...referrerRewards);
 
   state.referrals.redemptions.unshift({
     refereePlayerId,

@@ -1,7 +1,7 @@
 import { Player, system, world } from "@minecraft/server";
 import { ICONS, type SidebarDefinition } from "../types";
 import { TauUi } from "../ui";
-import { isFeatureEnabled, isOperator, saveSidebars, state, tell } from "../storage";
+import { getPlayerId, isFeatureEnabled, isOperator, saveSidebars, state, tell } from "../storage";
 import { renderTemplate } from "../shared/templates";
 import { registerBackgroundTask, registerEveryTickTask } from "../scheduler";
 import { getPlayerSettings, setSidebarOptOutHandler } from "../social/core";
@@ -172,7 +172,17 @@ function buildSidebarText(player: Player, runtime: SidebarRuntime): string {
 }
 
 function getPlayerCacheKey(player: Player): string {
-  return player.id || player.name;
+  return getPlayerId(player);
+}
+
+function safeSetActionBar(player: Player, text: string): boolean {
+  if (!player.isValid) return false;
+  try {
+    player.onScreenDisplay.setActionBar(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function applySidebarForPlayer(player: Player, runtime: SidebarRuntime) {
@@ -183,14 +193,20 @@ function applySidebarForPlayer(player: Player, runtime: SidebarRuntime) {
   const changedSidebar = cache?.sidebarId !== sidebar.id;
   if (!changedSidebar && cache && system.currentTick - cache.lastRenderTick < interval) {
     if (system.currentTick - cache.lastSendTick >= 20) {
-      player.onScreenDisplay.setActionBar(cache.lastText || "§r");
-      cache.lastSendTick = system.currentTick;
+      if (!safeSetActionBar(player, cache.lastText || "§r")) {
+        playerRenderCache.delete(key);
+      } else {
+        cache.lastSendTick = system.currentTick;
+      }
     }
     return;
   }
 
   const text = buildSidebarText(player, runtime);
-  player.onScreenDisplay.setActionBar(text || "§r");
+  if (!safeSetActionBar(player, text || "§r")) {
+    playerRenderCache.delete(key);
+    return;
+  }
   playerRenderCache.set(key, { sidebarId: sidebar.id, lastRenderTick: system.currentTick, lastSendTick: system.currentTick, lastText: text });
 }
 
@@ -206,13 +222,24 @@ function renderSidebarTick() {
 }
 
 function* renderSidebarJob(players: Player[]): Generator<void, void, void> {
-  for (const player of players) {
-    if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) break;
-    const sidebar = pickSidebarForPlayer(player);
-    if (sidebar) applySidebarForPlayer(player, sidebar);
-    yield;
+  try {
+    for (const player of players) {
+      if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) break;
+      if (!player.isValid) {
+        try { playerRenderCache.delete(getPlayerCacheKey(player)); } catch { /* ignore */ }
+        continue;
+      }
+      try {
+        const sidebar = pickSidebarForPlayer(player);
+        if (sidebar) applySidebarForPlayer(player, sidebar);
+      } catch {
+        try { playerRenderCache.delete(getPlayerCacheKey(player)); } catch { /* ignore */ }
+      }
+      yield;
+    }
+  } finally {
+    sidebarRenderJobId = undefined;
   }
-  sidebarRenderJobId = undefined;
 }
 
 function sampleTpsTick() {

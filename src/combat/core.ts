@@ -266,6 +266,10 @@ function* processPendingCombatLogoutsJob(): Generator<void, void, void> {
     }
 
     if (failed.length === 0) {
+      // Marker meaning: "combat-log loot was already dropped at logout location".
+      // It is a one-time rejoin notification only; do NOT clear inventory/equipment
+      // when reading it in handleCombatJoin() - the items were dropped on disconnect,
+      // and any current items belong to the player.
       world.setDynamicProperty(
         penaltyKey(logout.playerId),
         JSON.stringify({ droppedAt: nowMs() })
@@ -284,10 +288,12 @@ export function handleCombatJoin(player: Player): void {
   const key = penaltyKey(playerId);
   const penaltyRaw = world.getDynamicProperty(key) as string | undefined;
   if (!penaltyRaw) return;
+  // Penalty marker was already settled at logout: items were dropped then.
+  // Clear the marker, drop any cached snapshot, and notify the player once.
+  // Do not touch the player's current inventory - it belongs to them on rejoin.
   world.setDynamicProperty(key, undefined);
   combatSnapshotsByPlayerId.delete(playerId);
   lastCombatSnapshotAtByPlayerId.delete(playerId);
-  clearInventoryAndEquipment(player);
   tell(player, state.combat.config.rejoinPenaltyMessage);
 }
 

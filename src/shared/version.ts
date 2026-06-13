@@ -1,4 +1,4 @@
-export const TAUUTILS_VERSION = "2.8.5-Beta";
+export const TAUUTILS_VERSION = "2.8.8-Beta";
 
 export const IS_DEV = true;
 
