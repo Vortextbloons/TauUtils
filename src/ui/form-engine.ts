@@ -1,8 +1,8 @@
-import { Player, ItemStack } from "@minecraft/server";
-import { ACTION_TYPES, isWorkingIconPath, ICONS, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
-import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
+import { Player } from "@minecraft/server";
+import { type ActionType, type UIButtonElement } from "../types";
+import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, isFeatureEnabled, tell } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
-import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
+import { optionalIcon } from "./tau-ui-helper";
 import { TauUi } from "./tau-ui";
 
 export async function openFormById(player: Player, menuId: string) {
@@ -91,7 +91,6 @@ async function runBoundAction(
   rawValue: string | undefined,
   selectedValue?: unknown
 ) {
-  const { ItemStack, Player } = await import("@minecraft/server");
   const { openShopTransaction } = await import("../shop");
   const { sanitizePlayerCommand, commandStripSlash, normalizeForSudo } = await import("../storage");
   const { renderTemplate } = await import("../shared/templates");

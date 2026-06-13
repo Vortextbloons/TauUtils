@@ -65,6 +65,7 @@ import {
   LOOT_CHESTS_POOL_PREFIX,
   LOOT_CHESTS_SNAPSHOT_PREFIX,
 } from "./dynamic-json";
+import { TPA_COOLDOWN_PREFIX, TPA_INBOX_PREFIX, TPA_OUTBOX_PREFIX } from "./split-keys/tpa";
 export { normalizeItemId } from "../shared/item-id";
 
 export function tell(player: Player, message: string) {
@@ -304,7 +305,10 @@ export function clearAllData() {
       key.startsWith(LOOT_CHESTS_POOL_PREFIX) ||
       key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) ||
       key.startsWith(LOOT_CHESTS_CHEST_PREFIX) ||
-      key.startsWith(CLAIMS_CLAIM_PREFIX)
+      key.startsWith(CLAIMS_CLAIM_PREFIX) ||
+      key.startsWith(TPA_INBOX_PREFIX) ||
+      key.startsWith(TPA_OUTBOX_PREFIX) ||
+      key.startsWith(TPA_COOLDOWN_PREFIX)
     ) {
       world.setDynamicProperty(key, undefined);
     }

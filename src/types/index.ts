@@ -33,6 +33,7 @@ export {
   type WarpStore,
   type TpaConfig,
   type TpaStore,
+  type TpaRequest,
   type HomeLocation,
   type HomeConfig,
   type HomeStore,

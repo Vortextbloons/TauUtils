@@ -74,6 +74,7 @@ import { loadCustomAreasFromSplitKeys } from "./split-keys/custom-areas";
 import { loadLootChestsFromSplitKeys } from "./split-keys/loot-chests";
 import { loadClaimsFromSplitKeys } from "./split-keys/claims";
 import { loadPlotsFromSplitKeys, normalizePlotStore, rememberPlotSplitKeys, migrateLegacyPlotsToSplitOneShot } from "./split-keys/plots";
+import { ensureTpaDefaults, loadTpaFromSplitKeys } from "./split-keys/tpa";
 import { runStorageMigrations } from "./migrations";
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,8 @@ export function loadState() {
   rememberPlotSplitKeys(state.plots);
   state.tpa = readDynamicJSON<TpaStore>(STORAGE_KEYS.tpa, defaultTpaStore());
   state.tpa.config = applyMissingDefaults(state.tpa.config as unknown as Record<string, unknown>, defaultTpaStore().config as unknown as Record<string, unknown>) as unknown as TpaStore["config"];
+  loadTpaFromSplitKeys(dynamicPropertyIds);
+  ensureTpaDefaults();
   state.homes = readDynamicJSON<HomeStore>(STORAGE_KEYS.homes, defaultHomeStore());
   state.homes.config = applyMissingDefaults(state.homes.config as unknown as Record<string, unknown>, defaultHomeStore().config as unknown as Record<string, unknown>) as unknown as HomeStore["config"];
   state.pay = readDynamicJSON<PayStore>(STORAGE_KEYS.pay, defaultPayStore());
@@ -399,3 +402,4 @@ export { writeCustomAreasToSplitKeys } from "./split-keys/custom-areas";
 export { writeLootChestsToSplitKeys } from "./split-keys/loot-chests";
 export { writeClaimsToSplitKeys } from "./split-keys/claims";
 export { normalizePlotStore, writePlotsIncrementalToSplitKeys } from "./split-keys/plots";
+export { TPA_INBOX_PREFIX, TPA_OUTBOX_PREFIX, TPA_COOLDOWN_PREFIX, readTpaInbox, writeTpaInbox, readTpaOutbox, writeTpaOutbox, readTpaCooldown, writeTpaCooldown, clearTpaInboxFor, clearTpaOutboxFor, clearTpaCooldownFor, clearAllTpaForPlayer, tpaInboxPlayerIds, tpaOutboxPlayerIds, ensureTpaDefaults } from "./split-keys/tpa";

@@ -6,6 +6,8 @@ import { registerSidebarSystem } from "./sidebar";
 import { registerLootChestSystem } from "./loot-chests";
 import { reconcileAllPlotState } from "./plots";
 import { reconcileTeamAssignments } from "./teams";
+import { startTpaExpiryLoop } from "./social";
+import { bootstrapTpaNotify } from "./ui/social/tpa";
 import { formatTauUtilsLoadedMessage } from "./shared/version";
 
 export { state } from "./storage";
@@ -67,6 +69,7 @@ function bootstrap() {
     registerEventInterceptors();
     registerSidebarSystem();
     registerLootChestSystem();
+    bootstrapTpaNotify();
     initializeOnlinePlayersAfterReload();
   }, 2);
 
@@ -75,6 +78,7 @@ function bootstrap() {
     startupPhase = 3;
     if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_phase_3");
     if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_finalize");
+    startTpaExpiryLoop();
     world.sendMessage(formatTauUtilsLoadedMessage());
     initialized = true;
   }, 20);

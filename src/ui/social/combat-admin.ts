@@ -18,6 +18,7 @@ export async function showSocialSettingsAdmin(player: Player) {
     .toggle("tpaEnabled", "TPA enabled", tpa.enabled)
     .text("tpaTimeout", "TPA timeout (s)", { placeholder: "60", defaultValue: String(tpa.timeoutSeconds) })
     .text("tpaCooldown", "TPA cooldown (s)", { placeholder: "20", defaultValue: String(tpa.cooldownSeconds) })
+    .toggle("tpaNotifyModal", "Notify incoming TPA via modal", tpa.notifyViaModal)
     .toggle("homesEnabled", "Homes enabled", homes.enabled)
     .text("maxHomes", "Max homes", { placeholder: "2", defaultValue: String(homes.maxHomesDefault) })
     .toggle("allowCrossDim", "Allow cross-dimension homes", homes.allowCrossDimension)
@@ -39,6 +40,7 @@ export async function showSocialSettingsAdmin(player: Player) {
     enabled: Boolean(result.values.tpaEnabled),
     timeoutSeconds: Math.max(5, Math.floor(Number(result.values.tpaTimeout ?? 60))),
     cooldownSeconds: Math.max(1, Math.floor(Number(result.values.tpaCooldown ?? 20))),
+    notifyViaModal: Boolean(result.values.tpaNotifyModal),
   });
   updateHomesConfig({
     enabled: Boolean(result.values.homesEnabled),

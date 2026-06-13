@@ -6,14 +6,14 @@ import {
 } from "@minecraft/server";
 import { fail, ok, registerPlayerCommand, resultFrom } from "./helpers";
 import { getOnlinePlayerByName, tell } from "../storage";
-import { acceptTpaRequest, createTpaRequest, deleteHome, denyTpaRequest, payPlayer, setHome, teleportHome } from "../social";
+import { acceptTpaRequest, cancelOutgoingTpaRequest, createTpaRequest, deleteHome, denyTpaRequest, payPlayer, setHome, teleportHome } from "../social";
 
 export function registerSocialCommands(registry: CustomCommandRegistry): void {
   registerPlayerCommand<[string | undefined]>(
     registry,
     {
       name: "tau:tpa",
-      description: "Send a teleport request to a player.",
+      description: "Open the TPA menu or send a teleport request to a player.",
       cheatsRequired: false,
       permissionLevel: CommandPermissionLevel.Any,
       optionalParameters: [{ name: "target", type: CustomCommandParamType.String }],
@@ -32,35 +32,47 @@ export function registerSocialCommands(registry: CustomCommandRegistry): void {
       const online = getOnlinePlayerByName(targetName);
       if (!online) return fail(`Player "${targetName}" is not online.`);
       const result = createTpaRequest(player, online);
-      if (result.ok) {
-        tell(online, `§e${player.name} sent you a TPA request. Use /tau:tpaccept or /tau:tpdeny.`);
-      }
       return resultFrom(result);
     }
   );
 
-  registerPlayerCommand(
+  registerPlayerCommand<[string | undefined]>(
     registry,
     {
       name: "tau:tpaccept",
-      description: "Accept latest TPA request.",
+      description: "Accept oldest TPA request, or a specific one by id.",
       cheatsRequired: false,
       permissionLevel: CommandPermissionLevel.Any,
+      optionalParameters: [{ name: "requestId", type: CustomCommandParamType.String }],
     },
     "tpa",
-    (player) => resultFrom(acceptTpaRequest(player))
+    (player, requestId) => resultFrom(acceptTpaRequest(player, requestId ? String(requestId) : undefined))
+  );
+
+  registerPlayerCommand<[string | undefined]>(
+    registry,
+    {
+      name: "tau:tpdeny",
+      description: "Deny oldest TPA request, or a specific one by id.",
+      cheatsRequired: false,
+      permissionLevel: CommandPermissionLevel.Any,
+      optionalParameters: [{ name: "requestId", type: CustomCommandParamType.String }],
+    },
+    "tpa",
+    (player, requestId) => resultFrom(denyTpaRequest(player, requestId ? String(requestId) : undefined))
   );
 
   registerPlayerCommand(
     registry,
     {
-      name: "tau:tpdeny",
-      description: "Deny latest TPA request.",
+      name: "tau:tpacancel",
+      description: "Cancel an outgoing TPA request by id.",
       cheatsRequired: false,
       permissionLevel: CommandPermissionLevel.Any,
+      mandatoryParameters: [{ name: "requestId", type: CustomCommandParamType.String }],
     },
     "tpa",
-    (player) => resultFrom(denyTpaRequest(player))
+    (player, requestId) => resultFrom(cancelOutgoingTpaRequest(player, String(requestId ?? "").trim()))
   );
 
   registerPlayerCommand<[string | undefined]>(

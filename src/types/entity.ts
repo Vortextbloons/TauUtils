@@ -53,10 +53,21 @@ export type TpaConfig = {
   enabled: boolean;
   timeoutSeconds: number;
   cooldownSeconds: number;
+  notifyViaModal: boolean;
 };
 
 export type TpaStore = {
   config: TpaConfig;
+};
+
+export type TpaRequest = {
+  requestId: string;
+  fromPlayerId: string;
+  fromName: string;
+  toPlayerId: string;
+  toName: string;
+  createdAt: number;
+  expiresAt: number;
 };
 
 export type HomeLocation = {

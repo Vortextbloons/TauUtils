@@ -169,9 +169,10 @@ const topics: Record<string, string[]> = {
   ],
   social: [
     "§6--- Social Features ---",
-    "§e/tau:tpa [player] §7- Send/accept/deny teleport requests",
-    "§e/tau:tpaccept §7- Accept latest TPA request",
-    "§e/tau:tpdeny §7- Deny latest TPA request",
+    "§e/tau:tpa [player] §7- Open TPA menu or send a request",
+    "§e/tau:tpaccept [id] §7- Accept oldest (or specific) TPA request",
+    "§e/tau:tpdeny [id] §7- Deny oldest (or specific) TPA request",
+    "§e/tau:tpacancel <id> §7- Cancel an outgoing TPA request",
     "§e/tau:sethome [name] §7- Set a named home",
     "§e/tau:home [name] §7- Teleport to a home",
     "§e/tau:delhome <name> §7- Delete a home",

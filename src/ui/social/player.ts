@@ -4,22 +4,7 @@ import { ICONS } from "../../types";
 import { getOnlinePlayersExcept, getPlayerId, state, tell } from "../../storage";
 import { createTpaRequest, deleteHome, listHomes, payPlayer, setHome, teleportHome, updatePlayerSettings } from "../../social";
 
-export async function showTpaMenu(player: Player) {
-  const players = getOnlinePlayersExcept(player);
-  if (players.length === 0) {
-    tell(player, "No online players available.");
-    return;
-  }
-  const form = TauUi.action<{ index: number }>("TPA").body("Send a teleport request.");
-  players.forEach((p, i) => form.button("player", p.name, { iconPath: ICONS.menu, value: { index: i } }));
-  form.back("Back", ICONS.back);
-  const res = await form.show(player);
-  if (TauUi.isCanceledOrBack(res) || !res.value) return;
-  const target = players[res.value.index];
-  const result = createTpaRequest(player, target);
-  tell(player, result.message);
-  if (result.ok) tell(target, `§e${player.name} sent you a TPA request. Use /tau:tpaccept or /tau:tpdeny.`);
-}
+export { showTpaHub as showTpaMenu, handleIncomingTpaRequest } from "./tpa";
 
 export async function showHomesMenu(player: Player) {
   while (true) {

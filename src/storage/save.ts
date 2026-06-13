@@ -1,6 +1,6 @@
 import { system, world } from "@minecraft/server";
 import { invalidateBannedItemCache } from "../moderation/banned-items";
-import { STORAGE_KEYS } from "../types";
+import { STORAGE_KEYS, type TpaRequest } from "../types";
 import {
   state,
   safeSetDynamicJson,
@@ -15,6 +15,11 @@ import {
   writeLootChestsToSplitKeys,
   writeSplitDynamicJson,
 } from "./state";
+import {
+  directSaveTpaCooldown,
+  directSaveTpaInbox,
+  directSaveTpaOutbox,
+} from "./split-keys/tpa";
 
 const pendingDynamicSaves = new Map<string, () => void>();
 let dynamicSaveFlushScheduled = false;
@@ -103,6 +108,18 @@ export function savePlots() {
 
 export function saveTpa() {
   scheduleDynamicSave(STORAGE_KEYS.tpa, () => safeSetDynamicJson(STORAGE_KEYS.tpa, state.tpa));
+}
+
+export function saveTpaInboxFor(playerId: string, requests: TpaRequest[]): boolean {
+  return directSaveTpaInbox(playerId, requests);
+}
+
+export function saveTpaOutboxFor(playerId: string, requests: TpaRequest[]): boolean {
+  return directSaveTpaOutbox(playerId, requests);
+}
+
+export function saveTpaCooldownFor(playerId: string, untilMs: number): boolean {
+  return directSaveTpaCooldown(playerId, untilMs);
 }
 
 export function saveHomes() {

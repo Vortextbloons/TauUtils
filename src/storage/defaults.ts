@@ -362,6 +362,7 @@ export function defaultTpaStore(): TpaStore {
       enabled: true,
       timeoutSeconds: 60,
       cooldownSeconds: 20,
+      notifyViaModal: true,
     },
   };
 }
