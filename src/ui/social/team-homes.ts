@@ -28,7 +28,7 @@ export async function showTeamHomesMenu(player: Player): Promise<void> {
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "set" && canMutate) {
       const result = await TauUi.modal("Set Team Home").text("name", "Home name", { placeholder: "home" }).submitButton("Set").show(player);
@@ -79,7 +79,7 @@ async function pickTeamHome(player: Player, _team: TeamDefinition, title: string
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const result = await form.show(player);
-    if (result.canceled || result.id === "back") return undefined;
+    if (TauUi.isCanceledOrBack(result)) return undefined;
     if (result.id === "previous" && slice.hasPrevious) {
       page--;
       continue;
@@ -113,7 +113,7 @@ export async function showTeamRolesMenu(player: Player, team: TeamDefinition): P
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id !== "member" || !response.value) continue;
 
     const targetId = response.value;
@@ -134,7 +134,7 @@ export async function showTeamRolesMenu(player: Player, team: TeamDefinition): P
         .button("demote", "Demote to member", { iconPath: ICONS.delete })
         .button("back", "Back", { iconPath: ICONS.back })
         .show(player);
-      if (pick.canceled || pick.id === "back" || pick.id !== "demote") continue;
+      if (TauUi.isCanceledOrBack(pick) || pick.id !== "demote") continue;
       if (!targetOnline) {
         tell(player, `${targetName} must be online to change roles.`);
         continue;
@@ -146,7 +146,7 @@ export async function showTeamRolesMenu(player: Player, team: TeamDefinition): P
         .button("promote", "Promote to admin", { iconPath: ICONS.confirm })
         .button("back", "Back", { iconPath: ICONS.back })
         .show(player);
-      if (pick.canceled || pick.id === "back" || pick.id !== "promote") continue;
+      if (TauUi.isCanceledOrBack(pick) || pick.id !== "promote") continue;
       if (!targetOnline) {
         tell(player, `${targetName} must be online to change roles.`);
         continue;

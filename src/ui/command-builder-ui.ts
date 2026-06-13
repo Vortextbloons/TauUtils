@@ -95,19 +95,19 @@ async function showConditionsMenu(player: Player, commandId: string): Promise<vo
       .button("delete", "Delete Condition", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "delete") {
       if (command.conditions.length === 0) continue;
       const picker = TauUi.action("Delete Condition");
       command.conditions.forEach((entry, index) => picker.button(String(index), conditionSummary(entry), { iconPath: ICONS.delete }));
       picker.button("back", "Back", { iconPath: ICONS.back });
       const picked = await picker.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       command.conditions.splice(Number(picked.id), 1);
       saveCommandBuilder();
       continue;
     }
-    await addCondition(player, commandId, response.id);
+    await addCondition(player, commandId, response.id as string);
   }
 }
 
@@ -201,9 +201,9 @@ async function showActionsMenu(player: Player, commandId: string): Promise<void>
       .button("delete", "Delete Action", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
-    if (["command", "effect", "score", "tag", "message"].includes(response.id)) {
-      await addAction(player, commandId, response.id);
+    if (TauUi.isCanceledOrBack(response)) return;
+    if (["command", "effect", "score", "tag", "message"].includes(response.id as string)) {
+      await addAction(player, commandId, response.id as string);
       continue;
     }
     if (command.actions.length === 0) continue;
@@ -211,7 +211,7 @@ async function showActionsMenu(player: Player, commandId: string): Promise<void>
     command.actions.forEach((entry, index) => picker.button(String(index), actionSummary(entry), { iconPath: response.id === "delete" ? ICONS.delete : ICONS.edit }));
     picker.button("back", "Back", { iconPath: ICONS.back });
     const picked = await picker.show(player);
-    if (picked.canceled || picked.id === "back") continue;
+    if (TauUi.isCanceledOrBack(picked)) continue;
     const index = Number(picked.id);
     if (!Number.isInteger(index) || !command.actions[index]) continue;
     if (response.id === "delete") command.actions.splice(index, 1);
@@ -253,7 +253,7 @@ async function showCommandEditor(player: Player, commandId: string): Promise<voi
       .button("delete", "Delete", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "settings") await showBasicSettings(player, command.id);
     if (response.id === "conditions") await showConditionsMenu(player, command.id);
     if (response.id === "actions") await showActionsMenu(player, command.id);
@@ -320,7 +320,7 @@ export async function showCommandBuilderMenu(player: Player): Promise<void> {
       .button("settings", "Settings", { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "create") {
       await createCommandFlow(player);
       continue;
@@ -338,8 +338,8 @@ export async function showCommandBuilderMenu(player: Player): Promise<void> {
       for (const id of ids) picker.button(id, `${id} - ${state.commandBuilder.commands[id].name}`, { iconPath: ICONS.edit });
       picker.button("back", "Back", { iconPath: ICONS.back });
       const picked = await picker.show(player);
-      if (picked.canceled || picked.id === "back") continue;
-      await showCommandEditor(player, picked.id);
+      if (TauUi.isCanceledOrBack(picked)) continue;
+      await showCommandEditor(player, picked.id as string);
     }
   }
 }

@@ -1,8 +1,6 @@
 import { CommandPermissionLevel, CustomCommandParamType, CustomCommandRegistry, system } from "@minecraft/server";
 import { ok, registerPlayerCommand, resultFrom } from "./helpers";
-import { tell } from "../storage";
-import { getPlayerTeam } from "../teams";
-import { deleteTeamHome, listTeamHomeNames, setTeamHome, summarizeTeamHomes, teleportTeamHome } from "../team-homes";
+import { deleteTeamHome, setTeamHome, teleportTeamHome } from "../team-homes";
 
 export function registerTeamHomesCommands(registry: CustomCommandRegistry): void {
   registerPlayerCommand<[string | undefined]>(
@@ -52,31 +50,5 @@ export function registerTeamHomesCommands(registry: CustomCommandRegistry): void
     },
     "teamHomes",
     (player, name) => resultFrom(deleteTeamHome(player, name))
-  );
-
-  registerPlayerCommand(
-    registry,
-    {
-      name: "tau:teamhomes",
-      description: "List your team's homes.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "teamHomes",
-    (player) => {
-      const team = getPlayerTeam(player);
-      if (!team) {
-        tell(player, "You are not in a team.");
-        return ok("You are not in a team.");
-      }
-      const names = listTeamHomeNames(team);
-      if (names.length === 0) {
-        tell(player, `Team ${team.name} has no team homes set.`);
-        return ok("Listed team homes.");
-      }
-      tell(player, summarizeTeamHomes(team));
-      for (const name of names) tell(player, `  - ${name}`);
-      return ok("Listed team homes.");
-    }
   );
 }

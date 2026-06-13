@@ -6,7 +6,7 @@ import {
 } from "@minecraft/server";
 import { fail, ok, registerPlayerCommand, resultFrom } from "./helpers";
 import { getOnlinePlayerByName, tell } from "../storage";
-import { acceptTpaRequest, createTpaRequest, deleteHome, denyTpaRequest, listHomes, payPlayer, setHome, teleportHome } from "../social";
+import { acceptTpaRequest, createTpaRequest, deleteHome, denyTpaRequest, payPlayer, setHome, teleportHome } from "../social";
 
 export function registerSocialCommands(registry: CustomCommandRegistry): void {
   registerPlayerCommand<[string | undefined]>(
@@ -110,23 +110,6 @@ export function registerSocialCommands(registry: CustomCommandRegistry): void {
     },
     "homes",
     (player, name) => resultFrom(deleteHome(player, name))
-  );
-
-  registerPlayerCommand(
-    registry,
-    {
-      name: "tau:homes",
-      description: "List your homes.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "homes",
-    (player) => {
-      const homes = listHomes(player);
-      if (homes.length === 0) return ok("No homes set.");
-      for (const home of homes) tell(player, `- ${home}`);
-      return ok(`Listed ${homes.length} homes.`);
-    }
   );
 
   registerPlayerCommand<[string | undefined, string | undefined]>(

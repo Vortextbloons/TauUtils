@@ -191,7 +191,7 @@ async function editKillConditionActions(player: Player, rule: KillConditionRule)
     const action = rule.actions[actionIndex];
     const manage = TauUi.action("Action").button("edit", "Edit", { iconPath: ICONS.edit }).button("delete", "Delete", { iconPath: ICONS.delete }).button("back", "Back", { iconPath: ICONS.back });
     const picked = await manage.show(player);
-    if (picked.canceled || picked.id === "back") continue;
+    if (TauUi.isCanceledOrBack(picked)) continue;
     if (picked.id === "delete") {
       rule.actions.splice(actionIndex, 1);
       saveCombat();
@@ -212,7 +212,7 @@ async function editKillConditionRule(player: Player, rule: KillConditionRule): P
       .button("delete", "Delete", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "edit") await editKillConditionRuleDetails(player, rule);
     else if (response.id === "actions") await editKillConditionActions(player, rule);
     else if (response.id === "duplicate") {
@@ -270,7 +270,7 @@ export async function showCombatSettingsAdmin(player: Player): Promise<void> {
       .button("killConditions", "Kill Conditions", { iconPath: ICONS.sidebar })
       .button("back", "Back", { iconPath: ICONS.back });
     const picked = await menu.show(player);
-    if (picked.canceled || picked.id === "back") return;
+    if (TauUi.isCanceledOrBack(picked)) return;
     if (picked.id === "killConditions") {
       await showKillConditionsAdmin(player);
       continue;
@@ -320,7 +320,7 @@ export async function showTeamInviteCenter(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "invite") {
       if (online.length === 0) {
@@ -331,7 +331,7 @@ export async function showTeamInviteCenter(player: Player) {
       online.forEach((p, i) => pick.button("player", p.name, { iconPath: ICONS.menu, value: { index: i } }));
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back" || !picked.value) continue;
+      if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
       tell(player, inviteToTeam(player, online[picked.value.index]).message);
       continue;
     }
@@ -348,7 +348,7 @@ export async function showTeamInviteCenter(player: Player) {
       invitedPlayers.forEach((p, i) => pick.button("player", p.name, { iconPath: ICONS.delete, value: { index: i } }));
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back" || !picked.value) continue;
+      if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
       tell(player, revokeTeamInvite(player, invitedPlayers[picked.value.index]).message);
     }
   }
@@ -369,14 +369,14 @@ export async function showPendingTeamInvites(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "accept") {
       const pick = TauUi.action<{ index: number }>("Accept Team Invite").body("Select a team invite to accept.");
       invitedTeams.forEach((team, i) => pick.button("team", getTeamSummary(team), { iconPath: ICONS.confirm, value: { index: i } }));
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back" || !picked.value) continue;
+      if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
       tell(player, acceptTeamInvite(player, invitedTeams[picked.value.index].id).message);
       return;
     }

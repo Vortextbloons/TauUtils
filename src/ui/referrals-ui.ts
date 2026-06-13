@@ -29,7 +29,7 @@ async function showReferralAdminMenu(player: Player): Promise<void> {
       .button("customRewards", "Custom Rewards", { iconPath: ICONS.utility })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "toggle") cfg.enabled = !cfg.enabled;
     else if (response.id === "multiple") cfg.allowMultipleRedemptions = !cfg.allowMultipleRedemptions;
     else if (response.id === "broadcast") cfg.broadcastMessage = !cfg.broadcastMessage;

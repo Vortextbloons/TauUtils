@@ -123,9 +123,9 @@ async function showRewardEditor(player: Player, rewardId: string): Promise<void>
       .button("delete", "Delete Reward", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
-    if (["score", "item", "heldItem", "command", "tag", "effect", "message"].includes(response.id)) {
-      await addRewardAction(player, rewardId, response.id);
+    if (TauUi.isCanceledOrBack(response)) return;
+    if (["score", "item", "heldItem", "command", "tag", "effect", "message"].includes(response.id as string)) {
+      await addRewardAction(player, rewardId, response.id as string);
       continue;
     }
     if (response.id === "settings") {
@@ -152,7 +152,7 @@ async function showRewardEditor(player: Player, rewardId: string): Promise<void>
       reward.actions.forEach((action, index) => picker.button(String(index), actionSummary(action), { iconPath: ICONS.delete }));
       picker.button("back", "Back", { iconPath: ICONS.back });
       const picked = await picker.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       reward.actions.splice(Number(picked.id), 1);
       saveCustomRewards();
       continue;
@@ -187,7 +187,7 @@ export async function showCustomRewardsAdminMenu(player: Player): Promise<void> 
       .button("edit", "Edit Reward", { iconPath: ICONS.edit })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "toggle") {
       state.customRewards.config.enabled = !state.customRewards.config.enabled;
       saveCustomRewards();
@@ -210,8 +210,8 @@ export async function showCustomRewardsAdminMenu(player: Player): Promise<void> 
       for (const id of ids) picker.button(id, `${state.customRewards.rewards[id].name} (${id})`, { iconPath: ICONS.edit });
       picker.button("back", "Back", { iconPath: ICONS.back });
       const picked = await picker.show(player);
-      if (picked.canceled || picked.id === "back") continue;
-      await showRewardEditor(player, picked.id);
+      if (TauUi.isCanceledOrBack(picked)) continue;
+      await showRewardEditor(player, picked.id as string);
     }
   }
 }

@@ -10,7 +10,7 @@ export async function showConfigSection(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "featureToggles") {
       const { showConfigMenu } = await import("../admin-ui");

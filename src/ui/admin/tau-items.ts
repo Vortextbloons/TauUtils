@@ -68,7 +68,7 @@ async function showTauItemActionSimpleCreate(player: Player): Promise<TauItemAct
     .button("aoe", "AOE", { iconPath: ICONS.shop })
     .button("back", "Back", { iconPath: ICONS.back })
     .show(player);
-  if (response.canceled || response.id === undefined || response.id === "back") return undefined;
+  if (TauUi.isCanceledOrBack(response)) return undefined;
 
   if (response.id === "command") {
     const result = await TauUi.modal("Command Chain")
@@ -192,7 +192,7 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
       .button("deleteAction", "Delete Action", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "simpleAdd" || response.id === "customAdd") {
@@ -210,7 +210,7 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
       def.actions.forEach((action, index) => picker.button(String(index), `${index + 1}. ${action.type}`, { iconPath: isDelete ? ICONS.delete : ICONS.edit, value: { index } }));
       picker.button("back", "Back", { iconPath: ICONS.back });
       const picked = await picker.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       if (isDelete) {
         def.actions.splice(picked.value.index, 1);
@@ -342,7 +342,7 @@ async function showTauItemTriggerEditor(player: Player, tauItemId: string) {
       .button("textCsv", "Text / CSV", { iconPath: ICONS.command })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "simplePicker") {
@@ -466,7 +466,7 @@ async function showTauItemEditor(player: Player, tauItemId: string) {
       .button("giveItem", "Give Item", { iconPath: ICONS.confirm })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "editCore") {
@@ -539,7 +539,7 @@ export async function showTauItemsAdminMenu(player: Player) {
       .button("toggleEnabled", `TauItems Enabled: ${state.tauItems.config.enabled ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "create") {
@@ -561,7 +561,7 @@ export async function showTauItemsAdminMenu(player: Player) {
       for (const id of ids) pick.button(id, state.tauItems.items[id]?.displayName ?? id, { iconPath: ICONS.edit, value: { id } });
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       await showTauItemEditor(player, picked.value.id);
       continue;
@@ -576,7 +576,7 @@ export async function showTauItemsAdminMenu(player: Player) {
       for (const id of ids) pick.button(id, state.tauItems.items[id]?.displayName ?? id, { iconPath: ICONS.delete, value: { id } });
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       const res = deleteTauItemDefinition(picked.value.id);
       tell(player, res.ok ? res.message : `§c${res.message}`);

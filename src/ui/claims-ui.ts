@@ -86,7 +86,7 @@ async function editClaim(player: Player, claimId: string): Promise<void> {
       .button("delete", "Delete", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "delete") {
       const ok = await TauUi.confirm(player, { title: "Delete Claim", body: `Delete ${claim.name}?`, confirmText: "Delete" });
       if (!ok) continue;
@@ -153,7 +153,7 @@ export async function showClaimMenu(player: Player): Promise<void> {
     for (const claim of playerClaims(player)) form.button("claim", claim.name, { iconPath: ICONS.plot, value: { claimId: claim.id } });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "create") await createClaim(player);
     if (response.id === "claim" && response.value) await editClaim(player, response.value.claimId);
   }

@@ -1,7 +1,6 @@
 import { CommandPermissionLevel, CustomCommandParamType, CustomCommandRegistry, system } from "@minecraft/server";
 import { runCustomReward } from "../custom-rewards";
-import { getOrCreateReferralRecord, redeemReferralCode } from "../referrals";
-import { tell } from "../storage";
+import { redeemReferralCode } from "../referrals";
 import { ok, registerPlayerCommand, resultFrom } from "./helpers";
 
 export function registerRewardsReferralsCommands(registry: CustomCommandRegistry): void {
@@ -32,7 +31,7 @@ export function registerRewardsReferralsCommands(registry: CustomCommandRegistry
     registry,
     {
       name: "tau:referral",
-      description: "Show your referral code.",
+      description: "Redeem another player's referral code.",
       cheatsRequired: false,
       permissionLevel: CommandPermissionLevel.Any,
       optionalParameters: [{ name: "code", type: CustomCommandParamType.String }],
@@ -40,25 +39,15 @@ export function registerRewardsReferralsCommands(registry: CustomCommandRegistry
     "referrals",
     (player, code) => {
       const referralCode = String(code ?? "").trim();
-      if (referralCode) return resultFrom(redeemReferralCode(player, referralCode));
-      const record = getOrCreateReferralRecord(player);
-      tell(player, `§aYour referral code: §e${record.code}`);
-      tell(player, `§7Successful referrals: ${record.referralCount ?? 0}`);
-      return ok(`Your referral code is ${record.code}.`);
+      if (!referralCode) {
+        system.run(async () => {
+          const { showReferralMenu } = await import("../ui");
+          showReferralMenu(player);
+        });
+        return ok("Opening referrals menu.");
+      }
+      return resultFrom(redeemReferralCode(player, referralCode));
     }
-  );
-
-  registerPlayerCommand<[string]>(
-    registry,
-    {
-      name: "tau:refer",
-      description: "Redeem another player's referral code.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      mandatoryParameters: [{ name: "code", type: CustomCommandParamType.String }],
-    },
-    "referrals",
-    (player, code) => resultFrom(redeemReferralCode(player, code))
   );
 
   registerPlayerCommand(

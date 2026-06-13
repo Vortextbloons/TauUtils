@@ -100,7 +100,7 @@ export async function showRtpMenu(player: Player): Promise<void> {
   for (const region of regions) form.button("region", region.name, { iconPath: ICONS.sidebar, value: { regionId: region.id } });
   form.button("back", "Back", { iconPath: ICONS.back });
   const response = await form.show(player);
-  if (response.canceled || response.id === "back" || !response.value) return;
+  if (TauUi.isCanceledOrBack(response) || !response.value) return;
   tell(player, randomTeleport(player, response.value.regionId).message);
 }
 
@@ -118,7 +118,7 @@ export async function showRtpAdminMenu(player: Player): Promise<void> {
     for (const region of regions) form.button("region", `${region.enabled ? "On" : "Off"}: ${region.name}`, { iconPath: ICONS.sidebar, value: { regionId: region.id } });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "create") {
       await createRegion(player);
       continue;

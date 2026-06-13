@@ -17,7 +17,7 @@ export async function showRankMenu(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (res.canceled || res.id === "back") return;
+    if (TauUi.isCanceledOrBack(res)) return;
 
     if (res.id === "manage") {
       await showRankManager(player);
@@ -121,8 +121,8 @@ export async function showRankManager(player: Player) {
       pickForm.button("back", "Back", { iconPath: ICONS.back });
 
       const pickResponse = await pickForm.show(player);
-      if (pickResponse.canceled || pickResponse.id === "back") continue;
-      const newDefault = pickResponse.id.replace("rank_", "");
+      if (TauUi.isCanceledOrBack(pickResponse)) continue;
+      const newDefault = (pickResponse.id as string).replace("rank_", "");
       setDefaultRank(newDefault);
       tell(player, `Default rank set to "${state.ranks.ranks[newDefault]?.name}".`);
       continue;
@@ -140,7 +140,7 @@ export async function showRankManager(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back });
 
     const editResponse = await editForm.show(player);
-    if (editResponse.canceled || editResponse.id === "back") continue;
+    if (TauUi.isCanceledOrBack(editResponse)) continue;
 
     if (editResponse.id === "edit") {
       await showRankEditor(player, selectedRank.id);
@@ -230,9 +230,9 @@ export async function showPlayerRankAssign(player: Player) {
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
-    const selectedPlayerName = response.id.replace("player_", "");
+    const selectedPlayerName = (response.id as string).replace("player_", "");
     const selectedPlayer = onlinePlayers.find((p) => p.name === selectedPlayerName);
     if (!selectedPlayer) continue;
 
@@ -248,7 +248,7 @@ export async function showPlayerRankAssign(player: Player) {
     rankForm.button("back", "Back", { iconPath: ICONS.back });
 
     const rankResponse = await rankForm.show(player);
-    if (rankResponse.canceled || rankResponse.id === "back") continue;
+    if (TauUi.isCanceledOrBack(rankResponse)) continue;
 
     if (rankResponse.id === "remove") {
       removeRank(selectedPlayer.name);
@@ -256,7 +256,7 @@ export async function showPlayerRankAssign(player: Player) {
       continue;
     }
 
-    const selectedRankKey = rankResponse.id.replace("rank_", "");
+    const selectedRankKey = (rankResponse.id as string).replace("rank_", "");
     const selectedRank = state.ranks.ranks[selectedRankKey];
     if (!selectedRank) continue;
 
@@ -302,9 +302,9 @@ export async function showProfileBrowser(player: Player) {
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
-    const selected = players.find((p) => p.name === response.id.replace("player_", ""));
+    const selected = players.find((p) => p.name === (response.id as string).replace("player_", ""));
     if (!selected) continue;
     await showPlayerProfileViewer(player, selected.name);
   }
@@ -368,7 +368,7 @@ export async function showPlayerProfileEditor(player: Player, targetName: string
       .button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "summary") {
       toggleSection(existing, "summary");

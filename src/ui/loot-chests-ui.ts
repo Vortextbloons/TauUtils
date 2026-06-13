@@ -144,7 +144,7 @@ async function editSnapshot(player: Player, poolId: string, snapshotId: string):
       .button("delete", "Delete Snapshot", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "edit") {
       const result = await TauUi.modal("Edit Snapshot")
         .text("name", "Name", { defaultValue: snapshot.name })
@@ -206,7 +206,7 @@ async function manageSnapshots(player: Player, poolId: string): Promise<void> {
     for (const snapshot of snapshots) form.button("snapshot", `${snapshot.name} (${snapshot.weight}, ${getLootChestSnapshotChanceText(snapshot.weight, totalWeight)})`, { iconPath: ICONS.item, value: snapshot.id });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.value) await editSnapshot(player, poolId, response.value);
   }
 }
@@ -225,7 +225,7 @@ async function editPool(player: Player, poolId: string): Promise<void> {
       .button("delete", "Delete Pool", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "capture_look") {
       const location = getLookedAtContainerLocation(player);
       if (!location) tell(player, "Look at a chest/container first.");
@@ -267,7 +267,7 @@ async function managePools(player: Player): Promise<void> {
     for (const pool of pools) form.button("pool", `${pool.name} (${pool.snapshotIds.length})`, { iconPath: ICONS.menu, value: pool.id });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "create") {
       const result = await TauUi.modal("Create Pool").text("name", "Pool name", { defaultValue: "Dungeon Loot" }).submitButton("Create").show(player);
       if (!result.canceled) sendLootChestResult(player, createLootChestPool(String(result.values.name ?? "")));
@@ -332,7 +332,7 @@ async function editLocation(player: Player, chestId: string): Promise<void> {
       .button("delete", "Delete Binding", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "force") {
       sendLootChestResult(player, forceRefillLootChest(chest.id));
       continue;
@@ -402,7 +402,7 @@ async function manageLocations(player: Player): Promise<void> {
     for (const chest of chests.slice(0, 40)) form.button("chest", describeLootChest(chest), { iconPath: ICONS.item, value: chest.id });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "bind_look") await bindChest(player, true);
     else if (response.id === "bind_coords") await bindChest(player, false);
     else if (response.value) await editLocation(player, response.value);
@@ -442,7 +442,7 @@ export async function showLootChestsAdminMenu(player: Player): Promise<void> {
       .button("settings", "Settings", { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "pools") await managePools(player);
     else if (response.id === "locations") await manageLocations(player);
     else if (response.id === "refillAll") {

@@ -1,10 +1,9 @@
 import { Player, ItemStack } from "@minecraft/server";
-import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { ACTION_TYPES, isWorkingIconPath, ICONS, type ActionType, type FormDefinition, type FormElement, type UIButtonElement } from "../types";
 import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, state, isFeatureEnabled, tell } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { iconForAction, iconForElement, optionalIcon } from "./tau-ui-helper";
-import { safeCall } from "../shared/safe-call";
+import { TauUi } from "./tau-ui";
 
 export async function openFormById(player: Player, menuId: string) {
   const form = findForm(menuId);
@@ -18,55 +17,48 @@ export async function openFormById(player: Player, menuId: string) {
       (element): element is UIButtonElement => element.kind === "button"
     );
 
-    const actionForm = new ActionFormData().title(form.title);
+    const actionForm = TauUi.action<UIButtonElement>(form.title);
     if (form.body) actionForm.body(form.body);
     for (const button of buttons) {
-      const icon = optionalIcon(button.iconPath) ?? undefined;
-      if (icon) actionForm.button(button.text, icon);
-      else actionForm.button(button.text);
-    }
-    if (buttons.length === 0) {
-      actionForm.button("Close", ICONS.cancel);
+      actionForm.button("open", button.text, {
+        iconPath: optionalIcon(button.iconPath) ?? undefined,
+        value: button,
+      });
     }
 
-    const response = await safeCall(() => actionForm.show(player), undefined);
-    if (!response || response.canceled || response.selection === undefined)
-      return;
-    const selected = buttons[response.selection];
-    if (!selected) return;
-    await runBoundAction(player, selected.action, selected.value);
+    const response = await actionForm.show(player);
+    if (TauUi.isCanceledOrBack(response) || response.id !== "open" || !response.value) return;
+    await runBoundAction(player, response.value.action, response.value.value);
     return;
   }
 
-  const modalForm = new ModalFormData().title(form.title).submitButton("Submit");
-  const handlers: { action: ActionType; value?: string }[] = [];
+  const modalForm = TauUi.modal(form.title).submitButton("Submit");
+  const handlers: { action: ActionType; value?: string; key: string }[] = [];
 
-  for (const element of form.elements) {
+  form.elements.forEach((element, index) => {
+    const key = String(index);
     switch (element.kind) {
       case "toggle":
-        modalForm.toggle(element.label, {
-          defaultValue: element.defaultValue ?? false,
-        });
-        handlers.push({ action: element.action, value: element.value });
+        modalForm.toggle(key, element.label, element.defaultValue ?? false);
+        handlers.push({ action: element.action, value: element.value, key });
         break;
       case "slider":
-        modalForm.slider(element.label, element.min, element.max, {
+        modalForm.slider(key, element.label, element.min, element.max, {
+          step: element.step,
           defaultValue: element.defaultValue,
-          valueStep: element.step,
         });
-        handlers.push({ action: element.action, value: element.value });
+        handlers.push({ action: element.action, value: element.value, key });
         break;
       case "dropdown":
-        modalForm.dropdown(element.label, element.options, {
-          defaultValueIndex: element.defaultValueIndex,
-        });
-        handlers.push({ action: element.action, value: element.value });
+        modalForm.dropdown(key, element.label, element.options, element.defaultValueIndex);
+        handlers.push({ action: element.action, value: element.value, key });
         break;
       case "input":
-        modalForm.textField(element.label, element.placeholder ?? "", {
+        modalForm.text(key, element.label, {
+          placeholder: element.placeholder ?? "",
           defaultValue: element.defaultValue,
         });
-        handlers.push({ action: element.action, value: element.value });
+        handlers.push({ action: element.action, value: element.value, key });
         break;
       case "label":
         modalForm.label(element.text);
@@ -77,14 +69,13 @@ export async function openFormById(player: Player, menuId: string) {
       case "button":
         break;
     }
-  }
+  });
 
-  const response = await safeCall(() => modalForm.show(player), undefined);
-  if (!response || response.canceled || !response.formValues) return;
+  const result = await modalForm.show(player);
+  if (result.canceled) return;
 
-  for (let i = 0; i < handlers.length; i++) {
-    const handler = handlers[i];
-    const selectedValue = response.formValues[i];
+  for (const handler of handlers) {
+    const selectedValue = result.values[handler.key];
     const shouldExecute =
       typeof selectedValue === "boolean"
         ? selectedValue

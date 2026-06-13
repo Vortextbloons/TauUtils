@@ -173,7 +173,7 @@ async function showContainerInspector(player: Player, title: string, container: 
       .button("deleteItem", "Delete Item", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (res.canceled || res.id === "back") return;
+    if (TauUi.isCanceledOrBack(res)) return;
 
     if (items.length === 0) continue;
 
@@ -184,9 +184,8 @@ async function showContainerInspector(player: Player, title: string, container: 
     }
     picker.button("back", "Back", { iconPath: ICONS.back });
     const picked = await picker.show(player);
-    if (picked.canceled || picked.id === "back") continue;
-    if (picked.id === undefined) continue;
-    const entry = items[parseInt(picked.id)];
+    if (TauUi.isCanceledOrBack(picked)) continue;
+    const entry = items[parseInt(picked.id as string)];
     if (!entry) continue;
     container.setItem(entry.slot, undefined);
     onMutate?.();
@@ -204,7 +203,7 @@ async function showOnlinePlayerInspector(player: Player) {
       .button("enderChest", "Ender Chest", { iconPath: ICONS.menu })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (res.canceled || res.id === "back") return;
+    if (TauUi.isCanceledOrBack(res)) return;
 
     const source: PlayerInspectionSource = res.id === "enderChest" ? "enderChest" : "inventory";
 
@@ -215,7 +214,7 @@ async function showOnlinePlayerInspector(player: Player) {
     }
     picker.button("back", "Back", { iconPath: ICONS.back });
     const picked = await picker.show(player);
-    if (picked.canceled || picked.id === "back") continue;
+    if (TauUi.isCanceledOrBack(picked)) continue;
 
     const target = targets.find((t) => t.name === picked.value!.name)!;
     const inventoryContainer = getInventoryContainer(target);
@@ -268,7 +267,7 @@ async function showOfflinePlayerInspector(player: Player) {
     .button("enderChest", "Ender Chest", { iconPath: ICONS.menu })
     .button("back", "Back", { iconPath: ICONS.back })
     .show(player);
-  if (sourceResponse.canceled || sourceResponse.id === "back") return;
+  if (TauUi.isCanceledOrBack(sourceResponse)) return;
 
   const source: PlayerInspectionSource = sourceResponse.id === "enderChest" ? "enderChest" : "inventory";
   const items = source === "inventory" ? snapshot.inventory : snapshot.enderChest;
@@ -300,7 +299,7 @@ async function showModerationPlayerCleaner(player: Player) {
   }
   picker.button("back", "Back", { iconPath: ICONS.back });
   const picked = await picker.show(player);
-  if (picked.canceled || picked.id === "back") return;
+  if (TauUi.isCanceledOrBack(picked)) return;
 
   const target = online[picked.value!.index];
   const removed = clearBannedInventory(target);
@@ -324,7 +323,7 @@ export async function showModerationMenu(player: Player) {
       .button("clearHeld", "Clear Held Item If Banned", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "addHeldItem") {
@@ -369,7 +368,7 @@ export async function showModerationMenu(player: Player) {
       }
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       const entry = banned[picked.value.index];
       const detailResponse = await TauUi.action("§cBanned Item§r")
@@ -396,7 +395,7 @@ export async function showModerationMenu(player: Player) {
         .button("offline", "Offline Player", { iconPath: ICONS.menu })
         .button("back", "Back", { iconPath: ICONS.back })
         .show(player);
-      if (pickedMode.canceled || pickedMode.id === "back") continue;
+      if (TauUi.isCanceledOrBack(pickedMode)) continue;
       if (pickedMode.id === "online") {
         await showOnlinePlayerInspector(player);
       } else {

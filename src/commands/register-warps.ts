@@ -12,26 +12,6 @@ import { listWarps } from "../warps";
 export function registerWarpsCommands(registry: CustomCommandRegistry): void {
   registry.registerCommand(
     {
-      name: "tau:warps",
-      description: "Open warp menu.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    (origin): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
-      const player = commandOriginToPlayer(origin)!;
-      if (!isFeatureEnabled("warps")) return { status: 1, message: "Warps are disabled." };
-      system.run(async () => {
-        const { showWarpMenu } = await import("../ui");
-        showWarpMenu(player);
-      });
-      return { status: 0, message: "Opening warp menu." };
-    }
-  );
-
-  registry.registerCommand(
-    {
       name: "tau:warpsadmin",
       description: "Open warp admin menu.",
       cheatsRequired: false,

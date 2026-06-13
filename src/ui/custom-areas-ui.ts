@@ -243,12 +243,12 @@ async function listEditors<T>(player: Player, title: string, getItems: () => T[]
     for (let i = 0; i < items.length; i++) form.button("item", label(items[i]!), { iconPath: ICONS.edit, value: { index: i } });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "add") { await add(); continue; }
     const index = response.value!.index;
     const manage = TauUi.action("Manage").button("edit", "Edit", { iconPath: ICONS.edit }).button("delete", "Delete", { iconPath: ICONS.delete }).button("back", "Back", { iconPath: ICONS.back });
     const picked = await manage.show(player);
-    if (picked.canceled || picked.id === "back") continue;
+    if (TauUi.isCanceledOrBack(picked)) continue;
     if (picked.id === "delete") { remove(index); save(); continue; }
     await edit(items[index]!);
   }
@@ -287,7 +287,7 @@ async function editArea(player: Player, areaId: string): Promise<void> {
       .button("delete", "Delete", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "basics") await editBasics(player, area.id);
     else if (response.id === "messages") await editMessages(player, area.id);
     else if (response.id === "permissions") await editPermissions(player, area.id);
@@ -380,7 +380,7 @@ export async function showCustomAreasAdminMenu(player: Player): Promise<void> {
     for (const area of areas) form.button("area", `${area.enabled ? "§aON" : "§cOFF"}§r ${area.name} §7(${area.id})`, { iconPath: ICONS.sidebar, value: { areaId: area.id } });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "globalSettings") { await globalSettings(player); continue; }
     if (response.id === "createArea") { await createArea(player); continue; }
     const area = areas.find((a) => a.id === response.value!.areaId);

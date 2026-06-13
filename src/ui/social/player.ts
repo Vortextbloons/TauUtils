@@ -14,7 +14,7 @@ export async function showTpaMenu(player: Player) {
   players.forEach((p, i) => form.button("player", p.name, { iconPath: ICONS.menu, value: { index: i } }));
   form.back("Back", ICONS.back);
   const res = await form.show(player);
-  if (res.canceled || res.id === "back" || !res.value) return;
+  if (TauUi.isCanceledOrBack(res) || !res.value) return;
   const target = players[res.value.index];
   const result = createTpaRequest(player, target);
   tell(player, result.message);
@@ -31,7 +31,7 @@ export async function showHomesMenu(player: Player) {
       .button("delete", "Delete Home", { iconPath: ICONS.delete })
       .back("Back", ICONS.back);
     const res = await form.show(player);
-    if (res.canceled || res.id === "back") return;
+    if (TauUi.isCanceledOrBack(res)) return;
 
     if (res.id === "set") {
       const result = await TauUi.modal("Set Home").text("name", "Home name", { placeholder: "home" }).submitButton("Save").show(player);
@@ -49,7 +49,7 @@ export async function showHomesMenu(player: Player) {
     homes.forEach((name, i) => pick.button("home", name, { iconPath: ICONS.menu, value: { index: i } }));
     pick.back("Back", ICONS.back);
     const picked = await pick.show(player);
-    if (picked.canceled || picked.id === "back" || !picked.value) continue;
+    if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
     const name = homes[picked.value.index];
     if (res.id === "tp") tell(player, teleportHome(player, name).message);
     else tell(player, deleteHome(player, name).message);
@@ -66,7 +66,7 @@ export async function showPayMenu(player: Player) {
   players.forEach((p, i) => pick.button("player", p.name, { iconPath: ICONS.shop, value: { index: i } }));
   pick.back("Back", ICONS.back);
   const picked = await pick.show(player);
-  if (picked.canceled || picked.id === "back" || !picked.value) return;
+  if (TauUi.isCanceledOrBack(picked) || !picked.value) return;
   const target = players[picked.value.index];
   const result = await TauUi.modal(`Pay ${target.name}`).text("amount", "Amount", { placeholder: "100" }).submitButton("Send").show(player);
   if (result.canceled) return;

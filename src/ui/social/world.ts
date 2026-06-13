@@ -60,7 +60,7 @@ export async function showTeamMenu(player: Player) {
           .button("disbandTeam", "Disband Team", { iconPath: ICONS.delete })
           .button("back", "Back", { iconPath: ICONS.back });
         const subResp = await sub.show(player);
-        if (subResp.canceled || subResp.id === "back") continue;
+        if (TauUi.isCanceledOrBack(subResp)) continue;
         if (subResp.id === "friendlyFire") {
           tell(player, setTeamFriendlyFire(player, !team.friendlyFire).message);
           continue;
@@ -79,7 +79,7 @@ export async function showTeamMenu(player: Player) {
           online.forEach((p, i) => pick.button("member", p.name, { iconPath: ICONS.delete, value: { index: i } }));
           pick.button("back", "Back", { iconPath: ICONS.back });
           const picked = await pick.show(player);
-          if (picked.canceled || picked.id === "back" || !picked.value) continue;
+          if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
           tell(player, kickFromTeam(player, online[picked.value.index]).message);
           continue;
         }
@@ -123,7 +123,7 @@ export async function showTeamMenu(player: Player) {
       teams.forEach((teamEntry, i) => pick.button("team", getTeamSummary(teamEntry), { iconPath: ICONS.menu, value: { index: i } }));
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back" || !picked.value) continue;
+      if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
       tell(player, joinTeam(player, teams[picked.value.index].id).message);
       continue;
     }
@@ -162,7 +162,7 @@ export async function showWarpMenu(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (warps.length === 0) {
       tell(player, "No warps available.");
       continue;
@@ -172,7 +172,7 @@ export async function showWarpMenu(player: Player) {
     warps.forEach((warp, i) => pick.button("warp", `${warp.category}: ${warp.name}`, { iconPath: ICONS.sidebar, value: { index: i } }));
     pick.button("back", "Back", { iconPath: ICONS.back });
     const picked = await pick.show(player);
-    if (picked.canceled || picked.id === "back" || !picked.value) continue;
+    if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
     const warp = warps[picked.value.index];
     tell(player, teleportToWarp(player, warp.id).message);
   }
@@ -194,7 +194,7 @@ export async function showWarpAdminMenu(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "create") {
       const result = await TauUi.modal("Create Warp").text("name", "Warp name", { placeholder: "spawn" }).text("category", "Category", { placeholder: "spawn" }).submitButton("Create").show(player);
@@ -212,7 +212,7 @@ export async function showWarpAdminMenu(player: Player) {
     warps.forEach((warp, i) => pick.button("warp", `${warp.category}: ${warp.name}`, { iconPath: ICONS.sidebar, value: { index: i } }));
     pick.button("back", "Back", { iconPath: ICONS.back });
     const picked = await pick.show(player);
-    if (picked.canceled || picked.id === "back" || !picked.value) continue;
+    if (TauUi.isCanceledOrBack(picked) || !picked.value) continue;
     const warp = warps[picked.value.index];
     if (response.id === "setLocation") tell(player, setWarpLocation(player, warp.id).message);
     if (response.id === "deleteWarp") tell(player, deleteWarp(warp.id).message);

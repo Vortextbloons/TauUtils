@@ -68,7 +68,7 @@ async function showMenuUiManagement(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "createAction") {
       await showCreateBaseForm(player, "action");
@@ -89,7 +89,7 @@ async function showMenuUiManagement(player: Player) {
       }
       picker.button("back", "Back", { iconPath: ICONS.back });
       const pick = await picker.show(player);
-      if (pick.canceled || pick.id === "back" || !pick.value) continue;
+      if (TauUi.isCanceledOrBack(pick) || !pick.value) continue;
       await showFormEditor(player, pick.value);
       continue;
     }
@@ -104,7 +104,7 @@ async function showMenuUiManagement(player: Player) {
       }
       picker.button("back", "Back", { iconPath: ICONS.back });
       const pick = await picker.show(player);
-      if (pick.canceled || pick.id === "back" || !pick.value) continue;
+      if (TauUi.isCanceledOrBack(pick) || !pick.value) continue;
       const { openFormById } = await import("../form-engine");
       await openFormById(player, pick.value);
       continue;
@@ -145,7 +145,7 @@ async function showPlayerSystems(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "shopProfiles") {
       const { showShopProfilesEditor } = await import("../../shop");
@@ -199,7 +199,7 @@ async function showWorldSystems(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "plots") {
       const { showPlotManager } = await import("../plots-ui");
@@ -253,7 +253,7 @@ async function showAdminRules(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "combat") {
       const { showCombatSettingsAdmin } = await import("../social-ui");

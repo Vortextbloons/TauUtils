@@ -22,7 +22,7 @@ export async function showBindingsEditor(player: Player) {
       .button("viewBindings", "View bindings", { iconPath: ICONS.binding })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "viewBindings") {
@@ -212,7 +212,7 @@ export async function showBindingsViewer(player: Player) {
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "itemBinds") {
@@ -265,7 +265,7 @@ async function showBindingsList(
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const result = await form.show(player);
-    if (result.canceled || result.id === "back") return;
+    if (TauUi.isCanceledOrBack(result)) return;
     if (result.id === "previous" && slice.hasPrevious) {
       page--;
       continue;
@@ -314,7 +314,7 @@ async function showBindingDetail(
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const result = await form.show(player);
-    if (result.canceled || result.id === "back") return "kept";
+    if (TauUi.isCanceledOrBack(result)) return "kept";
 
     if (result.id === "test" && formDef) {
       const { openFormById } = await import("../form-engine");
@@ -377,7 +377,7 @@ export async function showConfigMenu(player: Player) {
       .button("socialSettings", "Social Settings", { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "socialSettings") {
@@ -440,7 +440,7 @@ export async function showConfigMenu(player: Player) {
       lootChests: "lootChests", commandBuilder: "commandBuilder", claims: "claims", rtp: "rtp",
       teamHomes: "teamHomes", customRewards: "customRewards", referrals: "referrals",
     };
-    const key = keys[response.id];
+    const key = keys[response.id as string];
     if (!key) continue;
     features[key] = !features[key];
     saveConfig();
@@ -473,7 +473,7 @@ export async function showPruneDataMenu(player: Player) {
       .button("executePrune", "Execute Prune", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "toggleEnabled") {
       prune.enabled = !prune.enabled;
@@ -497,7 +497,7 @@ export async function showPruneDataMenu(player: Player) {
       homes: "homes", tpa: "tpa", pay: "pay", playerSettings: "playerSettings",
       teamHomes: "teamHomes",
     };
-    const flagKey = flagKeys[response.id];
+    const flagKey = flagKeys[response.id as string];
     if (flagKey) {
       prune.flags[flagKey] = !prune.flags[flagKey];
       savePrune();

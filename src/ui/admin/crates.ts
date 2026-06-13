@@ -89,7 +89,7 @@ async function showCrateEditor(player: Player, crateId: string) {
       .button("giveKey", "Give Key", { iconPath: ICONS.confirm })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "rename") {
@@ -248,7 +248,7 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
       .button("delete", "Delete Reward", { iconPath: ICONS.delete })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "addItem") {
@@ -329,7 +329,7 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
       }
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       if (isDelete) {
         crate.rewards.splice(picked.value.index, 1);
@@ -429,7 +429,7 @@ export async function showCrateAdminMenu(player: Player) {
       .button("toggleEnabled", `Crates Enabled: ${state.crates.config.enabled ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "create") {
@@ -486,7 +486,7 @@ export async function showCrateAdminMenu(player: Player) {
       for (const id of validCrateIds) pick.button(id, state.crates.crates[id].displayName, { iconPath: ICONS.edit, value: { crateId: id } });
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       await showCrateEditor(player, picked.value.crateId);
       continue;
@@ -501,7 +501,7 @@ export async function showCrateAdminMenu(player: Player) {
       for (const id of validCrateIds) pick.button(id, state.crates.crates[id].displayName, { iconPath: ICONS.delete, value: { crateId: id } });
       pick.button("back", "Back", { iconPath: ICONS.back });
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       const targetId = picked.value.crateId;
       delete state.crates.crates[targetId];

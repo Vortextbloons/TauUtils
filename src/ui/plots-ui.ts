@@ -200,7 +200,7 @@ async function showPlotForceRelease(player: Player) {
     }
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back" || !response.value) return;
+    if (TauUi.isCanceledOrBack(response) || !response.value) return;
     const { slotId } = response.value;
     const ok = forceReleasePlot(slotId);
     tell(player, ok ? `Released ${slotId}.` : `Failed to release ${slotId}.`);
@@ -218,7 +218,7 @@ async function showPlotReassign(player: Player) {
   for (const p of players) pickPlayer.button("player", p.name, { iconPath: ICONS.menu, value: { name: p.name } });
   pickPlayer.button("back", "Back", { iconPath: ICONS.back });
   const pResp = await pickPlayer.show(player);
-  if (pResp.canceled || pResp.id === "back" || !pResp.value) return;
+  if (TauUi.isCanceledOrBack(pResp) || !pResp.value) return;
   const targetName = pResp.value.name;
   const target = players.find((p) => p.name === targetName);
   if (!target) return;
@@ -231,7 +231,7 @@ async function showPlotReassign(player: Player) {
     }
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back" || !response.value) return;
+    if (TauUi.isCanceledOrBack(response) || !response.value) return;
     const result = assignPlayerToSlot(target, response.value.slotId);
     tell(player, result.message);
     if (result.ok) return;
@@ -247,7 +247,7 @@ async function showPlotTeleport(player: Player) {
     }
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
-    if (response.canceled || response.id === "back" || !response.value) return;
+    if (TauUi.isCanceledOrBack(response) || !response.value) return;
     const { slotId } = response.value;
     const result = teleportPlayerToSlot(player, slotId);
     tell(player, result.message);
@@ -265,7 +265,7 @@ async function showPlotSlotEditor(player: Player) {
     form.button("back", "Back", { iconPath: ICONS.back });
 
     const response = await form.show(player);
-    if (response.canceled || response.id === "back" || !response.value) return;
+    if (TauUi.isCanceledOrBack(response) || !response.value) return;
 
     const { slotId } = response.value;
     const result = await TauUi.modal(`Manual Bounds: ${slotId}`)
@@ -301,7 +301,7 @@ export async function showPlotPlayerMenu(player: Player) {
     .button("back", "Back", { iconPath: ICONS.back });
 
   const response = await form.show(player);
-  if (response.canceled || response.id === "back") return;
+  if (TauUi.isCanceledOrBack(response)) return;
 
   if (!mySlot && !teamPlot) {
     tell(player, "No plot assigned.");

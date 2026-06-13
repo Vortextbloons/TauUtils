@@ -56,7 +56,7 @@ export async function showGeneratorMenu(player: Player) {
       .button("placeGenerator", "Place Held Generator", { iconPath: ICONS.confirm })
       .back("Back", ICONS.back)
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
     if (response.id === "myGenerators") {
       if (defs.length === 0) {
@@ -95,7 +95,7 @@ export async function showGeneratorAdminMenu(player: Player) {
       .button("delete", "Delete Definition", { iconPath: ICONS.delete })
       .back("Back", ICONS.back)
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
     if (response.id === "create") {
       const result = await TauUi.modal("Create Generator")
@@ -180,7 +180,7 @@ export async function showGeneratorAdminMenu(player: Player) {
           .button("managePool", "Manage Output Pool", { iconPath: ICONS.menu })
           .back("Back", ICONS.back)
           .show(player);
-        if (editAction.canceled || editAction.id === "back") continue;
+        if (TauUi.isCanceledOrBack(editAction)) continue;
         if (editAction.id === "managePool") {
           await showGeneratorOutputPoolManager(player, def.id);
           continue;
@@ -258,7 +258,7 @@ export async function showGeneratorAdminMenu(player: Player) {
       }
       placePick.back("Back", ICONS.back);
       const placedPick = await placePick.show(player);
-      if (placedPick.canceled || placedPick.id === "back") continue;
+      if (TauUi.isCanceledOrBack(placedPick)) continue;
       if (placedPick.value === undefined) continue;
       const placed = placements[placedPick.value.index];
       const toggle = toggleGeneratorAutoBreaker(player, { x: placed.x, y: placed.y, z: placed.z }, placed.dimensionId);
@@ -303,7 +303,7 @@ async function showGeneratorOutputPoolManager(player: Player, defId: string) {
       .button("add", "Add Entry", { iconPath: ICONS.confirm })
       .back("Back", ICONS.back);
     const response = await menu.show(player);
-    if (response.canceled || response.id === "back") return;
+    if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "add") {
       const addResult = await TauUi.modal(`Add Pool Entry: ${def.name}`)
@@ -327,7 +327,7 @@ async function showGeneratorOutputPoolManager(player: Player, defId: string) {
       .button("remove", "Remove Entry", { iconPath: ICONS.delete })
       .back("Back", ICONS.back)
       .show(player);
-    if (editAction.canceled || editAction.id === "back") continue;
+    if (TauUi.isCanceledOrBack(editAction)) continue;
 
     if (editAction.id === "edit") {
       const editResult = await TauUi.modal(`Edit Pool Entry: ${def.name}`)
@@ -379,7 +379,7 @@ async function showGeneratorTierManager(player: Player, defId: string) {
       tierMenu.button("managePool", "Manage Output Pool", { iconPath: ICONS.menu });
     }
     const response = await tierMenu.back("Back", ICONS.back).show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "addTier") {
@@ -401,7 +401,7 @@ async function showGeneratorTierManager(player: Player, defId: string) {
       }
       pick.back("Back", ICONS.back);
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       const tier = tiers[picked.value.tierIndex];
       const editResult = await TauUi.modal(`Edit Tier ${tier.tier}: ${def.name}`)
@@ -425,7 +425,7 @@ async function showGeneratorTierManager(player: Player, defId: string) {
       }
       pick.back("Back", ICONS.back);
       const picked = await pick.show(player);
-      if (picked.canceled || picked.id === "back") continue;
+      if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       const tier = tiers[picked.value.tierIndex];
       tell(player, removeGeneratorTier(def.id, tier.tier).message);
@@ -466,7 +466,7 @@ export async function showGeneratorSettingsMenu(player: Player) {
       .button("toggleAutobreakers", `Autobreakers: ${config.autoBreakersEnabled ? "On" : "Off"}`, { iconPath: ICONS.confirm })
       .back("Back", ICONS.back)
       .show(player);
-    if (response.canceled || response.id === undefined) return;
+    if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
 
     if (response.id === "toggleEnabled") {
@@ -530,7 +530,7 @@ Location: ${dimensionId} (${location.x}, ${location.y}, ${location.z})`)
   }
 
   const response = await menu.back("Back", ICONS.back).show(player);
-  if (response.canceled || response.id === undefined) return;
+  if (TauUi.isCanceledOrBack(response)) return;
 
   if (response.id === "upgrade") {
     if (!canManage) {
