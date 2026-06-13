@@ -4,6 +4,7 @@ import { TauUi } from "../ui";
 import { isFeatureEnabled, isOperator, saveSidebars, state, tell } from "../storage";
 import { renderTemplate } from "../shared/templates";
 import { registerBackgroundTask, registerEveryTickTask } from "../scheduler";
+import { getPlayerSettings, setSidebarOptOutHandler } from "../social/core";
 
 let tpsSampleTick = 0;
 let tpsSampleTime = Date.now();
@@ -128,6 +129,7 @@ function getEnabledSidebars(): SidebarRuntime[] {
 
 function pickSidebarForPlayer(player: Player): SidebarRuntime | undefined {
   if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) return undefined;
+  if (!getPlayerSettings(player).showSidebar) return undefined;
 
   const candidates = getEnabledSidebars();
   if (candidates.length === 0) return undefined;
@@ -227,6 +229,7 @@ function sampleTpsTick() {
 }
 
 export function registerSidebarSystem() {
+  setSidebarOptOutHandler(invalidatePlayerSidebarCache);
   ensureDefaultSidebarExists();
   ensureSidebarDefaults();
   sanitizeAllSidebars();

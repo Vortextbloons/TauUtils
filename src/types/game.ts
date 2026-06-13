@@ -168,6 +168,7 @@ export type ReferralPlayerRecord = {
   referralCount: number;
   pendingRewardIds: string[];
   lastKnownName: string;
+  lastRedemptionAt?: number;
 };
 
 export type ReferralRedemption = {
@@ -183,6 +184,8 @@ export type ReferralStore = {
   config: {
     enabled: boolean;
     allowMultipleRedemptions: boolean;
+    maxReferralsPerPlayer: number;
+    cooldownSeconds: number;
     refereeRewardIds: string[];
     referrerRewardIds: string[];
     broadcastMessage: boolean;
@@ -414,17 +417,18 @@ export type LootChestStore = {
   chests: Record<string, LootChestLocation>;
 };
 
-export type GeneratorTierDefinition = {
-  tier: number;
-  rateTicks: number;
-  upgradeCost: number;
-};
-
 export type GeneratorKind = "fixed" | "weighted";
 
 export type GeneratorOutputEntry = {
   itemId: string;
   weight: number;
+};
+
+export type GeneratorTierDefinition = {
+  tier: number;
+  rateTicks: number;
+  upgradeCost: number;
+  outputPool?: GeneratorOutputEntry[];
 };
 
 export type GeneratorDefinition = {
@@ -445,6 +449,8 @@ export type GeneratorDefinition = {
   canDestroy?: string[];
   tiers: GeneratorTierDefinition[];
   placeAnywhere: boolean;
+  /** When false, this generator definition cannot buy or use autobreakers. Defaults to true for older saves. */
+  autoBreakersEnabled?: boolean;
   autoBreakerCost?: number;
   /** When true, only operators can place, upgrade, pickup, or change autobreaker; others can view info only. */
   adminProtected?: boolean;

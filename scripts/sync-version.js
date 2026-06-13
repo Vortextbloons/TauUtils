@@ -12,14 +12,16 @@ if (!match) {
   process.exit(1);
 }
 
-const fullVersion = match[1];
+const isDev = /IS_DEV\s*=\s*true/.test(src);
+
+const fullVersion = match[1] + (isDev ? "-dev" : "");
 const versionArr = [Number(match[2]), Number(match[3]), Number(match[4])];
 
 function patchManifest(filePath) {
   const json = JSON.parse(readFileSync(filePath, "utf8"));
   json.header.version = versionArr;
   json.header.name = json.header.name.replace(
-    /\d+(?:\.\d+)+-?[^\s"]*/,
+    /\d+(?:\.\d+)+(?:-[^\s"]*)?/,
     fullVersion
   );
   if (json.modules) {
@@ -38,7 +40,7 @@ function patchManifest(filePath) {
   console.log(`  Patched ${filePath} -> [${versionArr.join(", ")}] "${json.header.name}"`);
 }
 
-console.log(`Syncing version ${versionArr.join(".")} to manifests...`);
+console.log(`Syncing version ${versionArr.join(".")}${isDev ? "-dev" : ""} to manifests...`);
 patchManifest(bpManifestPath);
 patchManifest(rpManifestPath);
 console.log("Done.");

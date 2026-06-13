@@ -253,6 +253,10 @@ export function loadState() {
       def.adminProtected = false;
       generatorsChanged = true;
     }
+    if (def.autoBreakersEnabled === undefined) {
+      def.autoBreakersEnabled = true;
+      generatorsChanged = true;
+    }
     if (def.kind === "weighted") {
       const validPool = (def.outputPool ?? []).filter(
         (entry) => Number.isFinite(entry.weight) && entry.weight > 0 && String(entry.itemId ?? "").trim().length > 0
@@ -337,11 +341,15 @@ export function loadState() {
   state.customRewards = readDynamicJSON<CustomRewardStore>(STORAGE_KEYS.customRewards, defaultCustomRewardStore());
   state.customRewards.config = applyMissingDefaults(state.customRewards.config as unknown as Record<string, unknown>, defaultCustomRewardStore().config as unknown as Record<string, unknown>) as unknown as CustomRewardStore["config"];
   state.customRewards.rewards ??= {};
-  state.referrals = readDynamicJSON<ReferralStore>(STORAGE_KEYS.referrals, defaultReferralStore());
+  const splitReferrals = readSplitDynamicJson<ReferralStore>(STORAGE_KEYS.referrals, defaultReferralStore());
+  state.referrals = splitReferrals.hasSplitData ? splitReferrals.value : readDynamicJSON<ReferralStore>(STORAGE_KEYS.referrals, defaultReferralStore());
   state.referrals.config = applyMissingDefaults(state.referrals.config as unknown as Record<string, unknown>, defaultReferralStore().config as unknown as Record<string, unknown>) as unknown as ReferralStore["config"];
   state.referrals.players ??= {};
   state.referrals.codeToPlayerId ??= {};
   state.referrals.redemptions ??= [];
+  for (const [code, playerId] of Object.entries(state.referrals.codeToPlayerId)) {
+    if (!state.referrals.players[playerId]) delete state.referrals.codeToPlayerId[code];
+  }
   const splitClaims = loadClaimsFromSplitKeys(dynamicPropertyIds);
   state.claims = splitClaims.hasSplitData ? splitClaims.store : defaultClaimStore();
   state.claims.config = applyMissingDefaults(state.claims.config as unknown as Record<string, unknown>, defaultClaimStore().config as unknown as Record<string, unknown>) as unknown as ClaimStore["config"];

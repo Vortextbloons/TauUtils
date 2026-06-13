@@ -17,9 +17,13 @@ async function showReferralAdminMenu(player: Player): Promise<void> {
     return;
   }
   while (true) {
+    if (!isOperator(player)) {
+      tell(player, "Operator required.");
+      return;
+    }
     const cfg = state.referrals.config;
     const response = await TauUi.action("Referral Admin")
-      .body(`Enabled: ${cfg.enabled ? "On" : "Off"}\nMode: ${cfg.allowMultipleRedemptions ? "multiple codes" : "one code only"}\nReferee rewards: ${cfg.refereeRewardIds.join(", ") || "none"}\nReferrer rewards: ${cfg.referrerRewardIds.join(", ") || "none"}`)
+      .body(`Enabled: ${cfg.enabled ? "On" : "Off"}\nMode: ${cfg.allowMultipleRedemptions ? "multiple codes" : "one code only"}\nMax redemptions/player: ${cfg.maxReferralsPerPlayer}\nCooldown: ${cfg.cooldownSeconds}s\nReferee rewards: ${cfg.refereeRewardIds.join(", ") || "none"}\nReferrer rewards: ${cfg.referrerRewardIds.join(", ") || "none"}`)
       .button("toggle", `Enabled: ${cfg.enabled ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("multiple", `Redeem mode: ${cfg.allowMultipleRedemptions ? "Many" : "One"}`, { iconPath: ICONS.settings })
       .button("rewards", "Reward IDs", { iconPath: ICONS.shop })
@@ -37,14 +41,18 @@ async function showReferralAdminMenu(player: Player): Promise<void> {
       const result = await TauUi.modal("Referral Rewards")
         .text("referee", "Player entering code reward IDs", { placeholder: "referral_bonus", defaultValue: cfg.refereeRewardIds.join(",") })
         .text("referrer", "Code owner reward IDs", { placeholder: "referral_bonus", defaultValue: cfg.referrerRewardIds.join(",") })
+        .text("maxReferrals", "Max redemptions per player", { placeholder: "5", defaultValue: String(cfg.maxReferralsPerPlayer) })
+        .text("cooldownSeconds", "Cooldown seconds", { placeholder: "3600", defaultValue: String(cfg.cooldownSeconds) })
         .text("history", "Max redemption history", { placeholder: "500", defaultValue: String(cfg.maxRedemptionHistory) })
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
       cfg.refereeRewardIds = parseRewardIds(result.values.referee);
       cfg.referrerRewardIds = parseRewardIds(result.values.referrer);
-      const maxHistory = Math.floor(Number(result.values.history) || 500);
-      cfg.maxRedemptionHistory = Math.max(1, maxHistory);
+      cfg.maxReferralsPerPlayer = Math.max(1, Math.floor(Number(result.values.maxReferrals) || 5));
+      cfg.cooldownSeconds = Math.max(0, Math.floor(Number(result.values.cooldownSeconds) || 0));
+      const maxHistory = Math.floor(Number(result.values.history));
+      cfg.maxRedemptionHistory = Number.isFinite(maxHistory) ? Math.max(1, maxHistory) : 500;
       state.referrals.redemptions = state.referrals.redemptions.slice(0, cfg.maxRedemptionHistory);
     } else if (response.id === "top") {
       await TauUi.action("Top Referrers").body(getTopReferralRows(10).join("\n") || "No referrals yet.").button("back", "Back", { iconPath: ICONS.back }).show(player);

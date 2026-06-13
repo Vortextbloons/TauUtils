@@ -3,9 +3,23 @@ import { saveGenerators, state } from "../storage";
 import type { GeneratorDefinition, GeneratorOutputEntry, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { generatorCache, GENERATOR_MARKER_PREFIX, type GeneratorItemData, type GeneratorLocation } from "./types";
 import { normalizeItemId } from "../shared/item-id";
-import { getValidOutputPool } from "./output-pick";
+import { getTierOutputPool, getValidOutputPool } from "./output-pick";
 
 export const MAX_GENERATOR_POOL_SIZE = 32;
+
+function sanitizeGeneratorOutputPool(pool: GeneratorOutputEntry[]): GeneratorOutputEntry[] {
+  return pool
+    .map((entry) => ({
+      itemId: normalizeItemId(entry.itemId),
+      weight: Math.max(1, Math.floor(Number(entry.weight) || 1)),
+    }))
+    .filter((entry) => entry.itemId.length > 0)
+    .slice(0, MAX_GENERATOR_POOL_SIZE);
+}
+
+function copyGeneratorOutputPool(pool: GeneratorOutputEntry[]): GeneratorOutputEntry[] {
+  return pool.map((entry) => ({ itemId: entry.itemId, weight: entry.weight }));
+}
 
 function normalizeId(value: string): string {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_-]/g, "");
@@ -118,7 +132,7 @@ export function deleteGeneratorDefinition(defId: string): { ok: boolean; message
   return { ok: true, message: `Deleted generator ${def.name}.` };
 }
 
-export function updateGeneratorDefinition(defId: string, partial: Partial<Pick<GeneratorDefinition, "name" | "baseItemId" | "outputItemId" | "displayName" | "placeAnywhere" | "lore" | "customData" | "enchantments" | "durability" | "maxDurability" | "canPlaceOn" | "canDestroy" | "autoBreakerCost" | "adminProtected">>): { ok: boolean; message: string } {
+export function updateGeneratorDefinition(defId: string, partial: Partial<Pick<GeneratorDefinition, "name" | "baseItemId" | "outputItemId" | "displayName" | "placeAnywhere" | "lore" | "customData" | "enchantments" | "durability" | "maxDurability" | "canPlaceOn" | "canDestroy" | "autoBreakersEnabled" | "autoBreakerCost" | "adminProtected">>): { ok: boolean; message: string } {
   const def = state.generators.definitions[normalizeId(defId)];
   if (!def) return { ok: false, message: "Generator not found." };
 
@@ -134,6 +148,7 @@ export function updateGeneratorDefinition(defId: string, partial: Partial<Pick<G
   if (partial.maxDurability !== undefined) def.maxDurability = partial.maxDurability;
   if (partial.canPlaceOn !== undefined) def.canPlaceOn = partial.canPlaceOn;
   if (partial.canDestroy !== undefined) def.canDestroy = partial.canDestroy;
+  if (partial.autoBreakersEnabled !== undefined) def.autoBreakersEnabled = Boolean(partial.autoBreakersEnabled);
   if (partial.autoBreakerCost !== undefined) def.autoBreakerCost = partial.autoBreakerCost;
   if (partial.adminProtected !== undefined) def.adminProtected = Boolean(partial.adminProtected);
 
@@ -171,6 +186,7 @@ export function createGeneratorDefinition(
     autoBreakerCost: undefined,
     tiers: [{ tier: 1, rateTicks: Math.max(0, Math.floor(rateTicks)), upgradeCost: 0 }],
     placeAnywhere: state.generators.config.defaultPlaceAnywhere,
+    autoBreakersEnabled: true,
     adminProtected: Boolean(adminProtected),
   };
   generatorCache.definitions = undefined;
@@ -183,10 +199,12 @@ export function addGeneratorTier(defId: string, rateTicks: number, upgradeCost: 
   const def = state.generators.definitions[normalizeId(defId)];
   if (!def) return { ok: false, message: "Generator not found." };
   const nextTier = def.tiers.length === 0 ? 1 : Math.max(...def.tiers.map((tier) => tier.tier)) + 1;
+  const previousPool = def.kind === "weighted" ? copyGeneratorOutputPool(getTierOutputPool(def, nextTier - 1)) : undefined;
   def.tiers.push({
     tier: nextTier,
     rateTicks: Math.max(0, Math.floor(rateTicks)),
     upgradeCost: Math.max(0, Math.floor(upgradeCost)),
+    outputPool: previousPool && previousPool.length > 0 ? previousPool : undefined,
   });
   generatorCache.definitions = undefined;
   generatorCache.source = undefined;
@@ -194,7 +212,7 @@ export function addGeneratorTier(defId: string, rateTicks: number, upgradeCost: 
   return { ok: true, message: `Added tier ${nextTier}.` };
 }
 
-export function updateGeneratorTier(defId: string, tierNumber: number, partial: Partial<Pick<GeneratorTierDefinition, "rateTicks" | "upgradeCost">>): { ok: boolean; message: string } {
+export function updateGeneratorTier(defId: string, tierNumber: number, partial: Partial<Pick<GeneratorTierDefinition, "rateTicks" | "upgradeCost" | "outputPool">>): { ok: boolean; message: string } {
   const def = state.generators.definitions[normalizeId(defId)];
   if (!def) return { ok: false, message: "Generator not found." };
   const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
@@ -202,9 +220,74 @@ export function updateGeneratorTier(defId: string, tierNumber: number, partial: 
 
   if (partial.rateTicks !== undefined) tier.rateTicks = Math.max(0, Math.floor(Number(partial.rateTicks)));
   if (partial.upgradeCost !== undefined) tier.upgradeCost = Math.max(0, Math.floor(Number(partial.upgradeCost)));
+  if (partial.outputPool !== undefined) tier.outputPool = sanitizeGeneratorOutputPool(partial.outputPool);
 
   saveGenerators();
   return { ok: true, message: `Updated tier ${tier.tier}.` };
+}
+
+export function setGeneratorTierOutputPool(defId: string, tierNumber: number, pool: GeneratorOutputEntry[]): { ok: boolean; message: string } {
+  const def = state.generators.definitions[normalizeId(defId)];
+  if (!def) return { ok: false, message: "Generator not found." };
+  if (def.kind !== "weighted") return { ok: false, message: "That generator is not weighted." };
+  const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
+  if (!tier) return { ok: false, message: "Tier not found." };
+  const sanitized = sanitizeGeneratorOutputPool(pool);
+  if (sanitized.length === 0) return { ok: false, message: "Tier pool needs at least one entry." };
+  tier.outputPool = sanitized;
+  saveGenerators();
+  return { ok: true, message: `Updated tier ${tier.tier} pool.` };
+}
+
+export function clearGeneratorTierOutputPool(defId: string, tierNumber: number): { ok: boolean; message: string } {
+  const def = state.generators.definitions[normalizeId(defId)];
+  if (!def) return { ok: false, message: "Generator not found." };
+  if (def.kind !== "weighted") return { ok: false, message: "That generator is not weighted." };
+  const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
+  if (!tier) return { ok: false, message: "Tier not found." };
+  tier.outputPool = undefined;
+  saveGenerators();
+  return { ok: true, message: `Tier ${tier.tier} now inherits the default pool.` };
+}
+
+export function addGeneratorTierOutputEntry(defId: string, tierNumber: number, itemId: string, weight: number): { ok: boolean; message: string } {
+  const def = state.generators.definitions[normalizeId(defId)];
+  if (!def) return { ok: false, message: "Generator not found." };
+  if (def.kind !== "weighted") return { ok: false, message: "That generator is not weighted." };
+  const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
+  if (!tier) return { ok: false, message: "Tier not found." };
+  const pool = tier.outputPool ? copyGeneratorOutputPool(tier.outputPool) : copyGeneratorOutputPool(getTierOutputPool(def, tier.tier));
+  if (pool.length >= MAX_GENERATOR_POOL_SIZE) return { ok: false, message: `Pool cannot exceed ${MAX_GENERATOR_POOL_SIZE} entries.` };
+  pool.push({ itemId: normalizeItemId(itemId), weight: Math.max(1, Math.floor(Number(weight) || 1)) });
+  return setGeneratorTierOutputPool(def.id, tier.tier, pool);
+}
+
+export function updateGeneratorTierOutputEntry(defId: string, tierNumber: number, index: number, partial: Partial<Pick<GeneratorOutputEntry, "itemId" | "weight">>): { ok: boolean; message: string } {
+  const def = state.generators.definitions[normalizeId(defId)];
+  if (!def) return { ok: false, message: "Generator not found." };
+  if (def.kind !== "weighted") return { ok: false, message: "That generator is not weighted." };
+  const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
+  if (!tier) return { ok: false, message: "Tier not found." };
+  const pool = tier.outputPool ? copyGeneratorOutputPool(tier.outputPool) : copyGeneratorOutputPool(getTierOutputPool(def, tier.tier));
+  const entry = pool[Math.floor(index)];
+  if (!entry) return { ok: false, message: "Pool entry not found." };
+  if (partial.itemId !== undefined) entry.itemId = normalizeItemId(partial.itemId);
+  if (partial.weight !== undefined) entry.weight = Math.max(1, Math.floor(Number(partial.weight) || 1));
+  return setGeneratorTierOutputPool(def.id, tier.tier, pool);
+}
+
+export function removeGeneratorTierOutputEntry(defId: string, tierNumber: number, index: number): { ok: boolean; message: string } {
+  const def = state.generators.definitions[normalizeId(defId)];
+  if (!def) return { ok: false, message: "Generator not found." };
+  if (def.kind !== "weighted") return { ok: false, message: "That generator is not weighted." };
+  const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
+  if (!tier) return { ok: false, message: "Tier not found." };
+  const pool = tier.outputPool ? copyGeneratorOutputPool(tier.outputPool) : copyGeneratorOutputPool(getTierOutputPool(def, tier.tier));
+  if (pool.length <= 1) return { ok: false, message: "A weighted tier must keep at least one pool entry." };
+  const entryIndex = Math.floor(index);
+  if (entryIndex < 0 || entryIndex >= pool.length) return { ok: false, message: "Pool entry not found." };
+  pool.splice(entryIndex, 1);
+  return setGeneratorTierOutputPool(def.id, tier.tier, pool);
 }
 
 export function removeGeneratorTier(defId: string, tierNumber: number): { ok: boolean; message: string } {
@@ -241,13 +324,7 @@ export function createWeightedGeneratorDefinition(
   if (!id) return { ok: false, message: "Generator name is required." };
   if (state.generators.definitions[id]) return { ok: false, message: "That generator already exists." };
 
-  const pool = initialPool
-    .map((entry) => ({
-      itemId: normalizeItemId(entry.itemId),
-      weight: Math.max(1, Math.floor(Number(entry.weight) || 1)),
-    }))
-    .filter((entry) => entry.itemId.length > 0)
-    .slice(0, MAX_GENERATOR_POOL_SIZE);
+  const pool = sanitizeGeneratorOutputPool(initialPool);
   if (pool.length === 0) return { ok: false, message: "Weighted generators need at least one pool entry." };
 
   state.generators.definitions[id] = {
@@ -268,6 +345,7 @@ export function createWeightedGeneratorDefinition(
     autoBreakerCost: undefined,
     tiers: [{ tier: 1, rateTicks: Math.max(0, Math.floor(rateTicks)), upgradeCost: 0 }],
     placeAnywhere: state.generators.config.defaultPlaceAnywhere,
+    autoBreakersEnabled: true,
     adminProtected: Boolean(adminProtected),
   };
   generatorCache.definitions = undefined;
@@ -278,6 +356,10 @@ export function createWeightedGeneratorDefinition(
 
 export function isGeneratorAdminProtected(definition: GeneratorDefinition | undefined): boolean {
   return Boolean(definition?.adminProtected);
+}
+
+export function isGeneratorAutoBreakerAllowed(definition: GeneratorDefinition | undefined): boolean {
+  return definition?.autoBreakersEnabled !== false;
 }
 
 export function addGeneratorOutputEntry(defId: string, itemId: string, weight: number): { ok: boolean; message: string } {
@@ -339,12 +421,16 @@ export function removeGeneratorOutputEntry(defId: string, index: number): { ok: 
 }
 
 export function getGeneratorOutputChanceText(defId: string, index: number): string {
+  return getGeneratorTierOutputChanceText(defId, undefined, index);
+}
+
+export function getGeneratorTierOutputChanceText(defId: string, tierNumber: number | undefined, index: number): string {
   const def = getGeneratorDefinition(defId);
   if (!def || def.kind !== "weighted") return "0%";
-  const pool = def.outputPool ?? [];
+  const pool = tierNumber !== undefined ? getTierOutputPool(def, tierNumber) : def.outputPool ?? [];
   const entry = pool[Math.floor(index)];
   if (!entry || !Number.isFinite(entry.weight) || entry.weight <= 0) return "0%";
-  const valid = getValidOutputPool(def);
+  const valid = tierNumber !== undefined ? getTierOutputPool(def, tierNumber) : getValidOutputPool(def);
   const total = valid.reduce((sum, poolEntry) => sum + poolEntry.weight, 0);
   if (total <= 0) return "0%";
   const chance = (entry.weight / total) * 100;
@@ -374,6 +460,7 @@ export function getGeneratorInfoLines(defId: string): string[] {
   }
   lines.push(`Base: ${def.baseItemId}`);
   lines.push(`Place anywhere: ${def.placeAnywhere ? "yes" : "no"}`);
+  lines.push(`Autobreakers: ${isGeneratorAutoBreakerAllowed(def) ? "allowed" : "disabled"}`);
   lines.push(`Tiers: ${def.tiers.length}`);
   if (topTier) lines.push(`Tier 1 speed: ${topTier.rateTicks} ticks${topTier.rateTicks === 0 ? " (turbo)" : ""}`);
   if (highestTier && highestTier !== topTier) {
@@ -389,7 +476,8 @@ export function getGeneratorTierSummary(defId: string, tierNumber: number): stri
   const tier = def.tiers.find((entry) => entry.tier === tierNumber);
   if (!tier) return undefined;
   const turbo = tier.rateTicks === 0 ? ", turbo" : "";
-  return `Tier ${tier.tier}: speed ${tier.rateTicks} ticks${turbo}, upgrade cost ${tier.upgradeCost}`;
+  const poolText = def.kind === "weighted" ? `, pool ${(tier.outputPool?.length ?? 0) > 0 ? `${getTierOutputPool(def, tier.tier).length} custom` : `${getTierOutputPool(def, tier.tier).length} inherited`}` : "";
+  return `Tier ${tier.tier}: speed ${tier.rateTicks} ticks${turbo}, upgrade cost ${tier.upgradeCost}${poolText}`;
 }
 
 export function updateGeneratorConfig(partial: Partial<GeneratorStore["config"]>): { ok: boolean; message: string } {

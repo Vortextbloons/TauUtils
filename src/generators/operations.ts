@@ -5,7 +5,7 @@ import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from 
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent } from "../shared/item-components";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
-import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, isGeneratorAdminProtected, normalizeId, normalizeItemId, readGeneratorItemData, restoreGeneratorBlocks } from "./definitions";
+import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, isGeneratorAdminProtected, isGeneratorAutoBreakerAllowed, normalizeId, normalizeItemId, readGeneratorItemData, restoreGeneratorBlocks } from "./definitions";
 import { getGeneratorOutputFallback, getGeneratorProducesSummary, pickGeneratorOutput } from "./output-pick";
 
 const TURBO_BURST_PER_VISIT = 8;
@@ -97,7 +97,7 @@ export function canPlayerPlaceGeneratorDefinition(player: Player, definition: Ge
 }
 
 function isAutoBreakerUnlocked(placed: PlacedGenerator, definition: GeneratorDefinition): boolean {
-  return state.generators.config.autoBreakersEnabled && Boolean(placed.autoBreakerPurchased) && Boolean(placed.autoBreakerEnabled) && placed.tier >= getMaxTier(definition);
+  return state.generators.config.autoBreakersEnabled && isGeneratorAutoBreakerAllowed(definition) && Boolean(placed.autoBreakerPurchased) && Boolean(placed.autoBreakerEnabled) && placed.tier >= getMaxTier(definition);
 }
 
 function normalizePlacedTier(definition: GeneratorDefinition, tier: number): number {
@@ -329,9 +329,9 @@ export function getPlacedGeneratorInfoLines(location: Vector3, dimensionId: stri
   lines.push(`§6Owner§r: §f${ownerName}`);
   lines.push(`§bTier§r: §f${placed.tier}`);
   lines.push(`§aSpeed§r: §f${tier?.rateTicks ?? 0} ticks`);
-  lines.push(`§dProduces§r: §f${getGeneratorProducesSummary(def)}`);
+  lines.push(`§dProduces§r: §f${getGeneratorProducesSummary(def, placed.tier)}`);
   if (tier?.rateTicks === 0) lines.push(`§cTurbo§r: §fmax speed`);
-  lines.push(`§6Autobreaker§r: §f${placed.autoBreakerPurchased ? (placed.autoBreakerEnabled ? "On" : "Off") : "Locked"}${placed.tier >= getMaxTier(def) ? "" : " (locked until max tier)"}`);
+  lines.push(`§6Autobreaker§r: §f${isGeneratorAutoBreakerAllowed(def) ? `${placed.autoBreakerPurchased ? (placed.autoBreakerEnabled ? "On" : "Off") : "Locked"}${placed.tier >= getMaxTier(def) ? "" : " (locked until max tier)"}` : "Disabled for this generator"}`);
   const outputLoc: GeneratorLocation = { dimensionId, x: placed.x, y: placed.y, z: placed.z };
   const hasOutput = !isGeneratorOutputSlotEmpty(outputLoc);
   lines.push(hasOutput ? `§eOutput§r: §fready (break to refill)` : `§eNext spawn§r: §f${Math.max(0, Math.ceil((placed.nextSpawnAt - Date.now()) / 50))} ticks`);
@@ -364,7 +364,7 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
 
   const placed = { ...createPlacedGenerator(def, plotOwnerId, dimensionId, loc, stack), ...captureOriginalGeneratorBlocks(loc) };
 
-  const initialOutput = pickGeneratorOutput(def) ?? getGeneratorOutputFallback(def);
+  const initialOutput = pickGeneratorOutput(def, placed.tier) ?? getGeneratorOutputFallback(def, placed.tier);
   if (!spawnGeneratorOutput(loc, initialOutput)) {
     return { ok: false, message: "Unable to place generator blocks." };
   }
@@ -514,6 +514,7 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
     return { ok: false, message: "This admin generator cannot be changed." };
   }
   if (!state.generators.config.autoBreakersEnabled) return { ok: false, message: "Autobreakers are disabled globally." };
+  if (!isGeneratorAutoBreakerAllowed(def)) return { ok: false, message: "Autobreakers are disabled for this generator." };
   if (placed.tier < getMaxTier(def)) return { ok: false, message: "Autobreaker unlocks at max tier." };
 
   if (placed.autoBreakerPurchased) {
@@ -577,7 +578,7 @@ function runGeneratorSpawnCycle(
     return false;
   }
 
-  const outputId = pickGeneratorOutput(def) ?? getGeneratorOutputFallback(def);
+  const outputId = pickGeneratorOutput(def, placed.tier) ?? getGeneratorOutputFallback(def, placed.tier);
   const spawned = spawnGeneratorOutput(location, outputId);
   if (!spawned) {
     placed.nextSpawnAt = scheduleNextSpawnAt(tier.rateTicks, now, false);

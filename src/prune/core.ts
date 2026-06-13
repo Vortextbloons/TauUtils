@@ -138,7 +138,7 @@ export function pruneData(dryRun = true): PruneResult {
 
   if (prune.playerSettings) {
     for (const [playerId, settings] of Object.entries(state.playerSettings.players)) {
-      if (isInactive(playerId) && settings.allowPay && settings.allowTpa && settings.showSocialMessages) {
+      if (isInactive(playerId) && settings.allowPay && settings.allowTpa && settings.showSocialMessages && (settings.showSidebar ?? true)) {
         removed += 1;
         details.push(`playerSettings:${playerId}`);
         if (!dryRun) delete state.playerSettings.players[playerId];

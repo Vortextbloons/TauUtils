@@ -6,6 +6,8 @@ import { getHeldItemSnapshot, applyHeldItemSnapshotToGenerator } from "../ui-uti
 import {
   addGeneratorOutputEntry,
   addGeneratorTier,
+  addGeneratorTierOutputEntry,
+  clearGeneratorTierOutputPool,
   createGeneratorDefinition,
   createWeightedGeneratorDefinition,
   deleteGeneratorDefinition,
@@ -13,7 +15,9 @@ import {
   getGeneratorDefinition,
   getGeneratorInfoLines,
   getGeneratorOutputChanceText,
+  getGeneratorTierOutputChanceText,
   getGeneratorTierSummary,
+  isGeneratorAutoBreakerAllowed,
   getNextUpgradeCost,
   getPlacedGeneratorAtLocation,
   getPlacedGeneratorInfoLines,
@@ -22,14 +26,18 @@ import {
   pickupGenerator,
   removeGeneratorOutputEntry,
   removeGeneratorTier,
+  removeGeneratorTierOutputEntry,
+  setGeneratorTierOutputPool,
   toggleGeneratorAutoBreaker,
   updateGeneratorConfig,
   updateGeneratorDefinition,
   updateGeneratorOutputEntry,
   updateGeneratorTier,
+  updateGeneratorTierOutputEntry,
   upgradeGenerator,
   canPlayerManagePlacedGenerator,
 } from "../../generators";
+import { getTierOutputPool } from "../../generators/output-pick";
 import { parseEnchantmentsText } from "../../shared/enchantments";
 
 async function pickGeneratorDefinitionId(
@@ -199,6 +207,7 @@ export async function showGeneratorAdminMenu(player: Player) {
         .text("durability", "Durability damage", { placeholder: "0", defaultValue: String(def.durability ?? 0) })
         .text("maxDurability", "Max durability", { placeholder: "0", defaultValue: String(def.maxDurability ?? 0) })
         .toggle("placeAnywhere", "Place anywhere", def.placeAnywhere)
+        .toggle("autoBreakersEnabled", "Allow autobreakers", isGeneratorAutoBreakerAllowed(def))
         .toggle("adminProtected", "Admin protected (view-only for players)", Boolean(def.adminProtected));
       if (def.kind === "fixed") {
         modal.text("outputItemId", "Output item id", { placeholder: "minecraft:diamond", defaultValue: def.outputItemId });
@@ -218,6 +227,7 @@ export async function showGeneratorAdminMenu(player: Player) {
         durability: Number(result.values.durability ?? 0),
         maxDurability: Number(result.values.maxDurability ?? 0),
         placeAnywhere: Boolean(result.values.placeAnywhere),
+        autoBreakersEnabled: Boolean(result.values.autoBreakersEnabled),
         adminProtected: Boolean(result.values.adminProtected),
       };
       if (def.kind === "fixed") {
@@ -244,6 +254,10 @@ export async function showGeneratorAdminMenu(player: Player) {
       const defId = await pickGeneratorDefinitionId(player, defs, "Manage Autobreakers", ICONS.settings);
       if (!defId) continue;
       const def = getGeneratorDefinition(defId)!;
+      if (!isGeneratorAutoBreakerAllowed(def)) {
+        tell(player, "Autobreakers are disabled for that generator definition.");
+        continue;
+      }
       const maxTier = def.tiers.reduce((highest, tier) => Math.max(highest, tier.tier), 1);
       const placements = Object.values(state.generators.placed).filter((placed) => placed.definitionId === def.id && placed.tier >= maxTier);
       if (placements.length === 0) {
@@ -360,6 +374,104 @@ async function showGeneratorOutputPoolManager(player: Player, defId: string) {
   }
 }
 
+async function showGeneratorTierOutputPoolManager(player: Player, defId: string, tierNumber: number) {
+  while (true) {
+    const def = getGeneratorDefinition(defId);
+    if (!def || def.kind !== "weighted") {
+      tell(player, "Weighted generator not found.");
+      return;
+    }
+    const tier = def.tiers.find((entry) => entry.tier === tierNumber);
+    if (!tier) {
+      tell(player, "Tier not found.");
+      return;
+    }
+
+    const pool = getTierOutputPool(def, tier.tier);
+    const isCustom = (tier.outputPool?.length ?? 0) > 0;
+    const poolSource = isCustom ? "custom for this tier" : "inherited default pool";
+    const menu = TauUi.action<{ entryIndex?: number }>(`Tier ${tier.tier} Pool: ${def.name}`)
+      .body(`§7Exact weights for this tier. Source: §f${poolSource}§r\n§7${pool.length} weighted block(s).§r`);
+    for (let i = 0; i < pool.length; i++) {
+      const entry = pool[i];
+      menu.button(`entry_${i}`, `${entry.itemId} | w${entry.weight} | ${getGeneratorTierOutputChanceText(def.id, tier.tier, i)}`, {
+        iconPath: ICONS.menu,
+        value: { entryIndex: i },
+      });
+    }
+    menu
+      .button("add", "Add Entry", { iconPath: ICONS.confirm })
+      .button("copyPrevious", "Copy Previous Tier Pool", { iconPath: ICONS.edit })
+      .button("copyDefault", "Copy Default Pool", { iconPath: ICONS.shop })
+      .button("resetInherit", "Reset To Inherit Default", { iconPath: ICONS.delete })
+      .back("Back", ICONS.back);
+    const response = await menu.show(player);
+    if (TauUi.isCanceledOrBack(response)) return;
+
+    if (response.id === "add") {
+      const addResult = await TauUi.modal(`Add Tier ${tier.tier} Pool Entry`)
+        .text("itemId", "Block item id", { placeholder: "minecraft:iron_ore" })
+        .text("weight", "Exact weight", { placeholder: "10" })
+        .submitButton("Add")
+        .show(player);
+      if (addResult.canceled) continue;
+      tell(player, addGeneratorTierOutputEntry(def.id, tier.tier, String(addResult.values.itemId ?? ""), Number(addResult.values.weight ?? 1)).message);
+      continue;
+    }
+
+    if (response.id === "copyPrevious") {
+      const previousTier = def.tiers.slice().sort((a, b) => b.tier - a.tier).find((entry) => entry.tier < tier.tier);
+      if (!previousTier) {
+        tell(player, "No previous tier to copy.");
+        continue;
+      }
+      tell(player, setGeneratorTierOutputPool(def.id, tier.tier, getTierOutputPool(def, previousTier.tier)).message);
+      continue;
+    }
+
+    if (response.id === "copyDefault") {
+      tell(player, setGeneratorTierOutputPool(def.id, tier.tier, def.outputPool ?? []).message);
+      continue;
+    }
+
+    if (response.id === "resetInherit") {
+      tell(player, clearGeneratorTierOutputPool(def.id, tier.tier).message);
+      continue;
+    }
+
+    if (response.value?.entryIndex === undefined) continue;
+    const entryIndex = response.value.entryIndex;
+    const entry = pool[entryIndex];
+    if (!entry) continue;
+
+    const editAction = await TauUi.action(`Tier ${tier.tier}: ${entry.itemId}`)
+      .body(`${entry.itemId} | exact weight ${entry.weight} | ${getGeneratorTierOutputChanceText(def.id, tier.tier, entryIndex)}`)
+      .button("edit", "Edit Exact Weight", { iconPath: ICONS.edit })
+      .button("remove", "Remove Entry", { iconPath: ICONS.delete })
+      .back("Back", ICONS.back)
+      .show(player);
+    if (TauUi.isCanceledOrBack(editAction)) continue;
+
+    if (editAction.id === "edit") {
+      const editResult = await TauUi.modal(`Edit Tier ${tier.tier} Entry`)
+        .text("itemId", "Block item id", { placeholder: entry.itemId, defaultValue: entry.itemId })
+        .text("weight", "Exact weight", { placeholder: "10", defaultValue: String(entry.weight) })
+        .submitButton("Save")
+        .show(player);
+      if (editResult.canceled) continue;
+      tell(player, updateGeneratorTierOutputEntry(def.id, tier.tier, entryIndex, {
+        itemId: String(editResult.values.itemId ?? entry.itemId),
+        weight: Number(editResult.values.weight ?? entry.weight),
+      }).message);
+      continue;
+    }
+
+    if (editAction.id === "remove") {
+      tell(player, removeGeneratorTierOutputEntry(def.id, tier.tier, entryIndex).message);
+    }
+  }
+}
+
 async function showGeneratorTierManager(player: Player, defId: string) {
   while (true) {
     const def = getGeneratorDefinition(defId);
@@ -376,7 +488,7 @@ async function showGeneratorTierManager(player: Player, defId: string) {
       .button("removeTier", "Remove Tier", { iconPath: ICONS.delete })
       .button("setAutoBreakerPrice", "Set Autobreaker Price", { iconPath: ICONS.settings });
     if (def.kind === "weighted") {
-      tierMenu.button("managePool", "Manage Output Pool", { iconPath: ICONS.menu });
+      tierMenu.button("managePool", "Manage Default Pool", { iconPath: ICONS.menu });
     }
     const response = await tierMenu.back("Back", ICONS.back).show(player);
     if (TauUi.isCanceledOrBack(response)) return;
@@ -404,6 +516,22 @@ async function showGeneratorTierManager(player: Player, defId: string) {
       if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       const tier = tiers[picked.value.tierIndex];
+
+      if (def.kind === "weighted") {
+        const tierAction = await TauUi.action(`Tier ${tier.tier}: ${def.name}`)
+          .body(getGeneratorTierSummary(def.id, tier.tier) ?? `Tier ${tier.tier}`)
+          .button("editSettings", "Edit Speed And Cost", { iconPath: ICONS.edit })
+          .button("manageTierPool", "Manage Exact Weights", { iconPath: ICONS.menu })
+          .back("Back", ICONS.back)
+          .show(player);
+        if (TauUi.isCanceledOrBack(tierAction)) continue;
+        if (tierAction.id === "manageTierPool") {
+          await showGeneratorTierOutputPoolManager(player, def.id, tier.tier);
+          continue;
+        }
+        if (tierAction.id !== "editSettings") continue;
+      }
+
       const editResult = await TauUi.modal(`Edit Tier ${tier.tier}: ${def.name}`)
         .text("rateTicks", "Rate ticks (0 = turbo)", { placeholder: "0", defaultValue: String(tier.rateTicks) })
         .text("upgradeCost", "Upgrade cost", { placeholder: "1000", defaultValue: String(tier.upgradeCost) })
@@ -440,11 +568,12 @@ async function showGeneratorTierManager(player: Player, defId: string) {
     if (response.id === "setAutoBreakerPrice") {
       const result = await TauUi.modal(`Autobreaker Price: ${def.name}`)
         .text("autoBreakerCost", "Custom autobreaker price (blank = default)", { placeholder: String(getGeneratorAutoBreakerCost(def)), defaultValue: def.autoBreakerCost !== undefined ? String(def.autoBreakerCost) : "" })
+        .toggle("autoBreakersEnabled", "Allow autobreakers", isGeneratorAutoBreakerAllowed(def))
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
       const raw = String(result.values.autoBreakerCost ?? "").trim();
-      tell(player, updateGeneratorDefinition(def.id, { autoBreakerCost: raw.length > 0 ? Number(raw) : undefined }).message);
+      tell(player, updateGeneratorDefinition(def.id, { autoBreakerCost: raw.length > 0 ? Number(raw) : undefined, autoBreakersEnabled: Boolean(result.values.autoBreakersEnabled) }).message);
       continue;
     }
   }
@@ -502,11 +631,14 @@ export async function showGeneratorUpgradeMenu(player: Player, defId: string, lo
   const maxTier = def.tiers.reduce((highest, tier) => Math.max(highest, tier.tier), 1);
   const autobreakerCost = getGeneratorAutoBreakerCost(def);
   const placed = getPlacedGeneratorAtLocation(location, dimensionId);
-  const autobreakerLine = placed?.autoBreakerPurchased
-    ? `§eAutobreaker§r: §f${placed.autoBreakerEnabled ? "On" : "Off"}§7 | Toggle: use the Autobreaker button`
-    : upgrade
-      ? `§7Autobreaker unlocks at max tier (${maxTier}).`
-      : `§eAutobreaker§r: §f$${autobreakerCost}§7 (${def.autoBreakerCost !== undefined ? "custom" : "default"})`;
+  const autobreakersAllowed = isGeneratorAutoBreakerAllowed(def);
+  const autobreakerLine = !autobreakersAllowed
+    ? "§7Autobreaker disabled for this generator."
+    : placed?.autoBreakerPurchased
+      ? `§eAutobreaker§r: §f${placed.autoBreakerEnabled ? "On" : "Off"}§7 | Toggle: use the Autobreaker button`
+      : upgrade
+        ? `§7Autobreaker unlocks at max tier (${maxTier}).`
+        : `§eAutobreaker§r: §f$${autobreakerCost}§7 (${def.autoBreakerCost !== undefined ? "custom" : "default"})`;
   const upgradeLine = upgrade
     ? `§eNext upgrade§r: §fTier ${upgrade.nextTier} for $${upgrade.cost}`
     : "§7Max tier reached.";
@@ -523,10 +655,11 @@ Location: ${dimensionId} (${location.x}, ${location.y}, ${location.z})`)
     .button("info", "Definition Info", { iconPath: ICONS.menu });
 
   if (canManage) {
-    menu
-      .button("upgrade", "Upgrade Tier", { iconPath: ICONS.edit })
-      .button("toggleAutobreaker", placed?.autoBreakerPurchased ? "Toggle Autobreaker" : (upgrade ? "Autobreaker Locked" : "Buy Autobreaker"), { iconPath: ICONS.settings })
-      .button("pickup", "§cPickup Generator§r", { iconPath: ICONS.delete });
+    menu.button("upgrade", "Upgrade Tier", { iconPath: ICONS.edit });
+    if (autobreakersAllowed) {
+      menu.button("toggleAutobreaker", placed?.autoBreakerPurchased ? "Toggle Autobreaker" : (upgrade ? "Autobreaker Locked" : "Buy Autobreaker"), { iconPath: ICONS.settings });
+    }
+    menu.button("pickup", "§cPickup Generator§r", { iconPath: ICONS.delete });
   }
 
   const response = await menu.back("Back", ICONS.back).show(player);
@@ -551,6 +684,10 @@ Location: ${dimensionId} (${location.x}, ${location.y}, ${location.z})`)
   if (response.id === "toggleAutobreaker") {
     if (!canManage) {
       tell(player, "§c[Generators] This admin generator cannot be changed.");
+      return;
+    }
+    if (!autobreakersAllowed) {
+      tell(player, "§c[Generators] Autobreakers are disabled for this generator.");
       return;
     }
     if (!placed?.autoBreakerPurchased && upgrade) {

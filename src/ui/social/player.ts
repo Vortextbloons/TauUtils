@@ -66,11 +66,13 @@ export async function showPlayerSettingsMenu(player: Player) {
     allowTpa: state.playerSettings.config.defaultAllowTpa,
     allowPay: state.playerSettings.config.defaultAllowPay,
     showSocialMessages: state.playerSettings.config.defaultShowSocialMessages,
+    showSidebar: state.playerSettings.config.defaultShowSidebar,
   };
   const result = await TauUi.modal("Player Settings")
     .toggle("allowTpa", "Allow TPA requests", current.allowTpa)
     .toggle("allowPay", "Allow payments", current.allowPay)
     .toggle("showSocialMessages", "Show social messages", current.showSocialMessages)
+    .toggle("showSidebar", "Show sidebar", current.showSidebar ?? true)
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
@@ -78,6 +80,7 @@ export async function showPlayerSettingsMenu(player: Player) {
     allowTpa: Boolean(result.values.allowTpa),
     allowPay: Boolean(result.values.allowPay),
     showSocialMessages: Boolean(result.values.showSocialMessages),
+    showSidebar: Boolean(result.values.showSidebar),
   });
   tell(player, "Player settings saved.");
 }

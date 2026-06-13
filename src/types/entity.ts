@@ -124,6 +124,7 @@ export type PlayerSettings = {
   allowTpa: boolean;
   allowPay: boolean;
   showSocialMessages: boolean;
+  showSidebar: boolean;
 };
 
 export type PlayerSettingsConfig = {
@@ -131,6 +132,7 @@ export type PlayerSettingsConfig = {
   defaultAllowTpa: boolean;
   defaultAllowPay: boolean;
   defaultShowSocialMessages: boolean;
+  defaultShowSidebar: boolean;
 };
 
 export type PlayerSettingsStore = {

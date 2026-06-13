@@ -62,6 +62,8 @@ export function defaultReferralStore(): ReferralStore {
     config: {
       enabled: true,
       allowMultipleRedemptions: false,
+      maxReferralsPerPlayer: 5,
+      cooldownSeconds: 60 * 60,
       refereeRewardIds: ["referral_bonus"],
       referrerRewardIds: ["referral_bonus"],
       broadcastMessage: false,
@@ -410,6 +412,7 @@ export function defaultPlayerSettingsStore(): PlayerSettingsStore {
       defaultAllowTpa: true,
       defaultAllowPay: true,
       defaultShowSocialMessages: true,
+      defaultShowSidebar: true,
     },
     players: {},
   };

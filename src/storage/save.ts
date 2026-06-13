@@ -200,7 +200,12 @@ export function saveCustomRewards() {
 }
 
 export function saveReferrals() {
-  scheduleDynamicSave(STORAGE_KEYS.referrals, () => safeSetDynamicJson(STORAGE_KEYS.referrals, state.referrals));
+  scheduleDynamicSave(STORAGE_KEYS.referrals, () => {
+    state.referrals.redemptions = state.referrals.redemptions.slice(0, Math.max(1, state.referrals.config.maxRedemptionHistory));
+    if (writeSplitDynamicJson(STORAGE_KEYS.referrals, state.referrals)) {
+      world.setDynamicProperty(STORAGE_KEYS.referrals, undefined);
+    }
+  });
 }
 
 export function saveClaims(): boolean {

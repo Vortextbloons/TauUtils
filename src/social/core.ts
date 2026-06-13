@@ -22,6 +22,11 @@ import type { TpaRequest } from "../types";
 
 const payCooldownBySenderId: Record<string, number> = {};
 const tpaNotifySubscribers = new Set<(playerId: string, request: TpaRequest) => void>();
+let sidebarOptOutHandler: ((player: Player) => void) | undefined;
+
+export function setSidebarOptOutHandler(handler: ((player: Player) => void) | undefined): void {
+  sidebarOptOutHandler = handler;
+}
 
 function nowMs(): number {
   return Date.now();
@@ -33,11 +38,15 @@ function generateRequestId(): string {
 
 function getPlayerSettingsById(playerId: string) {
   const existing = state.playerSettings.players[playerId];
-  if (existing) return existing;
+  if (existing) {
+    existing.showSidebar ??= state.playerSettings.config.defaultShowSidebar;
+    return existing;
+  }
   const created = {
     allowTpa: state.playerSettings.config.defaultAllowTpa,
     allowPay: state.playerSettings.config.defaultAllowPay,
     showSocialMessages: state.playerSettings.config.defaultShowSocialMessages,
+    showSidebar: state.playerSettings.config.defaultShowSidebar,
   };
   state.playerSettings.players[playerId] = created;
   savePlayerSettings();
@@ -48,9 +57,13 @@ export function getPlayerSettings(player: Player) {
   return getPlayerSettingsById(getPlayerId(player));
 }
 
-export function updatePlayerSettings(player: Player, partial: Partial<{ allowTpa: boolean; allowPay: boolean; showSocialMessages: boolean }>) {
+export function updatePlayerSettings(player: Player, partial: Partial<{ allowTpa: boolean; allowPay: boolean; showSocialMessages: boolean; showSidebar: boolean }>) {
   const current = getPlayerSettings(player);
   state.playerSettings.players[getPlayerId(player)] = { ...current, ...partial };
+  if (partial.showSidebar === false) {
+    sidebarOptOutHandler?.(player);
+    player.onScreenDisplay.setActionBar("§r");
+  }
   savePlayerSettings();
 }
 
