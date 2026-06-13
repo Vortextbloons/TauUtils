@@ -11,6 +11,7 @@ import { registerStatsCommands } from "./register-stats";
 import { registerClaimsCommands } from "./register-claims";
 import { registerRtpCommands } from "./register-rtp";
 import { registerTeamHomesCommands } from "./register-team-homes";
+import { registerRewardsReferralsCommands } from "./register-rewards-referrals";
 
 export function registerCustomCommands(startupEvent: { customCommandRegistry: CustomCommandRegistry }): void {
   const registry = startupEvent.customCommandRegistry;
@@ -26,4 +27,5 @@ export function registerCustomCommands(startupEvent: { customCommandRegistry: Cu
   registerClaimsCommands(registry);
   registerRtpCommands(registry);
   registerTeamHomesCommands(registry);
+  registerRewardsReferralsCommands(registry);
 }

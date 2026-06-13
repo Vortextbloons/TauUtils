@@ -138,6 +138,112 @@ while (true) {
 }
 ```
 
+## Message Forms
+
+Use `TauUi.message` (or `tauMessage`) for two-button message forms when you need the selection value (e.g. distinguish "Yes" from "No" with custom labels). For yes/no style prompts prefer `TauUi.confirm`.
+
+```ts
+const result = await TauUi.message("Transfer Funds")
+  .body(`Send ${amount} to ${targetName}?`)
+  .button1("Send")
+  .button2("Keep")
+  .show(player);
+
+if (result.canceled) return;
+
+if (result.selection === 0) {
+  await transfer(player, targetName, amount);
+} else {
+  player.sendMessage("Transfer canceled.");
+}
+```
+
+### Builder API: `TauMessageForm`
+
+| Method | Description |
+| --- | --- |
+| `body(text)` | Sets the body text (default `""`). |
+| `button1(text)` | Sets the first button label (default `"Yes"`). |
+| `button2(text)` | Sets the second button label (default `"No"`). |
+| `show(player)` | Renders the form and returns a `TauMessageResult`. |
+
+### Result Type: `TauMessageResult`
+
+- `canceled: true` -> `reason?`, `error?`, `selection` is `undefined`.
+- `canceled: false` -> `selection: 0 | 1` (`0` for `button1`, `1` for `button2`).
+
+## Pick From List
+
+`TauUi.pickFromList` is a small convenience for "select one of N options" menus. It builds an action form with a `Back` button and returns the selected value or `undefined` on cancel/back.
+
+```ts
+const selected = await TauUi.pickFromList(player, {
+  title: "Select Rank",
+  body: "Pick a rank to assign.",
+  items: ranks.map((rank) => ({
+    id: "rank",
+    text: rank.name,
+    iconPath: ICONS.rank,
+    value: rank.id,
+  })),
+  backText: "Back",
+  backIconPath: ICONS.back,
+});
+
+if (selected === undefined) return;
+await assignRank(player, selected);
+```
+
+`TauPickItem<TValue>` is `{ id: string; text: TauText; iconPath?: string; value: TValue }`. The helper accepts a `TauPickItem<TValue>[]` and is generic in `TValue` so the returned value is typed.
+
+## Cancel / Back Helpers
+
+| Helper | Returns `true` when |
+| --- | --- |
+| `TauUi.isBack(result)` | The form was not canceled and the chosen button has `id === "back"`. |
+| `TauUi.isCanceledOrBack(result)` | The form was canceled, or the chosen button has `id === "back"`. |
+
+Both helpers take a `TauActionResult<unknown>`, so they accept any action result regardless of its button value type.
+
+```ts
+const result = await TauUi.action<{ id: string }>("Pick")
+  .buttons(items.map((item) => ({ id: "item", text: item.label, value: { id: item.id } })))
+  .back()
+  .show(player);
+
+if (TauUi.isCanceledOrBack(result)) return;
+if (result.id === "item" && result.value) await openItem(result.value.id);
+```
+
+## Result Type Reference
+
+`TauUi` results are discriminated unions on `canceled`. The canceled branch is the same shape across all three result types: `{ canceled: true, reason?, error? }` with the selection/values fields forced to `undefined`.
+
+### `TauActionResult<TValue>`
+
+- `canceled: true` -> `selection: undefined`, `id: undefined`, `value: undefined`, `button: undefined`.
+- `canceled: false` -> `selection: number` (the underlying response index), `id: string` (the button's stable id), `value: TValue | undefined`, `button: TauButton<TValue>`.
+
+Use `id` for control flow, `selection` only when you need the raw index, and `value` to carry typed payloads through button clicks.
+
+### `TauModalResult`
+
+- `canceled: true` -> `values: undefined`, `rawValues: undefined`.
+- `canceled: false` -> `values: Record<string, TauModalValue>` keyed by each field's `key`, plus `rawValues: TauModalValue[]` in field order.
+
+`TauModalValue` is `boolean | number | string | undefined`. Always narrow or default when reading: `result.values.enabled === true`, `Number(result.values.tagSeconds ?? 0)`, `String(result.values.code ?? "")`.
+
+### `TauMessageResult`
+
+- `canceled: true` -> `selection: undefined`.
+- `canceled: false` -> `selection: 0 | 1`.
+
+## Cancel And Error Handling
+
+All `show()` calls route through a single `try/catch`. Any thrown error is captured into the result as `error`, and `canceled` is set to `true`. This means callers only have to branch on `canceled` and do not need defensive `try/catch` around every form.
+
+If the underlying response is missing, canceled, or has an undefined `selection` / `formValues`, the result is treated as canceled with the original `cancelationReason` (if any).
+
 ## Performance Notes
 
 - `TauUi` has no global registry and does not retain player state.

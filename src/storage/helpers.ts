@@ -35,6 +35,8 @@ import {
   defaultTauItemsStore,
   defaultCombatStore,
   defaultCommandBuilderStore,
+  defaultCustomRewardStore,
+  defaultReferralStore,
   defaultPlayerShopStore,
   defaultClaimStore,
   defaultCustomAreaStore,
@@ -230,6 +232,12 @@ export function collectCurrencyObjectives(): string[] {
     }
   }
 
+  for (const reward of Object.values(state.customRewards.rewards)) {
+    for (const action of reward.actions ?? []) {
+      if (action.type === "score") add(action.objective);
+    }
+  }
+
   for (const item of Object.values(state.tauItems.items)) {
     if (item.cost?.type === "money") add(item.cost.objective);
   }
@@ -269,6 +277,8 @@ export function clearAllData() {
   world.setDynamicProperty(STORAGE_KEYS.tauItems, undefined);
   world.setDynamicProperty(STORAGE_KEYS.combat, undefined);
   world.setDynamicProperty(STORAGE_KEYS.commandBuilder, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.customRewards, undefined);
+  world.setDynamicProperty(STORAGE_KEYS.referrals, undefined);
   world.setDynamicProperty(STORAGE_KEYS.playerShops, undefined);
   world.setDynamicProperty(STORAGE_KEYS.customAreas, undefined);
   world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
@@ -324,6 +334,8 @@ export function clearAllData() {
   state.tauItems = defaultTauItemsStore();
   state.combat = defaultCombatStore();
   state.commandBuilder = defaultCommandBuilderStore();
+  state.customRewards = defaultCustomRewardStore();
+  state.referrals = defaultReferralStore();
   state.playerShops = defaultPlayerShopStore();
   state.customAreas = defaultCustomAreaStore();
   state.lootChests = defaultLootChestStore();

@@ -133,6 +133,66 @@ export type CommandBuilderStore = {
   commands: Record<string, BuiltCommandDefinition>;
 };
 
+export type CustomRewardAction =
+  | { type: "score"; objective: string; operation: "add" | "set" | "remove"; amount: number }
+  | { type: "item"; itemId: string; amount: number }
+  | { type: "item_stack"; item: SerializedItemStack }
+  | { type: "command"; command: string; runAs?: "player" | "world" }
+  | { type: "tag"; operation: "add" | "remove"; tag: string }
+  | { type: "effect"; effectId: string; durationSeconds: number; amplifier: number; showParticles?: boolean }
+  | { type: "message"; message: string };
+
+export type CustomRewardDefinition = {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  operatorOnly: boolean;
+  permission?: string;
+  actions: CustomRewardAction[];
+};
+
+export type CustomRewardStore = {
+  config: {
+    enabled: boolean;
+    maxRewards: number;
+    maxActionsPerReward: number;
+  };
+  rewards: Record<string, CustomRewardDefinition>;
+};
+
+export type ReferralPlayerRecord = {
+  code: string;
+  redeemedCodes: string[];
+  referredByPlayerIds: string[];
+  referralCount: number;
+  pendingRewardIds: string[];
+  lastKnownName: string;
+};
+
+export type ReferralRedemption = {
+  refereePlayerId: string;
+  refereeName: string;
+  referrerPlayerId: string;
+  referrerName: string;
+  code: string;
+  redeemedAt: number;
+};
+
+export type ReferralStore = {
+  config: {
+    enabled: boolean;
+    allowMultipleRedemptions: boolean;
+    refereeRewardIds: string[];
+    referrerRewardIds: string[];
+    broadcastMessage: boolean;
+    maxRedemptionHistory: number;
+  };
+  players: Record<string, ReferralPlayerRecord>;
+  codeToPlayerId: Record<string, string>;
+  redemptions: ReferralRedemption[];
+};
+
 export type TauItemTriggerType = "use_air" | "use_block" | "hit_melee" | "mine_block";
 export type TauItemConsumptionMode = "none" | "consume_item" | "damage_durability";
 export type TauItemCostType = "money" | "xp" | "health";

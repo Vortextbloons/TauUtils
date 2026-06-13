@@ -64,6 +64,7 @@ async function showMenuUiManagement(player: Player) {
       .button("bindings", "Bindings", { iconPath: ICONS.binding })
       .button("viewBindings", "View Bindings", { iconPath: ICONS.binding })
       .button("commandBuilder", "Command Builder", { iconPath: ICONS.utility })
+      .button("iconDev", "Icon Dev", { iconPath: ICONS.menu })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
@@ -123,6 +124,11 @@ async function showMenuUiManagement(player: Player) {
       await showCommandBuilderMenu(player);
       continue;
     }
+    if (response.id === "iconDev") {
+      const { showIconDevMenu } = await import("../admin-ui");
+      await showIconDevMenu(player);
+      continue;
+    }
   }
 }
 
@@ -134,6 +140,8 @@ async function showPlayerSystems(player: Player) {
       .button("sidebar", "Sidebar Customizer", { iconPath: ICONS.sidebar })
       .button("ranks", "Ranks", { iconPath: ICONS.rank })
       .button("profiles", "Profiles", { iconPath: ICONS.menu })
+      .button("referrals", "Referrals", { iconPath: ICONS.rank })
+      .button("customRewards", "Custom Rewards", { iconPath: ICONS.utility })
       .button("back", "Back", { iconPath: ICONS.back })
       .show(player);
 
@@ -162,6 +170,16 @@ async function showPlayerSystems(player: Player) {
     if (response.id === "profiles") {
       const { showProfileBrowser } = await import("../ranks-ui");
       await showProfileBrowser(player);
+      continue;
+    }
+    if (response.id === "referrals") {
+      const { showReferralAdminMenu } = await import("../referrals-ui");
+      await showReferralAdminMenu(player);
+      continue;
+    }
+    if (response.id === "customRewards") {
+      const { showCustomRewardsAdminMenu } = await import("../custom-rewards-ui");
+      await showCustomRewardsAdminMenu(player);
       continue;
     }
   }

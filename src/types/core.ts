@@ -25,6 +25,8 @@ export const STORAGE_KEYS = {
   claims: "tau:claims",
   rtp: "tau:rtp",
   teamHomes: "tau:team_homes",
+  customRewards: "tau:custom_rewards",
+  referrals: "tau:referrals",
 } as const;
 
 export const CHAT_PREFIX = "§6[Tau]§r";
@@ -110,6 +112,8 @@ export type FeatureFlags = {
   claims: boolean;
   rtp: boolean;
   teamHomes: boolean;
+  customRewards: boolean;
+  referrals: boolean;
 };
 
 export type ConfigStore = {

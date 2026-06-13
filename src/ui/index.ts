@@ -9,5 +9,7 @@ export { showLootChestsAdminMenu } from "./loot-chests-ui";
 export { showCommandBuilderMenu } from "./command-builder-ui";
 export { showClaimMenu, showClaimsAdminMenu } from "./claims-ui";
 export { showRtpMenu, showRtpAdminMenu } from "./rtp-ui";
+export { showCustomRewardsAdminMenu } from "./custom-rewards-ui";
+export { showReferralMenu, showReferralAdminMenu } from "./referrals-ui";
 export { TauUi, TauActionForm, TauModalForm, TauMessageForm, action as tauAction, modal as tauModal, message as tauMessage, confirm as tauConfirm, isBack as tauIsBack, isCanceledOrBack as tauIsCanceledOrBack, paginate as tauPaginate, pickFromList as tauPickFromList } from "./tau-ui";
 export type { TauActionElement, TauActionResult, TauButton, TauMessageResult, TauModalField, TauModalResult, TauModalValue, TauPage, TauPickItem, TauText } from "./tau-ui";

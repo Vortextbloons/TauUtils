@@ -178,6 +178,14 @@ export function saveCommandBuilder() {
   scheduleDynamicSave(STORAGE_KEYS.commandBuilder, () => safeSetDynamicJson(STORAGE_KEYS.commandBuilder, state.commandBuilder));
 }
 
+export function saveCustomRewards() {
+  scheduleDynamicSave(STORAGE_KEYS.customRewards, () => safeSetDynamicJson(STORAGE_KEYS.customRewards, state.customRewards));
+}
+
+export function saveReferrals() {
+  scheduleDynamicSave(STORAGE_KEYS.referrals, () => safeSetDynamicJson(STORAGE_KEYS.referrals, state.referrals));
+}
+
 export function saveClaims(): boolean {
   const ok = writeClaimsToSplitKeys(state.claims);
   world.setDynamicProperty(STORAGE_KEYS.claims, undefined);

@@ -1,4 +1,4 @@
-import { type BindingStore, type ChatConfig, type ClaimFlags, type ClaimStore, type CombatStore, type CommandBuilderStore, type ConfigStore, type CrateStore, type CustomAreaStore, type GeneratorStore, type HomeStore, type LootChestStore, type ModerationStore, type PayStore, type PlayerProfilesStore, type PlayerSettingsStore, type PlayerShopStore, type PlayerStats, type PlotStore, type PruneStore, type RankStore, type RtpProtection, type RtpStore, type SidebarStore, type TauItemsStore, type TeamHomeStore, type TeamStore, type TpaStore, type WarpStore } from "../types";
+import { type BindingStore, type ChatConfig, type ClaimFlags, type ClaimStore, type CombatStore, type CommandBuilderStore, type ConfigStore, type CrateStore, type CustomAreaStore, type CustomRewardStore, type GeneratorStore, type HomeStore, type LootChestStore, type ModerationStore, type PayStore, type PlayerProfilesStore, type PlayerSettingsStore, type PlayerShopStore, type PlayerStats, type PlotStore, type PruneStore, type RankStore, type ReferralStore, type RtpProtection, type RtpStore, type SidebarStore, type TauItemsStore, type TeamHomeStore, type TeamStore, type TpaStore, type WarpStore } from "../types";
 
 export function defaultConfig(): ConfigStore {
   return {
@@ -31,7 +31,45 @@ export function defaultConfig(): ConfigStore {
       claims: true,
       rtp: true,
       teamHomes: true,
+      customRewards: true,
+      referrals: true,
     },
+  };
+}
+
+export function defaultCustomRewardStore(): CustomRewardStore {
+  return {
+    config: {
+      enabled: true,
+      maxRewards: 100,
+      maxActionsPerReward: 20,
+    },
+    rewards: {
+      referral_bonus: {
+        id: "referral_bonus",
+        name: "Referral Bonus",
+        description: "Default money reward for referral participants.",
+        enabled: true,
+        operatorOnly: true,
+        actions: [{ type: "score", objective: "money", operation: "add", amount: 100 }],
+      },
+    },
+  };
+}
+
+export function defaultReferralStore(): ReferralStore {
+  return {
+    config: {
+      enabled: true,
+      allowMultipleRedemptions: false,
+      refereeRewardIds: ["referral_bonus"],
+      referrerRewardIds: ["referral_bonus"],
+      broadcastMessage: false,
+      maxRedemptionHistory: 500,
+    },
+    players: {},
+    codeToPlayerId: {},
+    redemptions: [],
   };
 }
 

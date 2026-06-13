@@ -9,6 +9,7 @@ import {
   type ConfigStore,
   type CrateStore,
   type CustomAreaStore,
+  type CustomRewardStore,
   type FormDefinition,
   type GeneratorStore,
   type HomeStore,
@@ -21,6 +22,7 @@ import {
   type PlotStore,
   type PruneStore,
   type RankStore,
+  type ReferralStore,
   type RtpStore,
   type ShopProfile,
   type SidebarStore,
@@ -46,6 +48,7 @@ import {
   defaultConfig,
   defaultCrateStore,
   defaultCustomAreaStore,
+  defaultCustomRewardStore,
   defaultGeneratorStore,
   defaultHomeStore,
   defaultLootChestStore,
@@ -57,6 +60,7 @@ import {
   defaultPlotStore,
   defaultPruneStore,
   defaultRankStore,
+  defaultReferralStore,
   defaultRtpStore,
   defaultTauItemsStore,
   defaultTeamHomeStore,
@@ -104,6 +108,8 @@ export const state: {
   customAreas: CustomAreaStore;
   lootChests: LootChestStore;
   commandBuilder: CommandBuilderStore;
+  customRewards: CustomRewardStore;
+  referrals: ReferralStore;
   claims: ClaimStore;
   rtp: RtpStore;
 } = {
@@ -134,6 +140,8 @@ export const state: {
   customAreas: defaultCustomAreaStore(),
   lootChests: defaultLootChestStore(),
   commandBuilder: defaultCommandBuilderStore(),
+  customRewards: defaultCustomRewardStore(),
+  referrals: defaultReferralStore(),
   claims: defaultClaimStore(),
   rtp: defaultRtpStore(),
 };
@@ -323,6 +331,14 @@ export function loadState() {
   state.commandBuilder = readDynamicJSON<CommandBuilderStore>(STORAGE_KEYS.commandBuilder, defaultCommandBuilderStore());
   state.commandBuilder.config = applyMissingDefaults(state.commandBuilder.config as unknown as Record<string, unknown>, defaultCommandBuilderStore().config as unknown as Record<string, unknown>) as unknown as CommandBuilderStore["config"];
   state.commandBuilder.commands ??= {};
+  state.customRewards = readDynamicJSON<CustomRewardStore>(STORAGE_KEYS.customRewards, defaultCustomRewardStore());
+  state.customRewards.config = applyMissingDefaults(state.customRewards.config as unknown as Record<string, unknown>, defaultCustomRewardStore().config as unknown as Record<string, unknown>) as unknown as CustomRewardStore["config"];
+  state.customRewards.rewards ??= {};
+  state.referrals = readDynamicJSON<ReferralStore>(STORAGE_KEYS.referrals, defaultReferralStore());
+  state.referrals.config = applyMissingDefaults(state.referrals.config as unknown as Record<string, unknown>, defaultReferralStore().config as unknown as Record<string, unknown>) as unknown as ReferralStore["config"];
+  state.referrals.players ??= {};
+  state.referrals.codeToPlayerId ??= {};
+  state.referrals.redemptions ??= [];
   const splitClaims = loadClaimsFromSplitKeys(dynamicPropertyIds);
   state.claims = splitClaims.hasSplitData ? splitClaims.store : defaultClaimStore();
   state.claims.config = applyMissingDefaults(state.claims.config as unknown as Record<string, unknown>, defaultClaimStore().config as unknown as Record<string, unknown>) as unknown as ClaimStore["config"];
@@ -375,7 +391,7 @@ export function loadState() {
 // Re-exports — all moved symbols so consumers see them from "./state"
 // ---------------------------------------------------------------------------
 
-export { defaultConfig, defaultRankStore, defaultChatConfig, defaultPlayerStats, defaultPlotStore, defaultTpaStore, defaultHomeStore, defaultPayStore, defaultPlayerSettingsStore, defaultTeamStore, defaultTeamHomeStore, defaultPruneStore, defaultWarpStore, defaultGeneratorStore, defaultModerationStore, defaultCrateStore, defaultTauItemsStore, defaultCombatStore, defaultCommandBuilderStore, defaultPlayerShopStore, defaultCustomAreaStore, defaultLootChestStore, defaultClaimStore, defaultRtpStore } from "./defaults";
+export { defaultConfig, defaultRankStore, defaultChatConfig, defaultPlayerStats, defaultPlotStore, defaultTpaStore, defaultHomeStore, defaultPayStore, defaultPlayerSettingsStore, defaultTeamStore, defaultTeamHomeStore, defaultPruneStore, defaultWarpStore, defaultGeneratorStore, defaultModerationStore, defaultCrateStore, defaultTauItemsStore, defaultCombatStore, defaultCommandBuilderStore, defaultCustomRewardStore, defaultReferralStore, defaultPlayerShopStore, defaultCustomAreaStore, defaultLootChestStore, defaultClaimStore, defaultRtpStore } from "./defaults";
 export { PLAYER_SHOPS_CONFIG_KEY, PLAYER_SHOPS_SHOP_PREFIX, PLAYER_SHOPS_LISTING_PREFIX, PLAYER_SHOPS_EARNINGS_PREFIX, CUSTOM_AREAS_AREA_PREFIX, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, STATS_PLAYER_IDS_KEY, STATS_PLAYER_PREFIX, readSplitDynamicJson, clearSplitDynamicJson, writeSplitDynamicJson, safeSetDynamicJson, parseJSON } from "./dynamic-json";
 export { markStatsPlayerDirty, markStatsPlayerIdsDirty } from "./split-keys/stats";
 export { writePlayerShopsIncrementalToSplitKeys } from "./split-keys/player-shops";

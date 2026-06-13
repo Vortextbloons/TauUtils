@@ -6,6 +6,7 @@ import { tryHandleTauItemTrigger } from "../tau-items";
 import { clearCustomAreaRuntimeForPlayer, processCustomAreas, shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace, shouldCancelAreaEntityInteract, shouldCancelAreaItemUse, shouldCancelAreaPvp } from "../custom-areas";
 import { processClaims, shouldCancelClaimBlockBreak, shouldCancelClaimBlockPlace, shouldCancelClaimEntityInteract, shouldCancelClaimItemUse, shouldCancelClaimPvp } from "../claims";
 import { clearRtpRuntimeForPlayer, shouldCancelRtpDamage } from "../rtp";
+import { flushPendingReferralRewards } from "../referrals";
 import { getPlayerTeam } from "../teams";
 import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
 import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../loot-chests";
@@ -154,6 +155,7 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
     if (cacheModerationInspectionSnapshot(player)) saveModeration();
   }
   if (isFeatureEnabled("combat")) handleCombatJoin(player);
+  if (isFeatureEnabled("referrals")) flushPendingReferralRewards(player);
 
   if (!isFeatureEnabled("plots")) return;
 

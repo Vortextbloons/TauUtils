@@ -360,6 +360,8 @@ export async function showConfigMenu(player: Player) {
       .button("playerConfig", `Player Config: ${features.playerConfig ? "On" : "Off"}`, { iconPath: ICONS.settings })
       .button("teams", `Teams: ${features.teams ? "On" : "Off"}`, { iconPath: ICONS.menu })
       .button("teamHomes", `Team Homes: ${features.teamHomes ? "On" : "Off"}`, { iconPath: ICONS.confirm })
+      .button("customRewards", `Custom Rewards: ${features.customRewards ? "On" : "Off"}`, { iconPath: ICONS.utility })
+      .button("referrals", `Referrals: ${features.referrals ? "On" : "Off"}`, { iconPath: ICONS.rank })
       .button("warps", `Warps: ${features.warps ? "On" : "Off"}`, { iconPath: ICONS.sidebar })
       .button("plotTp", `Plot TP: ${features.plotTp ? "On" : "Off"}`, { iconPath: ICONS.sidebar })
       .button("generators", `Generators: ${features.generators ? "On" : "Off"}`, { iconPath: ICONS.shop })
@@ -436,7 +438,7 @@ export async function showConfigMenu(player: Player) {
       bindings: "bindings", stats: "stats", plots: "plots", tpa: "tpa",
       homes: "homes", pay: "pay", playerConfig: "playerConfig", teams: "teams",
       lootChests: "lootChests", commandBuilder: "commandBuilder", claims: "claims", rtp: "rtp",
-      teamHomes: "teamHomes",
+      teamHomes: "teamHomes", customRewards: "customRewards", referrals: "referrals",
     };
     const key = keys[response.id];
     if (!key) continue;
