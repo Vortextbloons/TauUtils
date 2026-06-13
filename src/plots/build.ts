@@ -1,6 +1,7 @@
 import { Player, Vector3, system, world } from "@minecraft/server";
 import { STORAGE_KEYS, type PlacedGenerator, type PlotSnapshot, type PlotSlot, type TeamDefinition } from "../types";
 import { getPlayerId, isFeatureEnabled, saveGenerators, savePlots, saveTeams, state, tell } from "../storage";
+import { restoreGeneratorBlocks } from "../generators/definitions";
 import { getPlotSlots, getDimension, invalidatePlotSlotCache, parseSlotIndex, slotName, buildManualGridSlots, MAX_FILL_VOLUME, MAX_FILL_SPAN, BUILD_PROXIMITY_RADIUS } from "./grid";
 
 export function reorderPlotSlots(): boolean {
@@ -435,6 +436,8 @@ function removeSlotGenerators(slot: PlotSlot): boolean {
   }
   if (ids.length === 0) return false;
   for (const id of ids) {
+    const generator = state.generators.placed[id];
+    if (generator) restoreGeneratorBlocks(generator);
     delete state.generators.placed[id];
   }
   return true;

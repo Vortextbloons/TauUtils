@@ -70,6 +70,7 @@ import { loadCustomAreasFromSplitKeys } from "./split-keys/custom-areas";
 import { loadLootChestsFromSplitKeys } from "./split-keys/loot-chests";
 import { loadClaimsFromSplitKeys } from "./split-keys/claims";
 import { loadPlotsFromSplitKeys, normalizePlotStore, rememberPlotSplitKeys, migrateLegacyPlotsToSplitOneShot } from "./split-keys/plots";
+import { runStorageMigrations } from "./migrations";
 
 // ---------------------------------------------------------------------------
 // State object
@@ -163,6 +164,7 @@ function applyMissingDefaults<T extends Record<string, unknown>>(target: T | und
 
 export function loadState() {
   migrateLegacyPlotsToSplitOneShot();
+  runStorageMigrations();
   const dynamicPropertyIds = world.getDynamicPropertyIds();
 
   state.forms = readDynamicJSON<Record<string, FormDefinition>>(STORAGE_KEYS.forms, {});
@@ -215,6 +217,14 @@ export function loadState() {
   let generatorsChanged = false;
   const placementsByDefinitionId = new Map<string, typeof state.generators.placed[string][]>();
   for (const placed of Object.values(state.generators.placed)) {
+    if (placed.originalBaseBlockId === undefined) {
+      placed.originalBaseBlockId = "minecraft:air";
+      generatorsChanged = true;
+    }
+    if (placed.originalOutputBlockId === undefined) {
+      placed.originalOutputBlockId = "minecraft:air";
+      generatorsChanged = true;
+    }
     const placements = placementsByDefinitionId.get(placed.definitionId) ?? [];
     placements.push(placed);
     placementsByDefinitionId.set(placed.definitionId, placements);
@@ -299,6 +309,7 @@ export function loadState() {
       blockPlaceExceptions: [...new Set((area.permissions?.blockPlaceExceptions ?? []).map((block) => block.trim().toLowerCase()).filter((block) => block.length > 0))],
       itemUse: area.permissions?.itemUse ?? true,
       entityInteract: area.permissions?.entityInteract ?? true,
+      teleport: area.permissions?.teleport ?? true,
     };
   }
   state.plots = normalizePlotStore(state.plots);

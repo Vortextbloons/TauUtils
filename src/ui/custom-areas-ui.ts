@@ -11,7 +11,7 @@ function parseCoords(raw: string): { ok: boolean; message: string; values?: numb
 }
 
 function defaultPermissions() {
-  return { pvp: true, blockBreak: true, blockBreakExceptions: [], blockPlace: true, blockPlaceExceptions: [], itemUse: true, entityInteract: true };
+  return { pvp: true, blockBreak: true, blockBreakExceptions: [], blockPlace: true, blockPlaceExceptions: [], itemUse: true, entityInteract: true, teleport: true };
 }
 
 function defaultArea(id: string, player: Player, values: number[]): CustomAreaDefinition {
@@ -163,6 +163,7 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
     .text("blockPlaceExceptions", "Place exceptions (comma, only when off)", { placeholder: "minecraft:stone,minecraft:dirt", defaultValue: area.permissions.blockPlaceExceptions.join(",") })
     .toggle("itemUse", "Allow item use", area.permissions.itemUse)
     .toggle("entityInteract", "Allow entity interact", area.permissions.entityInteract)
+    .toggle("teleport", "Allow teleports into area", area.permissions.teleport ?? true)
     .toggle("dropItemsIfInCombat", "Drop items if in combat", area.dropItemsIfInCombat ?? false)
     .submitButton("Save")
     .show(player);
@@ -176,6 +177,7 @@ async function editPermissions(player: Player, areaId: string): Promise<void> {
     blockPlaceExceptions: parseBlockList(String(result.values.blockPlaceExceptions ?? "")),
     itemUse: Boolean(result.values.itemUse),
     entityInteract: Boolean(result.values.entityInteract),
+    teleport: Boolean(result.values.teleport),
   };
   next.dropItemsIfInCombat = Boolean(result.values.dropItemsIfInCombat);
   tellCommitResult(player, commitCustomArea(next));

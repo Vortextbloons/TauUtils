@@ -282,6 +282,12 @@ export function shouldCancelAreaEntityInteract(player: Player, location = player
   return Boolean(area && !area.permissions.entityInteract);
 }
 
+export function shouldCancelAreaTeleport(player: Player, location: Vector3, dimensionId: string): boolean {
+  if (isOperator(player)) return false;
+  const area = getAreaForPlayer(player, location, dimensionId);
+  return Boolean(area && area.permissions.teleport === false);
+}
+
 export function shouldCancelAreaPvp(victim: Player, attacker: Player): boolean {
   if (isOperator(victim) || isOperator(attacker)) return false;
   const victimArea = getAreaForPlayer(victim);
@@ -312,7 +318,7 @@ function safeAreaVector(vector: Vector3): boolean {
 
 function normalizeAreaDefinition(area: CustomAreaDefinition): CustomAreaDefinition {
   const bounds = normalizeAreaBounds(area.min, area.max);
-  const permissions = area.permissions ?? { pvp: true, blockBreak: true, blockBreakExceptions: [], blockPlace: true, blockPlaceExceptions: [], itemUse: true, entityInteract: true };
+  const permissions = area.permissions ?? { pvp: true, blockBreak: true, blockBreakExceptions: [], blockPlace: true, blockPlaceExceptions: [], itemUse: true, entityInteract: true, teleport: true };
   return {
     ...area,
     dimensionId: String(area.dimensionId ?? "minecraft:overworld").trim() || "minecraft:overworld",
@@ -327,6 +333,7 @@ function normalizeAreaDefinition(area: CustomAreaDefinition): CustomAreaDefiniti
       blockPlaceExceptions: [...normalizedBlockSet(permissions.blockPlaceExceptions)],
       itemUse: permissions.itemUse ?? true,
       entityInteract: permissions.entityInteract ?? true,
+      teleport: permissions.teleport ?? true,
     },
     dropItemsIfInCombat: area.dropItemsIfInCombat ?? false,
     commandRules: (area.commandRules ?? []).map((rule) => ({ ...rule, commands: [...(rule.commands ?? [])] })),

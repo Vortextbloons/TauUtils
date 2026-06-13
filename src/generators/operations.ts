@@ -5,7 +5,7 @@ import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from 
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent } from "../shared/item-components";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
-import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, isGeneratorAdminProtected, normalizeId, normalizeItemId, readGeneratorItemData } from "./definitions";
+import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, isGeneratorAdminProtected, normalizeId, normalizeItemId, readGeneratorItemData, restoreGeneratorBlocks } from "./definitions";
 import { getGeneratorOutputFallback, getGeneratorProducesSummary, pickGeneratorOutput } from "./output-pick";
 
 const TURBO_BURST_PER_VISIT = 8;
@@ -274,6 +274,20 @@ function spawnGeneratorOutput(location: GeneratorLocation, outputItemId: string)
   }
 }
 
+function captureOriginalGeneratorBlocks(location: GeneratorLocation): Pick<PlacedGenerator, "originalBaseBlockId" | "originalOutputBlockId"> {
+  try {
+    const dim = world.getDimension(location.dimensionId);
+    const base = dim.getBlock({ x: location.x, y: location.y, z: location.z });
+    const output = dim.getBlock({ x: location.x, y: location.y + 1, z: location.z });
+    return {
+      originalBaseBlockId: base?.typeId,
+      originalOutputBlockId: output?.typeId,
+    };
+  } catch {
+    return {};
+  }
+}
+
 function collectGeneratorOutput(player: Player, outputItemId: string, amount: number): void {
   try {
     const stack = new ItemStack(normalizeItemId(outputItemId), Math.max(1, Math.floor(amount)));
@@ -348,7 +362,7 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
     if (!plot || plot.occupiedByPlayerId !== plotOwnerId) return { ok: false, message: "This generator can only be placed on your plot." };
   }
 
-  const placed = createPlacedGenerator(def, plotOwnerId, dimensionId, loc, stack);
+  const placed = { ...createPlacedGenerator(def, plotOwnerId, dimensionId, loc, stack), ...captureOriginalGeneratorBlocks(loc) };
 
   const initialOutput = pickGeneratorOutput(def) ?? getGeneratorOutputFallback(def);
   if (!spawnGeneratorOutput(loc, initialOutput)) {
@@ -356,7 +370,7 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
   }
 
   if (!consumePlacedGeneratorItem(player, def)) {
-    clearGeneratorOutput(loc);
+    restoreGeneratorBlocks(placed);
     return { ok: false, message: "Unable to consume generator item." };
   }
 
@@ -395,7 +409,7 @@ export function pickupGenerator(player: Player, location: Vector3, dimensionId: 
   delete state.generators.placed[placed.id];
   markGeneratorIndexesDirty();
 
-  clearGeneratorOutput(loc);
+  restoreGeneratorBlocks(placed);
   saveGenerators();
   savePlotAtLocation(loc);
   return { ok: true, message: `Picked up ${def.name}.` };

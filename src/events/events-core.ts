@@ -12,6 +12,7 @@ import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../lo
 import { registerBackgroundTask } from "../scheduler";
 import { clearSocialRuntimeForPlayer } from "../social";
 import { clearSidebarRuntimeForPlayer } from "../sidebar";
+import { registerLifecycleEvents } from "./lifecycle";
 import {
   asPlayer,
   incrementStat,
@@ -30,7 +31,6 @@ import {
   saveModeration,
   tell,
   isOperator,
-  flushPendingDynamicSaves,
 } from "../storage";
 import {
   clearBannedInventory,
@@ -407,10 +407,7 @@ function resolveEntityMenu(entity: { getTags(): string[]; nameTag?: string; hasT
 }
 
 export function registerEventInterceptors() {
-  const shutdownEvent = (world.beforeEvents as unknown as { shutdown?: { subscribe(callback: () => void): void } }).shutdown;
-  shutdownEvent?.subscribe(() => {
-    flushPendingDynamicSaves();
-  });
+  registerLifecycleEvents();
 
   world.afterEvents.playerJoin.subscribe((event) => {
     const player = getCachedPlayers().find((entry) => entry.name === event.playerName);

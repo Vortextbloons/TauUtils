@@ -1,6 +1,6 @@
-import { ItemStack, world } from "@minecraft/server";
+import { BlockPermutation, ItemStack, world } from "@minecraft/server";
 import { saveGenerators, state } from "../storage";
-import type { GeneratorDefinition, GeneratorOutputEntry, GeneratorTierDefinition, GeneratorStore } from "../types/game";
+import type { GeneratorDefinition, GeneratorOutputEntry, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { generatorCache, GENERATOR_MARKER_PREFIX, type GeneratorItemData, type GeneratorLocation } from "./types";
 import { normalizeItemId } from "../shared/item-id";
 import { getValidOutputPool } from "./output-pick";
@@ -72,6 +72,17 @@ function clearGeneratorOutput(location: GeneratorLocation, preserveBase = false)
   }
 }
 
+function restoreGeneratorBlocks(placed: PlacedGenerator, preserveBase = false): void {
+  try {
+    const dim = world.getDimension(placed.dimensionId);
+    const base = dim.getBlock({ x: placed.x, y: placed.y, z: placed.z });
+    const output = dim.getBlock({ x: placed.x, y: placed.y + 1, z: placed.z });
+    if (!preserveBase && base) base.setPermutation(BlockPermutation.resolve(placed.originalBaseBlockId ?? "minecraft:air"));
+    if (output) output.setPermutation(BlockPermutation.resolve(placed.originalOutputBlockId ?? "minecraft:air"));
+  } catch {
+  }
+}
+
 export function getGeneratorAutoBreakerCost(definition: GeneratorDefinition): number {
   if (definition.autoBreakerCost !== undefined && Number.isFinite(definition.autoBreakerCost)) {
     return Math.max(0, Math.floor(definition.autoBreakerCost));
@@ -95,7 +106,7 @@ export function deleteGeneratorDefinition(defId: string): { ok: boolean; message
 
   for (const [placedId, placed] of Object.entries(state.generators.placed)) {
     if (placed.definitionId === id) {
-      clearGeneratorOutput({ dimensionId: placed.dimensionId, x: placed.x, y: placed.y, z: placed.z });
+      restoreGeneratorBlocks(placed);
       delete state.generators.placed[placedId];
     }
   }
@@ -393,4 +404,4 @@ export function updateGeneratorConfig(partial: Partial<GeneratorStore["config"]>
   return { ok: true, message: "Generator settings updated." };
 }
 
-export { normalizeId, normalizeItemId, parsePlotIndex, getMaxTier, getMaxTierEntry, getTier, getDefinitions, getDefinitionByStack, readGeneratorItemData, clearGeneratorOutput };
+export { normalizeId, normalizeItemId, parsePlotIndex, getMaxTier, getMaxTierEntry, getTier, getDefinitions, getDefinitionByStack, readGeneratorItemData, clearGeneratorOutput, restoreGeneratorBlocks };

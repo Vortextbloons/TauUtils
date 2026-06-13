@@ -273,6 +273,7 @@ export function clearAllData() {
   world.setDynamicProperty(STORAGE_KEYS.customAreas, undefined);
   world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
   world.setDynamicProperty(STORAGE_KEYS.claims, undefined);
+  world.setDynamicProperty("tau:meta", undefined);
   world.setDynamicProperty(PLAYER_SHOPS_CONFIG_KEY, undefined);
   world.setDynamicProperty(PLOTS_CONFIG_KEY, undefined);
   world.setDynamicProperty(CUSTOM_AREAS_CONFIG_KEY, undefined);

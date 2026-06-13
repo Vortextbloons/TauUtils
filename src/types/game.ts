@@ -400,6 +400,8 @@ export type PlacedGenerator = {
   z: number;
   tier: number;
   nextSpawnAt: number;
+  originalBaseBlockId?: string;
+  originalOutputBlockId?: string;
   autoBreakerPurchased?: boolean;
   autoBreakerEnabled?: boolean;
 };
@@ -450,6 +452,7 @@ export type CustomAreaPermissions = {
   blockPlaceExceptions: string[];
   itemUse: boolean;
   entityInteract: boolean;
+  teleport: boolean;
 };
 
 export type CustomAreaEffect = {
