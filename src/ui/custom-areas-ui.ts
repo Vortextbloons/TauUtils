@@ -1,13 +1,87 @@
 import { Player } from "@minecraft/server";
-import { TauUi } from "./tau-ui";
+import { TauUi, type TauModalResult } from "./tau-ui";
 import { ICONS, type CustomAreaCommandRule, type CustomAreaDefinition, type CustomAreaEffect } from "../types";
-import { isOperator, normalizeKey, saveCustomAreas, state, tell } from "../storage";
+import { getPlayerId, isOperator, normalizeKey, saveCustomAreas, state, tell } from "../storage";
 import { applyAreaTickingArea, commitCustomArea, invalidateCustomAreaRuntimeState, normalizeAreaBounds } from "../custom-areas";
 
+type PendingAreaCorner = {
+  x: number;
+  y: number;
+  z: number;
+  dimensionId: string;
+};
+
+type PendingAreaCorners = {
+  first?: PendingAreaCorner;
+  second?: PendingAreaCorner;
+};
+
+const pendingAreaCornersByPlayerId = new Map<string, PendingAreaCorners>();
+
 function parseCoords(raw: string): { ok: boolean; message: string; values?: number[] } {
-  const values = raw.trim().split(/[\s,]+/).filter((entry) => entry.length > 0).map((entry) => Number(entry));
+  const normalized = String(raw ?? "")
+    .replace(/[−–—]/g, "-")
+    .replace(/,/g, " ");
+  const matches = normalized.match(/[+-]?(?:\d+\.?\d*|\.\d+)/g) ?? [];
+  const values = matches.map((entry) => Number(entry));
   if (values.length !== 6 || values.some((value) => !Number.isFinite(value))) return { ok: false, message: "Enter 6 coordinates: x1 y1 z1 x2 y2 z2." };
   return { ok: true, message: "", values };
+}
+
+function parseCoordsFromModal(result: TauModalResult, key: string): { ok: boolean; message: string; values?: number[] } {
+  if (result.canceled) return { ok: false, message: "Form was canceled." };
+  const keyedRaw = String(result.values[key] ?? "");
+  if (/^#+$/.test(keyedRaw.trim())) {
+    return { ok: false, message: "Realms censored the coordinate field. Use Set Corner 1/2 instead." };
+  }
+  const keyed = parseCoords(keyedRaw);
+  if (keyed.ok) return keyed;
+
+  for (const value of result.rawValues) {
+    if (typeof value !== "string") continue;
+    const parsed = parseCoords(value);
+    if (parsed.ok) return parsed;
+  }
+
+  const preview = keyedRaw.trim().slice(0, 80) || "blank";
+  return { ok: false, message: `Enter 6 coordinates: x1 y1 z1 x2 y2 z2. Coords field read as: ${preview}` };
+}
+
+function captureCurrentCorner(player: Player): PendingAreaCorner {
+  return {
+    x: Math.floor(player.location.x),
+    y: Math.floor(player.location.y),
+    z: Math.floor(player.location.z),
+    dimensionId: player.dimension.id,
+  };
+}
+
+function cornerText(corner?: PendingAreaCorner): string {
+  if (!corner) return "not set";
+  return `${corner.x} ${corner.y} ${corner.z} (${corner.dimensionId})`;
+}
+
+function getPendingAreaCorners(player: Player): PendingAreaCorners {
+  const playerId = getPlayerId(player);
+  const existing = pendingAreaCornersByPlayerId.get(playerId);
+  if (existing) return existing;
+  const created: PendingAreaCorners = {};
+  pendingAreaCornersByPlayerId.set(playerId, created);
+  return created;
+}
+
+function setPendingAreaCorner(player: Player, key: keyof PendingAreaCorners): void {
+  const corners = getPendingAreaCorners(player);
+  corners[key] = captureCurrentCorner(player);
+  tell(player, `§aSet custom area ${key === "first" ? "corner 1" : "corner 2"}: ${cornerText(corners[key])}`);
+}
+
+function nextGeneratedAreaId(): string {
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const id = `area_${Date.now().toString(36)}_${attempt.toString(36)}`;
+    if (!state.customAreas.areas[id]) return id;
+  }
+  return `area_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function defaultPermissions() {
@@ -93,7 +167,7 @@ async function createArea(player: Player): Promise<void> {
     tell(player, "That area ID already exists.");
     return;
   }
-  const parsed = parseCoords(String(result.values.coords ?? ""));
+  const parsed = parseCoordsFromModal(result, "coords");
   if (!parsed.ok || !parsed.values) {
     tell(player, parsed.message);
     return;
@@ -102,6 +176,52 @@ async function createArea(player: Player): Promise<void> {
   area.name = String(result.values.name ?? id).trim() || id;
   area.dimensionId = String(result.values.dimensionId ?? player.dimension.id).trim() || player.dimension.id;
   tellCommitResult(player, commitCustomArea(area));
+}
+
+async function createAreaFromCorners(player: Player): Promise<void> {
+  if (Object.keys(state.customAreas.areas).length >= state.customAreas.config.maxAreas) {
+    tell(player, "Max custom areas reached.");
+    return;
+  }
+  const corners = getPendingAreaCorners(player);
+  if (!corners.first || !corners.second) {
+    tell(player, `Set both corners first. Corner 1: ${cornerText(corners.first)}. Corner 2: ${cornerText(corners.second)}.`);
+    return;
+  }
+  if (corners.first.dimensionId !== corners.second.dimensionId) {
+    tell(player, "Both custom area corners must be in the same dimension.");
+    return;
+  }
+
+  const result = await TauUi.modal("Create Area From Corners")
+    .label(`Corner 1: ${cornerText(corners.first)}`)
+    .label(`Corner 2: ${cornerText(corners.second)}`)
+    .label("Realm-safe mode: ID and name will be generated automatically.")
+    .submitButton("Create")
+    .show(player);
+  if (result.canceled) return;
+
+  const id = nextGeneratedAreaId();
+
+  const bounds = normalizeAreaBounds(corners.first, corners.second);
+  const area: CustomAreaDefinition = {
+    id,
+    name: id,
+    enabled: true,
+    dimensionId: corners.first.dimensionId,
+    min: bounds.min,
+    max: bounds.max,
+    priority: 0,
+    broadcastMessages: false,
+    allowedRanks: [],
+    dropItemsIfInCombat: false,
+    permissions: defaultPermissions(),
+    effects: [],
+    commandRules: [],
+  };
+  const saved = commitCustomArea(area);
+  tellCommitResult(player, saved);
+  if (saved.ok) pendingAreaCornersByPlayerId.delete(getPlayerId(player));
 }
 
 async function editBasics(player: Player, areaId: string): Promise<void> {
@@ -117,7 +237,7 @@ async function editBasics(player: Player, areaId: string): Promise<void> {
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
-  const parsed = parseCoords(String(result.values.coords ?? ""));
+  const parsed = parseCoordsFromModal(result, "coords");
   if (!parsed.ok || !parsed.values) {
     tell(player, parsed.message);
     return;
@@ -373,18 +493,31 @@ export async function showCustomAreasAdminMenu(player: Player): Promise<void> {
   }
   while (true) {
     const areas = Object.values(state.customAreas.areas).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+    const pending = getPendingAreaCorners(player);
     const form = TauUi.action<{ areaId: string }>("Custom Areas")
-      .body(`Enabled: ${state.customAreas.config.enabled ? "Yes" : "No"}\nAreas: ${areas.length}`)
+      .body(`Enabled: ${state.customAreas.config.enabled ? "Yes" : "No"}\nAreas: ${areas.length}\nCorner 1: ${cornerText(pending.first)}\nCorner 2: ${cornerText(pending.second)}`)
       .button("globalSettings", "Global Settings", { iconPath: ICONS.settings })
-      .button("createArea", "Create Area", { iconPath: ICONS.confirm });
+      .button("setCorner1", "Set Corner 1 Here", { iconPath: ICONS.confirm })
+      .button("setCorner2", "Set Corner 2 Here", { iconPath: ICONS.confirm })
+      .button("createFromCorners", "Create From Corners", { iconPath: ICONS.confirm })
+      .button("clearCorners", "Clear Corners", { iconPath: ICONS.delete })
+      .button("createArea", "Create From Typed Coords", { iconPath: ICONS.binding });
     for (const area of areas) form.button("area", `${area.enabled ? "§aON" : "§cOFF"}§r ${area.name} §7(${area.id})`, { iconPath: ICONS.sidebar, value: { areaId: area.id } });
     form.button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
     if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "globalSettings") { await globalSettings(player); continue; }
+    if (response.id === "setCorner1") { setPendingAreaCorner(player, "first"); continue; }
+    if (response.id === "setCorner2") { setPendingAreaCorner(player, "second"); continue; }
+    if (response.id === "createFromCorners") { await createAreaFromCorners(player); continue; }
+    if (response.id === "clearCorners") { pendingAreaCornersByPlayerId.delete(getPlayerId(player)); tell(player, "Cleared custom area corners."); continue; }
     if (response.id === "createArea") { await createArea(player); continue; }
     const area = areas.find((a) => a.id === response.value!.areaId);
     if (!area) return;
     await editArea(player, area.id);
   }
+}
+
+export function clearCustomAreaUiRuntimeForPlayer(playerId: string): void {
+  pendingAreaCornersByPlayerId.delete(playerId);
 }

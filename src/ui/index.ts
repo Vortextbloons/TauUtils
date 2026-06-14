@@ -4,7 +4,7 @@ export { showTpaMenu, showHomesMenu, showPayMenu, showPlayerSettingsMenu, showSo
 export { showPlotManager, showPlotPlayerMenuFromCreator, showPlotPlayerMenu } from "./plots-ui";
 export { showRankMenu, showRankEditor, showRankManager, showPlayerRankAssign, showChatConfig, showProfileBrowser, showPlayerProfileViewer, showPlayerProfileEditor } from "./ranks-ui";
 export { showConfigMenu, showPruneDataMenu, showBindingsEditor, showModerationMenu, showIconDevMenu, showGeneratorMenu, showGeneratorAdminMenu, showGeneratorSettingsMenu, showGeneratorUpgradeMenu, showTauItemsAdminMenu, showCrateAdminMenu } from "./admin-ui";
-export { showCustomAreasAdminMenu } from "./custom-areas-ui";
+export { clearCustomAreaUiRuntimeForPlayer, showCustomAreasAdminMenu } from "./custom-areas-ui";
 export { showLootChestsAdminMenu } from "./loot-chests-ui";
 export { showCommandBuilderMenu } from "./command-builder-ui";
 export { showClaimMenu, showClaimsAdminMenu } from "./claims-ui";

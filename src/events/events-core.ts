@@ -13,6 +13,7 @@ import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../lo
 import { registerBackgroundTask } from "../scheduler";
 import { clearSocialRuntimeForPlayer } from "../social";
 import { clearSidebarRuntimeForPlayer } from "../sidebar";
+import { clearCustomAreaUiRuntimeForPlayer } from "../ui";
 import { registerLifecycleEvents } from "./lifecycle";
 import {
   asPlayer,
@@ -133,7 +134,7 @@ function runPlayerCurrencyInit(player: Player): void {
         continue;
       }
       try {
-        player.runCommand(`scoreboard players set @s ${objectiveId} 0`);
+        player.runCommand(`scoreboard players add @s ${objectiveId} 0`);
       } catch (e) {
         tell(player, `§c[tau-debug] failed to set row for "${objectiveId}": ${String(e)}`);
       }
@@ -436,6 +437,7 @@ export function registerEventInterceptors() {
     if (playerId) {
       clearCrateRuntimeForPlayer(playerId);
       clearCustomAreaRuntimeForPlayer(playerId);
+      clearCustomAreaUiRuntimeForPlayer(playerId);
       generatorMenuOpenByPlayerId.delete(playerId);
       clearRtpRuntimeForPlayer(playerId);
       clearSocialRuntimeForPlayer(playerId);
