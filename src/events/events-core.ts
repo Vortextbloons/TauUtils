@@ -8,7 +8,7 @@ import { processClaims, shouldCancelClaimBlockBreak, shouldCancelClaimBlockPlace
 import { clearRtpRuntimeForPlayer, shouldCancelRtpDamage } from "../rtp";
 import { flushPendingReferralRewards } from "../referrals";
 import { getPlayerTeam } from "../teams";
-import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker, shouldBlockCommandWhileTagged } from "../combat";
+import { handleCombatDamage, handleCombatDeath, handleCombatJoin, handleCombatKill, handleCombatLeave, processCombatTags, resolveCombatAttacker, resolveCombatProjectileAttacker } from "../combat";
 import { shouldCancelLootChestBreak, startLootChestRefillCountdown } from "../loot-chests";
 import { registerBackgroundTask } from "../scheduler";
 import { clearSocialRuntimeForPlayer } from "../social";
@@ -18,7 +18,6 @@ import { registerLifecycleEvents } from "./lifecycle";
 import {
   asPlayer,
   incrementStat,
-  formatChatMessage,
   getInventoryContainer,
   getPlayerStats,
   getPlayerStatsById,
@@ -464,27 +463,9 @@ export function registerEventInterceptors() {
     reconcileAllPlotState("player_leave");
   });
 
-  if (world.beforeEvents.chatSend) {
-    world.beforeEvents.chatSend.subscribe((event) => {
-      if (shouldBlockCommandWhileTagged(event.sender, event.message)) {
-        event.cancel = true;
-        return;
-      }
-      if (!isFeatureEnabled("ranks")) return;
-      const formatted = formatChatMessage(event.sender, event.message);
-      event.cancel = true;
-      system.run(() => {
-        world.sendMessage(formatted);
-      });
-    });
-  } else if (world.afterEvents.chatSend && isFeatureEnabled("ranks")) {
-    world.afterEvents.chatSend.subscribe((event) => {
-      const formatted = formatChatMessage(event.sender, event.message);
-      system.run(() => {
-        world.sendMessage(formatted);
-      });
-    });
-  }
+  // Chat interception (world.beforeEvents.chatSend / afterEvents.chatSend) was removed
+  // in @minecraft/server 2.10.0. Ranks chat formatting and combat command-blocking
+  // via chat are therefore disabled until Mojang provides a replacement chat event.
 
   world.beforeEvents.itemUse.subscribe((event) => {
     if (!isFeatureEnabled("moderation")) return;
