@@ -9,9 +9,12 @@ import {
   tpaInboxPlayerIds,
   tpaOutboxPlayerIds,
 } from "../storage";
+import { registerBackgroundTask } from "../scheduler";
 import { onTpaIncomingRequest } from "./core";
 
-let expirySweepScheduled = false;
+// Single guard for the expiry sweep. Replaces the old
+// expirySweepScheduled (runTimeout debounce) + expirySweepJobId pair:
+// the scheduler tick is the only trigger, so one in-flight flag suffices.
 let expirySweepJobId: number | undefined;
 
 function purgeExpiredInbox(playerId: string, now: number): boolean {
@@ -46,22 +49,11 @@ function* processTpaExpiryJob(): Generator<void, void, void> {
   expirySweepJobId = undefined;
 }
 
-function scheduleTpaExpirySweep(): void {
+export function processTpaExpiry(): void {
   if (!isFeatureEnabled("tpa")) return;
   if (!state.tpa.config.enabled) return;
   if (expirySweepJobId !== undefined) return;
   expirySweepJobId = system.runJob(processTpaExpiryJob());
-}
-
-export function processTpaExpiry(): void {
-  if (!isFeatureEnabled("tpa")) return;
-  if (!state.tpa.config.enabled) return;
-  if (expirySweepScheduled) return;
-  expirySweepScheduled = true;
-  system.runTimeout(() => {
-    expirySweepScheduled = false;
-    scheduleTpaExpirySweep();
-  }, 200);
 }
 
 export function registerTpaIncomingHandler(handler: (targetId: string, request: import("../types").TpaRequest) => void): () => void {
@@ -71,7 +63,8 @@ export function registerTpaIncomingHandler(handler: (targetId: string, request: 
 export function startTpaExpiryLoop(): void {
   if (!isFeatureEnabled("tpa")) return;
   if (!state.tpa.config.enabled) return;
-  system.runInterval(() => {
-    processTpaExpiry();
-  }, 1200);
+  // Offset 9 staggers this 1200-tick sweep away from the 20-tick crowd
+  // (combat-tags 1, sidebar-render 3, custom-areas 4, claims 6, stats 7,
+  // plot-auto-save 11, plot-title 13, plot-queue 15, moderation 17, gens 18).
+  registerBackgroundTask("tpa-expiry", 1200, processTpaExpiry, 9);
 }

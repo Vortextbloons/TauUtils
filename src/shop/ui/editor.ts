@@ -40,7 +40,8 @@ import {
   promptHeldItemPricing,
 } from "../utils";
 import { normalizeItemId } from "../../shared/item-id";
-import { ICONS } from "../../ui/icons";
+import { parseIntIn, MAX_SAFE_INT } from "../../shared/numbers";
+import { ICONS } from "../../types";
 import { cleanQuantities, addHeldItemFlow, showCategoryManager, editKitItemFlow } from "./front";
 import { sellAllSellableItems } from "./transaction";
 
@@ -88,7 +89,7 @@ async function promptKitDetails(player: Player, current: {
 
   const displayName = String(result.values.displayName ?? "").trim();
   const category = String(result.values.category ?? "").trim();
-  const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+  const buyPrice = parseIntIn(result.values.buyPrice, 0, MAX_SAFE_INT, current.buyPrice);
   const quantities = cleanQuantities(String(result.values.quantities ?? "1"));
   if (!displayName) return undefined;
 
@@ -273,12 +274,14 @@ async function editShopItem(player: Player, profile: ShopProfile, itemIndex: num
   const displayName = String(result.values.displayName ?? "").trim();
   const category = String(result.values.category ?? "").trim();
   const canBuy = Boolean(result.values.canBuy);
-  const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+  const buyPrice = parseIntIn(result.values.buyPrice, 0, MAX_SAFE_INT, item.buyPrice);
   const canSell = Boolean(result.values.canSell);
-  const sellPrice = Math.max(0, Math.floor(Number(result.values.sellPrice ?? 0)));
+  const sellPrice = parseIntIn(result.values.sellPrice, 0, MAX_SAFE_INT, item.sellPrice);
   const quantities = String(result.values.quantities ?? "1")
     .split(",")
-    .map((v) => Math.max(1, Math.floor(Number(v.trim()))))
+    .map((v) => Number(v.trim()))
+    .filter((v) => Number.isFinite(v))
+    .map((v) => parseIntIn(v, 1, MAX_SAFE_INT, 1))
     .filter((v, i, a) => a.indexOf(v) === i)
     .sort((a, b) => a - b);
 
@@ -553,12 +556,14 @@ export async function showShopItemEditor(player: Player, profileId: string) {
       const displayName = String(result.values.displayName ?? "").trim();
       const category = String(result.values.category ?? "").trim();
       const canBuy = Boolean(result.values.canBuy);
-      const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+      const buyPrice = parseIntIn(result.values.buyPrice, 0, MAX_SAFE_INT, 0);
       const canSell = Boolean(result.values.canSell);
-      const sellPrice = Math.max(0, Math.floor(Number(result.values.sellPrice ?? 0)));
+      const sellPrice = parseIntIn(result.values.sellPrice, 0, MAX_SAFE_INT, 0);
       const quantities = (String(result.values.quantities ?? "1"))
         .split(",")
-        .map((v: string) => Math.max(1, Math.floor(Number(v.trim()))))
+        .map((v: string) => Number(v.trim()))
+        .filter((v: number) => Number.isFinite(v))
+        .map((v: number) => parseIntIn(v, 1, MAX_SAFE_INT, 1))
         .filter((v: number, i: number, a: number[]) => a.indexOf(v) === i)
         .sort((a: number, b: number) => a - b);
       const bundle = splitList(String(result.values.kitItems ?? "")).map(parseItemStackDefinitionLine).filter((entry): entry is ShopItemStackDefinition => Boolean(entry));

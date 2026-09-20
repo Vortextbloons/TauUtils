@@ -1,14 +1,29 @@
 import { Player } from "@minecraft/server";
-import { type ActionType, type UIButtonElement } from "../types";
-import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, isFeatureEnabled, tell } from "../storage";
+import { type ActionType, type FormDefinition, type UIButtonElement } from "../types";
+import { findForm, sanitizePlayerCommand, commandStripSlash, normalizeForSudo, isFeatureEnabled, isOperator, hasPermission, tell } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { optionalIcon } from "./tau-ui-helper";
 import { TauUi } from "./tau-ui";
+
+export function canPlayerUseForm(player: Player, form: FormDefinition): boolean {
+  try {
+    if (form.operatorOnly === true && !isOperator(player)) return false;
+    const required = String(form.requiredPermission ?? "").trim();
+    if (required.length > 0 && !hasPermission(player, required)) return false;
+  } catch {
+    return false;
+  }
+  return true;
+}
 
 export async function openFormById(player: Player, menuId: string) {
   const form = findForm(menuId);
   if (!form) {
     tell(player, `Menu "${menuId}" was not found.`);
+    return;
+  }
+  if (!canPlayerUseForm(player, form)) {
+    tell(player, "You do not have permission to open this menu.");
     return;
   }
 
@@ -113,6 +128,10 @@ async function runBoundAction(
       }
       case "COMMAND_SUDO": {
         if (!value) return;
+        if (!isOperator(player)) {
+          tell(player, "Operator permissions are required for this action.");
+          return;
+        }
         if (runBuiltCommandFromConfiguredCommand(player, value)) return;
         player.dimension.runCommand(commandStripSlash(normalizeForSudo(value, player)));
         return;

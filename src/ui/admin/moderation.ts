@@ -6,8 +6,7 @@ import {
   isBannedItemId,
   sweepBannedItemsFromOnlinePlayers,
 } from "../../moderation/banned-items";
-import { getInventoryContainer, isOperator, saveModeration, state, tell } from "../../storage";
-import { getOnlinePlayerByName } from "../ui-utils";
+import { getInventoryContainer, getOnlinePlayerByName, isOperator, saveModeration, state, tell } from "../../storage";
 
 type ModerationItemSnapshot = {
   slot: number;

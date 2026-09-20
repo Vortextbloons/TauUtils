@@ -1,5 +1,5 @@
 import { world } from "@minecraft/server";
-import { serializeDynamicJson, setDynamicJsonIfChanged, clearPersistedDynamicKey, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, parseJSON } from "../dynamic-json";
+import { serializeDynamicJson, setDynamicJsonIfChanged, clearPersistedDynamicKey, quarantineCorruptDynamicValue, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, parseJSON } from "../dynamic-json";
 import { STORAGE_KEYS } from "../../types";
 import { type PlotStore } from "../../types";
 import { defaultPlotStore } from "../defaults";
@@ -189,6 +189,8 @@ export function migrateLegacyPlotsToSplitOneShot(): { migrated: boolean; failed:
 
   const legacyParsed = parseJSON<PlotStore | undefined>(legacyRaw, undefined);
   if (!legacyParsed) {
+    // Quarantine the unreadable blob before clearing so it can be inspected.
+    quarantineCorruptDynamicValue(STORAGE_KEYS.plots, legacyRaw);
     world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
     world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
     return { migrated: false, failed: false };

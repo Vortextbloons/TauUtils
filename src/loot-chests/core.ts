@@ -1,9 +1,11 @@
 import { Block, BlockComponentTypes, BlockInventoryComponent, Player, system, world, type Vector3 } from "@minecraft/server";
 import { isFeatureEnabled, isOperator, saveLootChests, state, tell } from "../storage";
 import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
+import { normalizeId, resolveLegacyKey } from "../shared/normalize-id";
+import { pickWeighted } from "../shared/weighted-pick";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
 import { registerBackgroundTask } from "../scheduler";
-import type { LootChestLocation, LootChestPool, LootChestRefillMode, LootChestSnapshot, LootChestSnapshotItem } from "../types";
+import type { LootChestLocation, LootChestPool, LootChestRefillMode, LootChestSnapshot, LootChestSnapshotItem, LootChestStore } from "../types";
 
 type ContainerLike = {
   size: number;
@@ -36,10 +38,6 @@ let processJobId: number | undefined;
 
 function nowMs(): number {
   return Date.now();
-}
-
-function normalizeId(value: string): string {
-  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
 function locationKey(location: LocationInput): string {
@@ -180,15 +178,7 @@ function runRefillSideEffects(chest: LootChestLocation, snapshot: LootChestSnaps
 }
 
 function chooseWeightedSnapshot(snapshots: LootChestSnapshot[]): LootChestSnapshot | undefined {
-  const valid = snapshots.filter((snapshot) => snapshot.enabled && Number.isFinite(snapshot.weight) && snapshot.weight > 0 && snapshot.items.length > 0);
-  if (valid.length === 0) return undefined;
-  const total = valid.reduce((sum, snapshot) => sum + snapshot.weight, 0);
-  let roll = Math.random() * total;
-  for (const snapshot of valid) {
-    roll -= snapshot.weight;
-    if (roll <= 0) return snapshot;
-  }
-  return valid[valid.length - 1];
+  return pickWeighted(snapshots.filter((snapshot) => snapshot.enabled && Number.isFinite(snapshot.weight) && snapshot.weight > 0 && snapshot.items.length > 0));
 }
 
 function buildRuntimeCache(): RuntimeCache {
@@ -233,7 +223,10 @@ export function listLootChestLocations(): LootChestLocation[] {
 }
 
 export function getLootChestPool(poolId: string): LootChestPool | undefined {
-  return state.lootChests.pools[normalizeId(poolId)];
+  const strict = state.lootChests.pools[normalizeId(poolId)];
+  if (strict) return strict;
+  const legacy = resolveLegacyKey(Object.keys(state.lootChests.pools), poolId);
+  return legacy ? state.lootChests.pools[legacy] : undefined;
 }
 
 export function getLootChestLocation(location: LocationInput): LootChestLocation | undefined {
@@ -262,9 +255,9 @@ export function updateLootChestPool(poolId: string, patch: Partial<Pick<LootChes
 }
 
 export function deleteLootChestPool(poolId: string): RefillResult {
-  const id = normalizeId(poolId);
-  const pool = state.lootChests.pools[id];
+  const pool = getLootChestPool(poolId);
   if (!pool) return { ok: false, message: "Pool not found." };
+  const id = pool.id;
   for (const snapshotId of pool.snapshotIds) delete state.lootChests.snapshots[snapshotKey(id, snapshotId)];
   for (const chest of Object.values(state.lootChests.chests)) {
     if (chest.poolId === id) delete state.lootChests.chests[chest.id];
@@ -363,8 +356,7 @@ export function bindLootChestLocation(location: LocationInput, poolId: string, o
   return { ok: true, message: `Bound loot chest at ${key} to ${pool.name}.` };
 }
 
-export function updateLootChestLocation(chestId: string, patch: Partial<Pick<LootChestLocation, "name" | "poolId" | "enabled" | "respawnTicks" | "refillMode" | "preserveSlots" | "refillMessageEnabled" | "refillMessage" | "broadcastRefillMessage" | "refillCommandsEnabled" | "refillCommands">>): RefillResult {
-  const chest = state.lootChests.chests[chestId];
+export function updateLootChestLocation(chestId: string, patch: Partial<Pick<LootChestLocation, "name" | "poolId" | "enabled" | "respawnTicks" | "refillMode" | "preserveSlots" | "refillMessageEnabled" | "refillMessage" | "broadcastRefillMessage" | "refillCommandsEnabled" | "refillCommands">>): RefillResult {  const chest = state.lootChests.chests[chestId];
   if (!chest) return { ok: false, message: "Loot chest not found." };
   if (patch.poolId !== undefined) {
     const pool = getLootChestPool(patch.poolId);
@@ -398,6 +390,17 @@ export function deleteLootChestLocation(chestId: string): RefillResult {
   return { ok: true, message: `Deleted loot chest ${chestId}.` };
 }
 
+export function updateLootChestConfig(partial: Partial<Pick<LootChestStore["config"], "enabled" | "processIntervalTicks" | "maxRefillsPerTick" | "defaultRespawnTicks">>): RefillResult {
+  const cfg = state.lootChests.config;
+  if (partial.enabled !== undefined) cfg.enabled = partial.enabled;
+  if (partial.processIntervalTicks !== undefined) cfg.processIntervalTicks = Math.max(1, Math.floor(partial.processIntervalTicks));
+  if (partial.maxRefillsPerTick !== undefined) cfg.maxRefillsPerTick = Math.max(1, Math.floor(partial.maxRefillsPerTick));
+  if (partial.defaultRespawnTicks !== undefined) cfg.defaultRespawnTicks = Math.max(1, Math.floor(partial.defaultRespawnTicks));
+  saveLootChests();
+  invalidateLootChestRuntimeCache();
+  return { ok: true, message: "Saved loot chest settings. Restart/reload may be needed for process interval timing changes." };
+}
+
 export function refillLootChest(chest: LootChestLocation, force = false): RefillResult {
   const pool = state.lootChests.pools[chest.poolId];
   if (!pool?.enabled && !force) return { ok: false, message: "Pool is disabled." };
@@ -423,7 +426,7 @@ export function refillLootChest(chest: LootChestLocation, force = false): Refill
   return { ok: placed > 0, message: placed > 0 ? `Refilled with ${snapshot.name}.` : `No items from ${snapshot.name} could be placed.`, savedChange: true };
 }
 
-export function startLootChestRefillCountdown(location: LocationInput): RefillResult {
+export function beginLootChestRefillCountdown(location: LocationInput): RefillResult {
   const chest = getLootChestLocation(location);
   if (!chest) return { ok: false, message: "Loot chest not found." };
   if (!chest.enabled) return { ok: false, message: "Loot chest is disabled." };
@@ -434,9 +437,14 @@ export function startLootChestRefillCountdown(location: LocationInput): RefillRe
 
   chest.emptySinceAt = nowMs();
   chest.nextRefillAt = chest.emptySinceAt + Math.max(1, chest.respawnTicks) * 50;
-  saveLootChests();
   invalidateLootChestRuntimeCache();
   return { ok: true, message: "Loot chest refill countdown started.", savedChange: true };
+}
+
+export function startLootChestRefillCountdown(location: LocationInput): RefillResult {
+  const result = beginLootChestRefillCountdown(location);
+  if (result.savedChange) saveLootChests();
+  return result;
 }
 
 export function forceRefillLootChest(chestId: string): RefillResult {

@@ -4,7 +4,7 @@ import { ICONS } from "../../types";
 import { getOnlinePlayersExcept, getPlayerId, state, tell } from "../../storage";
 import { createTpaRequest, deleteHome, listHomes, payPlayer, setHome, teleportHome, updatePlayerSettings } from "../../social";
 
-export { showTpaHub as showTpaMenu, handleIncomingTpaRequest } from "./tpa";
+export { showTpaHub as showTpaMenu } from "./tpa";
 
 export async function showHomesMenu(player: Player) {
   while (true) {

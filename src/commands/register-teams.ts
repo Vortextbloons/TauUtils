@@ -1,30 +1,18 @@
 import {
-  CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   CustomCommandResult,
   system,
   world,
 } from "@minecraft/server";
-import { requirePlayerResult } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
 import { commandOriginToPlayer, isFeatureEnabled, tell } from "../storage";
 import { acceptTeamInvite, createTeam, demoteTeamMember, disbandTeam, getPlayerTeam, inviteToTeam, joinTeam, kickFromTeam, leaveTeam, promoteTeamMember } from "../teams";
 
 export function registerTeamsCommands(registry: CustomCommandRegistry): void {
-  registry.registerCommand(
-    {
-      name: "tau:team",
-      description: "Open team menu or manage teams.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "action", type: CustomCommandParamType.String },
-        { name: "arg1", type: CustomCommandParamType.String },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:team",
     (origin, action?: string, arg1?: string): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       if (!isFeatureEnabled("teams")) return { status: 1, message: "Teams are disabled." };
 

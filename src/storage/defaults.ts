@@ -33,6 +33,7 @@ export function defaultConfig(): ConfigStore {
       teamHomes: true,
       customRewards: true,
       referrals: true,
+      playerShops: true,
     },
   };
 }
@@ -335,7 +336,10 @@ export function defaultPruneStore(): PruneStore {
         plots: true,
         claims: true,
         homes: true,
+        // tpa prunes per-player split-key inbox/outbox/cooldown entries (see pruneData).
         tpa: true,
+        // pay is config-only (no per-player store); kept as a no-op so saved
+        // configs and the prune settings UI keep working.
         pay: true,
         playerSettings: true,
         teamHomes: true,

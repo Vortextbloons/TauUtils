@@ -1,29 +1,19 @@
 import {
-  CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   system,
 } from "@minecraft/server";
-import { ok, registerPlayerCommand, requireOperatorResult } from "./helpers";
-import { tell } from "../storage";
+import { ok, requireFeatureResult, requireOperatorResult } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
+import { commandOriginToPlayer, tell } from "../storage";
 
 export function registerShopsCommands(registry: CustomCommandRegistry): void {
-  registerPlayerCommand<[string]>(
+  registerDescribedCommand<[string]>(
     registry,
-    {
-      name: "tau:shop",
-      description: "Open a Tau shop profile.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      mandatoryParameters: [
-        {
-          name: "profile_id",
-          type: CustomCommandParamType.String,
-        },
-      ],
-    },
-    "shops",
-    (player, profileId) => {
+    "tau:shop",
+    (origin, profileId) => {
+      const featErr = requireFeatureResult("shops");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const id = String(profileId ?? "").trim() || "default";
       system.run(async () => {
         const { openShopProfile } = await import("../shop");
@@ -33,16 +23,13 @@ export function registerShopsCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:myshop",
-      description: "Open your player shop manager.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "shops",
-    (player) => {
+    "tau:myshop",
+    (origin) => {
+      const featErr = requireFeatureResult("playerShops");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       system.run(async () => {
         const { openMyPlayerShop } = await import("../player-shops");
         await openMyPlayerShop(player);
@@ -51,16 +38,13 @@ export function registerShopsCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:market",
-      description: "Browse player marketplace listings.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "shops",
-    (player) => {
+    "tau:market",
+    (origin) => {
+      const featErr = requireFeatureResult("playerShops");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       system.run(async () => {
         const { openPlayerMarketplace } = await import("../player-shops");
         await openPlayerMarketplace(player);
@@ -69,16 +53,13 @@ export function registerShopsCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:shopadmin",
-      description: "Open player shop admin settings.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "shops",
-    (player) => {
+    "tau:shopadmin",
+    (origin) => {
+      const featErr = requireFeatureResult("playerShops");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const opErr = requireOperatorResult(player);
       if (opErr) return opErr;
       system.run(async () => {
@@ -89,16 +70,13 @@ export function registerShopsCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:shopclaim",
-      description: "Claim offline player-shop earnings.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "shops",
-    (player) => {
+    "tau:shopclaim",
+    (origin) => {
+      const featErr = requireFeatureResult("playerShops");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       system.run(async () => {
         const { claimPlayerShopEarnings } = await import("../player-shops");
         const result = claimPlayerShopEarnings(player);

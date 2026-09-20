@@ -1,3 +1,3 @@
 export { combatTagsByPlayerId } from "./status";
 export { isCombatFeatureActive, hasActiveCombatTag, isPlayerInCombat, getCombatStatusText } from "./status";
-export { dropCombatInventory, handleCombatJoin, handleCombatLeave, handleCombatDeath, resolveCombatAttacker, resolveCombatProjectileAttacker, handleCombatDamage, handleCombatKill, shouldBlockCommandWhileTagged, processCombatTags } from "./core";
+export { dropCombatInventory, handleCombatJoin, handleCombatLeave, handleCombatDeath, resolveCombatAttacker, resolveCombatProjectileAttacker, handleCombatDamage, handleCombatKill, shouldBlockCommandWhileTagged, processCombatTags, getKillConditionRule, commitKillConditionRule, createKillConditionRule, duplicateKillConditionRule, deleteKillConditionRule, commitKillConditionActions, setKillConditionsEnabled, updateCombatConfig } from "./core";

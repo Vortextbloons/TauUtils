@@ -2,7 +2,7 @@ import { EntityComponentTypes, ItemStack, Player, EnchantmentTypes } from "@mine
 import { TauUi } from "../ui";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import { getInventoryContainer, normalizeCategory, getProfileCategories, saveShops } from "../storage";
-import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
+import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent, readStackEnchantments } from "../shared/item-components";
 import { normalizeItemId } from "../shared/item-id";
 import { parseEnchantments } from "../shared/enchantments";
 
@@ -91,12 +91,7 @@ export function isProtectedCrateKey(stack: ItemStack): boolean {
 }
 
 export function getItemEnchantments(stack: ItemStack): { id: string; level: number }[] {
-  const component = getItemEnchantableComponent(stack);
-  const enchantments = component?.getEnchantments() ?? [];
-  return enchantments
-    .map((entry) => ({ id: entry.type?.id ?? entry.typeId ?? "", level: entry.level }))
-    .filter((entry) => entry.id.length > 0)
-    .sort((a, b) => a.id.localeCompare(b.id));
+  return readStackEnchantments(stack).sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function getEnchantmentPreviewText(enchantments?: { id: string; level: number }[]): string {

@@ -1,6 +1,6 @@
 import { EnchantmentTypes, ItemLockMode, ItemStack, Player, type Vector3 } from "@minecraft/server";
 import { type SerializedDynamicValue, type SerializedItemStack, type SerializedVector3 } from "../types";
-import { getItemDurabilityComponent, getItemEnchantableComponent } from "./item-components";
+import { getItemDurabilityComponent, getItemEnchantableComponent, readStackEnchantments } from "./item-components";
 import { safeCall } from "./safe-call";
 
 function isSerializedVector3(value: unknown): value is SerializedVector3 {
@@ -58,14 +58,14 @@ function safeGetCanPlaceOn(stack: ItemStack): string[] | undefined {
 export function serializeItemStack(stack: ItemStack): SerializedItemStack {
   const dynamicProperties = serializeDynamicProperties(stack);
   const durability = getItemDurabilityComponent(stack);
-  const enchantable = getItemEnchantableComponent(stack);
+  const enchantments = readStackEnchantments(stack);
 
   return {
     itemId: stack.typeId,
     amount: Math.max(1, Math.floor(stack.amount)),
     nameTag: stack.nameTag,
     lore: stack.getLore(),
-    enchantments: enchantable?.getEnchantments().map((entry) => ({ id: entry.type?.id ?? entry.typeId ?? "", level: entry.level })).filter((entry) => entry.id.length > 0),
+    enchantments: enchantments.length > 0 ? enchantments : undefined,
     durability: durability?.damage,
     maxDurability: durability?.maxDurability,
     canDestroy: safeGetCanDestroy(stack),

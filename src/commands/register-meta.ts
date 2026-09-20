@@ -1,30 +1,19 @@
 import {
   CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   CustomCommandResult,
   system,
   world,
 } from "@minecraft/server";
-import { requirePlayerResult } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
 import { getHelpLines } from "./help-topics";
 import { commandOriginToPlayer, clearAllData, isFeatureEnabled, isOperator, saveShops, state, tell } from "../storage";
 import { TAUUTILS_VERSION } from "../shared/version";
 
 export function registerMetaCommands(registry: CustomCommandRegistry): void {
-  registry.registerCommand(
-    {
-      name: "tau:help",
-      description: "Tau addon help system.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        {
-          name: "topic",
-          type: CustomCommandParamType.String,
-        },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:help",
     (origin, topic?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const msg = (text: string) => { if (player) tell(player, text); };
@@ -38,16 +27,11 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:config",
-      description: "Open Tau feature config.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:config",
     (origin): CustomCommandResult => {
-      const player = commandOriginToPlayer(origin);
-      if (!player) return { status: 1, message: "This command can only be used by a player." };
+      const player = commandOriginToPlayer(origin)!;
       if (!isFeatureEnabled("creator")) return { status: 1, message: "Creator is disabled." };
       system.run(async () => {
         const { showConfigMenu } = await import("../ui");
@@ -57,13 +41,9 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:cleardata",
-      description: "DEV: Clear all Tau UI data.",
-      cheatsRequired: true,
-      permissionLevel: CommandPermissionLevel.Admin,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:cleardata",
     (origin): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       clearAllData();
@@ -78,22 +58,13 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
       const msg = "All Tau UI data cleared.";
       if (player) tell(player, msg);
       return { status: 0, message: msg };
-    }
+    },
+    { cheatsRequired: true, permissionLevel: CommandPermissionLevel.Admin }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:debugscore",
-      description: "Check scoreboard objective and player score.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      mandatoryParameters: [
-        {
-          name: "objective",
-          type: CustomCommandParamType.String,
-        },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:debugscore",
     (origin, objectiveId?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const msg = (text: string) => { if (player) tell(player, text); };
@@ -121,13 +92,9 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:credits",
-      description: "Show TauUtils credits.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:credits",
     (origin): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const msg = (text: string) => {
@@ -141,19 +108,9 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:richest",
-      description: "List the top ten richest players.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        {
-          name: "objective",
-          type: CustomCommandParamType.String,
-        },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:richest",
     (origin, objectiveId?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const msg = (text: string) => {
@@ -197,16 +154,9 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:rank",
-      description: "Open rank manager.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "action", type: CustomCommandParamType.String },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:rank",
     (origin, action?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const msg = (text: string) => { if (player) tell(player, text); };
@@ -244,16 +194,9 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:profile",
-      description: "View or edit a player profile.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "target", type: CustomCommandParamType.String },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:profile",
     (origin, target?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const targetName = String(target ?? "").trim();

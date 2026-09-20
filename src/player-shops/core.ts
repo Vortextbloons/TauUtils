@@ -2,8 +2,9 @@ import { EntityComponentTypes, ItemStack, Player } from "@minecraft/server";
 import { TauUi } from "../ui";
 import { deserializeItemStack, serializeItemStack } from "../shared/item-serialization";
 import { ICONS, type PlayerShop, type PlayerShopListing } from "../types";
-import { getInventoryContainer, getOnlinePlayerById, getPlayerId, getScore, isOperator, savePlayerShops, setScore, state, tell } from "../storage";
+import { getInventoryContainer, getOnlinePlayerById, getPlayerId, getScore, isFeatureActive, isOperator, journalAck, journalAppend, journalHead, savePlayerShops, setScore, state, tell } from "../storage";
 import { estimateUtf8Bytes } from "../shared/utf8";
+import { normalizeKey } from "../shared/normalize-id";
 
 type TradeResult = {
   ok: boolean;
@@ -15,10 +16,6 @@ const MAX_LISTING_ITEM_BYTES = 24000;
 
 function nowMs(): number {
   return Date.now();
-}
-
-function normalizeKey(value: string): string {
-  return String(value ?? "").trim().toLowerCase();
 }
 
 function hasCustomItemData(stack: ItemStack): boolean {
@@ -146,6 +143,38 @@ function findListingById(listingId: string): PlayerShopListing | undefined {
   return state.playerShops.listings[listingId];
 }
 
+function snapshotBuyerContainer(player: Player): (ItemStack | undefined)[] | undefined {
+  try {
+    const container = getInventoryContainer(player);
+    if (!container) return undefined;
+    const snapshot: (ItemStack | undefined)[] = [];
+    for (let slot = 0; slot < container.size; slot++) {
+      const stack = container.getItem(slot);
+      snapshot.push(stack ? stack.clone() : undefined);
+    }
+    return snapshot;
+  } catch {
+    return undefined;
+  }
+}
+
+function restoreBuyerContainer(player: Player, snapshot: (ItemStack | undefined)[]): void {
+  try {
+    const container = getInventoryContainer(player);
+    if (!container) return;
+    for (let slot = 0; slot < snapshot.length && slot < container.size; slot++) {
+      try {
+        const entry = snapshot[slot];
+        container.setItem(slot, entry ? entry.clone() : undefined);
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // ignore restore failures
+  }
+}
+
 function compactShopListings(shop: PlayerShop): void {
   shop.listingIds = shop.listingIds.filter((listingId) => Boolean(state.playerShops.listings[listingId]));
 }
@@ -211,63 +240,79 @@ function notifySaleIfOnline(sellerPlayerId: string, text: string): void {
 }
 
 function purchaseListing(buyer: Player, listing: PlayerShopListing): TradeResult {
-  if (!state.playerShops.config.enabled) return { ok: false, message: "Player shops are disabled." };
-  if (listing.quantity <= 0) return { ok: false, message: "Listing is out of stock." };
-  if (listingLocks.has(listing.id)) return { ok: false, message: "Listing is currently being processed." };
-  if (listing.sellerPlayerId === getPlayerId(buyer)) return { ok: false, message: "You cannot buy your own listing." };
+  if (!isFeatureActive("playerShops", state.playerShops.config.enabled)) return { ok: false, message: "Player shops are disabled." };
+  const live = findListingById(listing.id);
+  if (!live) return { ok: false, message: "Listing is no longer available." };
+  const shop = state.playerShops.shops[live.shopId];
+  if (!shop || shop.visibility !== "public") return { ok: false, message: "Listing is no longer available." };
+  if (live.quantity <= 0) return { ok: false, message: "Listing is out of stock." };
+  if (listingLocks.has(live.id)) return { ok: false, message: "Listing is currently being processed." };
+  if (live.sellerPlayerId === getPlayerId(buyer)) return { ok: false, message: "You cannot buy your own listing." };
 
-  listingLocks.add(listing.id);
+  listingLocks.add(live.id);
   try {
-    const objective = listing.currencyObjective;
+    const objective = live.currencyObjective;
     const buyerBalance = getScore(buyer, objective);
     if (buyerBalance === undefined) return { ok: false, message: `Missing scoreboard objective "${objective}".` };
-    const totalPrice = Math.max(1, Math.floor(listing.pricePerUnit * listing.quantity));
+    const totalPrice = Math.max(1, Math.floor(live.pricePerUnit * live.quantity));
     if (buyerBalance < totalPrice) return { ok: false, message: `You need ${totalPrice} ${objective}.` };
 
-    const stack = deserializeItemStack(listing.item);
-    stack.amount = listing.quantity;
+    const journalSeq = journalHead("player-shops") + 1;
+    journalAppend("player-shops", { kind: "purchase", listingId: live.id, shopId: live.shopId, buyer: getPlayerId(buyer), seller: live.sellerPlayerId, quantity: live.quantity, totalPrice, objective });
 
+    const stack = deserializeItemStack(live.item);
+    stack.amount = live.quantity;
+
+    const container = getInventoryContainer(buyer);
+    const snapshot = snapshotBuyerContainer(buyer);
     if (!addItemToPlayerInventory(buyer, stack)) {
       return { ok: false, message: "Not enough inventory space." };
     }
 
     if (!setScore(buyer, objective, buyerBalance - totalPrice)) {
-      removeMatchingSingleStack(buyer, stack);
+      if (container && snapshot) restoreBuyerContainer(buyer, snapshot);
+      else removeMatchingSingleStack(buyer, stack);
       return { ok: false, message: "Failed to charge buyer." };
     }
 
     const { sellerNet } = applyTax(totalPrice);
-    pushOfflineEarnings(listing.sellerPlayerId, objective, sellerNet);
 
-    const purchasedQuantity = listing.quantity;
-    listing.quantity = 0;
-    listing.updatedAt = nowMs();
-    if (listing.quantity <= 0) {
-      delete state.playerShops.listings[listing.id];
-      const shop = state.playerShops.shops[listing.shopId];
-      if (shop) {
-        shop.listingIds = shop.listingIds.filter((id) => id !== listing.id);
-        shop.updatedAt = nowMs();
+    pushOfflineEarnings(live.sellerPlayerId, objective, sellerNet);
+
+    const purchasedQuantity = live.quantity;
+    const purchasedTitle = live.title;
+    live.quantity = 0;
+    live.updatedAt = nowMs();
+    if (live.quantity <= 0) {
+      if (state.playerShops.listings[live.id] !== live) {
+        return { ok: false, message: "Listing changed during purchase." };
+      }
+      delete state.playerShops.listings[live.id];
+      const liveShop = state.playerShops.shops[live.shopId];
+      if (liveShop) {
+        liveShop.listingIds = liveShop.listingIds.filter((id) => id !== live.id);
+        liveShop.updatedAt = nowMs();
       }
     }
 
     savePlayerShops();
+    journalAck("player-shops", journalSeq);
 
     if (state.playerShops.config.announceSales) {
       notifySaleIfOnline(
-        listing.sellerPlayerId,
-        `§a${buyer.name} bought ${purchasedQuantity}x ${listing.title} for ${totalPrice} ${objective}.`
+        live.sellerPlayerId,
+        `§a${buyer.name} bought ${purchasedQuantity}x ${purchasedTitle} for ${totalPrice} ${objective}.`
       );
     }
 
-    return { ok: true, message: `Purchased ${purchasedQuantity}x ${listing.title} for ${totalPrice} ${objective}.` };
+    return { ok: true, message: `Purchased ${purchasedQuantity}x ${purchasedTitle} for ${totalPrice} ${objective}.` };
   } finally {
-    listingLocks.delete(listing.id);
+    listingLocks.delete(live.id);
   }
 }
 
 async function openListingCreateFlow(player: Player, shop: PlayerShop): Promise<void> {
-  if (!state.playerShops.config.enabled) {
+  if (!isFeatureActive("playerShops", state.playerShops.config.enabled)) {
     tell(player, "Player shops are disabled.");
     return;
   }
@@ -390,7 +435,8 @@ async function openListingCancelFlow(player: Player, shop: PlayerShop): Promise<
   }
 
   const stack = deserializeItemStack(listing.item);
-  stack.amount = 1;
+  const quantity = Math.max(1, Math.floor(listing.quantity));
+  stack.amount = quantity;
   if (!addItemToPlayerInventory(player, stack)) {
     tell(player, "No inventory space to return item.");
     return;
@@ -423,7 +469,7 @@ async function openShopSettingsFlow(player: Player, shop: PlayerShop): Promise<v
 }
 
 export async function openMyPlayerShop(player: Player): Promise<void> {
-  if (!state.playerShops.config.enabled) {
+  if (!isFeatureActive("playerShops", state.playerShops.config.enabled)) {
     tell(player, "Player shops are disabled.");
     return;
   }
@@ -480,7 +526,7 @@ export async function openMyPlayerShop(player: Player): Promise<void> {
 }
 
 export async function openPlayerMarketplace(player: Player): Promise<void> {
-  if (!state.playerShops.config.enabled) {
+  if (!isFeatureActive("playerShops", state.playerShops.config.enabled)) {
     tell(player, "Player shops are disabled.");
     return;
   }

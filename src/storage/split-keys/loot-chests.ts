@@ -1,14 +1,18 @@
 import { world } from "@minecraft/server";
-import { safeSetDynamicJson, LOOT_CHESTS_CONFIG_KEY, LOOT_CHESTS_POOL_PREFIX, LOOT_CHESTS_SNAPSHOT_PREFIX, LOOT_CHESTS_CHEST_PREFIX, parseJSON } from "../dynamic-json";
+import { serializeDynamicJson, setDynamicJsonIfChanged, clearPersistedDynamicKey, LOOT_CHESTS_CONFIG_KEY, LOOT_CHESTS_POOL_PREFIX, LOOT_CHESTS_SNAPSHOT_PREFIX, LOOT_CHESTS_CHEST_PREFIX, parseJSON } from "../dynamic-json";
 import { type LootChestLocation, type LootChestPool, type LootChestSnapshot, type LootChestStore } from "../../types";
 import { defaultLootChestStore } from "../defaults";
+
+const persistedLootChestJsonByKey = new Map<string, string>();
 
 export function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { store: LootChestStore; hasSplitData: boolean } {
   const base = defaultLootChestStore();
   let hasSplitData = false;
+  persistedLootChestJsonByKey.clear();
   const configRaw = world.getDynamicProperty(LOOT_CHESTS_CONFIG_KEY) as string | undefined;
   if (configRaw) {
     base.config = { ...base.config, ...parseJSON<Partial<LootChestStore["config"]>>(configRaw, {}) };
+    persistedLootChestJsonByKey.set(LOOT_CHESTS_CONFIG_KEY, configRaw);
     hasSplitData = true;
   }
   for (const key of dynamicPropertyIds) {
@@ -19,6 +23,7 @@ export function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { sto
       parsed.snapshotIds ??= [];
       parsed.enabled ??= true;
       base.pools[parsed.id] = parsed;
+      if (raw) persistedLootChestJsonByKey.set(key, raw);
       hasSplitData = true;
       continue;
     }
@@ -29,6 +34,7 @@ export function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { sto
       parsed.items ??= [];
       parsed.enabled ??= true;
       base.snapshots[`${parsed.poolId}:${parsed.id}`] = parsed;
+      if (raw) persistedLootChestJsonByKey.set(key, raw);
       hasSplitData = true;
       continue;
     }
@@ -50,34 +56,61 @@ export function loadLootChestsFromSplitKeys(dynamicPropertyIds: string[]): { sto
       parsed.refillCommandsEnabled ??= false;
       parsed.refillCommands ??= [];
       base.chests[parsed.id] = parsed;
+      if (raw) persistedLootChestJsonByKey.set(key, raw);
       hasSplitData = true;
     }
   }
   return { store: base, hasSplitData };
 }
 
+export function rememberLootChestSplitKeys(store: LootChestStore): void {
+  persistedLootChestJsonByKey.clear();
+  const config = serializeDynamicJson(LOOT_CHESTS_CONFIG_KEY, store.config);
+  if (config !== undefined) persistedLootChestJsonByKey.set(LOOT_CHESTS_CONFIG_KEY, config);
+  for (const [poolId, pool] of Object.entries(store.pools)) {
+    const key = `${LOOT_CHESTS_POOL_PREFIX}${poolId}`;
+    const serialized = serializeDynamicJson(key, pool);
+    if (serialized !== undefined) persistedLootChestJsonByKey.set(key, serialized);
+  }
+  for (const snapshot of Object.values(store.snapshots)) {
+    const key = `${LOOT_CHESTS_SNAPSHOT_PREFIX}${snapshot.poolId}:${snapshot.id}`;
+    const serialized = serializeDynamicJson(key, snapshot);
+    if (serialized !== undefined) persistedLootChestJsonByKey.set(key, serialized);
+  }
+  for (const [chestId, chest] of Object.entries(store.chests)) {
+    const key = `${LOOT_CHESTS_CHEST_PREFIX}${chestId}`;
+    const serialized = serializeDynamicJson(key, chest);
+    if (serialized !== undefined) persistedLootChestJsonByKey.set(key, serialized);
+  }
+}
+
 export function writeLootChestsToSplitKeys(store: LootChestStore): boolean {
-  let ok = safeSetDynamicJson(LOOT_CHESTS_CONFIG_KEY, store.config);
-  const wantedKeys = new Set<string>([LOOT_CHESTS_CONFIG_KEY]);
+  let ok = true;
+  const wantedKeys = new Set<string>();
+
+  wantedKeys.add(LOOT_CHESTS_CONFIG_KEY);
+  ok = setDynamicJsonIfChanged(LOOT_CHESTS_CONFIG_KEY, store.config, persistedLootChestJsonByKey) && ok;
+
   for (const [poolId, pool] of Object.entries(store.pools)) {
     const key = `${LOOT_CHESTS_POOL_PREFIX}${poolId}`;
     wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, pool) && ok;
+    ok = setDynamicJsonIfChanged(key, pool, persistedLootChestJsonByKey) && ok;
   }
   for (const snapshot of Object.values(store.snapshots)) {
     const key = `${LOOT_CHESTS_SNAPSHOT_PREFIX}${snapshot.poolId}:${snapshot.id}`;
     wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, snapshot) && ok;
+    ok = setDynamicJsonIfChanged(key, snapshot, persistedLootChestJsonByKey) && ok;
   }
   for (const [chestId, chest] of Object.entries(store.chests)) {
     const key = `${LOOT_CHESTS_CHEST_PREFIX}${chestId}`;
     wantedKeys.add(key);
-    ok = safeSetDynamicJson(key, chest) && ok;
+    ok = setDynamicJsonIfChanged(key, chest, persistedLootChestJsonByKey) && ok;
   }
-  for (const key of world.getDynamicPropertyIds()) {
-    if (key.startsWith(LOOT_CHESTS_POOL_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
-    if (key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
-    if (key.startsWith(LOOT_CHESTS_CHEST_PREFIX) && !wantedKeys.has(key)) world.setDynamicProperty(key, undefined);
+
+  // GC only over keys we previously persisted; no world.getDynamicPropertyIds() scan.
+  for (const key of [...persistedLootChestJsonByKey.keys()]) {
+    if (!wantedKeys.has(key)) clearPersistedDynamicKey(key, persistedLootChestJsonByKey);
   }
+
   return ok;
 }

@@ -10,15 +10,9 @@ type BackgroundTask = {
   nextDueTick: number;
 };
 
-type EveryTickTask = {
-  id: string;
-  run: () => void;
-};
-
 const MAX_BACKGROUND_TASKS_PER_TICK = 6;
 
 const backgroundTasks = new Map<string, BackgroundTask>();
-const everyTickTasks = new Map<string, EveryTickTask>();
 let dispatcherStarted = false;
 
 function normalizeTicks(value: number): number {
@@ -38,10 +32,6 @@ function safeRun(id: string, run: () => void): void {
 }
 
 function runBackgroundSchedulerTick(): void {
-  for (const task of everyTickTasks.values()) {
-    safeRun(task.id, task.run);
-  }
-
   let started = 0;
   for (const task of backgroundTasks.values()) {
     if (started >= MAX_BACKGROUND_TASKS_PER_TICK) break;
@@ -71,7 +61,11 @@ export function registerBackgroundTask(id: string, intervalTicks: TickInterval, 
   ensureBackgroundSchedulerStarted();
 }
 
-export function registerEveryTickTask(id: string, run: () => void): void {
-  everyTickTasks.set(id, { id, run });
-  ensureBackgroundSchedulerStarted();
-}
+/**
+ * Stagger convention: every background task takes a small unique
+ * initialOffsetTicks so 20-tick systems never wake on the same tick.
+ * In-use offsets: combat-tags 1, lifecycle-shutdown-flush 2, sidebar-render 3,
+ * custom-areas 4, claims 6, stats-sample 7, tpa-expiry 9, plot-auto-save 11,
+ * plot-enter-title 13, plot-build-queue 15, moderation-snapshot 17,
+ * generators 18. Pick the next free small integer for new tasks.
+ */

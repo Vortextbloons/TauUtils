@@ -1,9 +1,9 @@
-import { Player, world } from "@minecraft/server";
+import { Player } from "@minecraft/server";
 import { isFeatureEnabled, saveTeamHomes, state } from "../storage";
+import { isFeatureActive } from "../storage/helpers";
+import { requestPlayerTeleport } from "../shared/teleport-service";
 import { type TeamDefinition, type TeamHomeConfig, type TeamHomeLocation, type TeamHomeStore } from "../types";
-import { isPlayerInCombat } from "../combat";
 import { getPlayerTeam, isTeamMember, isTeamOwnerOrAdmin } from "../teams";
-import { canTeleportTo } from "../shared/teleport-guard";
 
 function ensureHomesForTeam(team: TeamDefinition): Record<string, TeamHomeLocation> {
   if (!state.teamHomes.homesByTeamId[team.id]) state.teamHomes.homesByTeamId[team.id] = {};
@@ -23,8 +23,7 @@ export function listTeamHomeNames(team: TeamDefinition): string[] {
 }
 
 function requireFeatureEnabled(): { ok: true } | { ok: false; message: string } {
-  if (!isFeatureEnabled("teamHomes")) return { ok: false, message: "Team homes are disabled." };
-  if (!state.teamHomes.config.enabled) return { ok: false, message: "Team homes are disabled." };
+  if (!isFeatureActive("teamHomes", state.teamHomes.config.enabled)) return { ok: false, message: "Team homes are disabled." };
   return { ok: true };
 }
 
@@ -79,16 +78,15 @@ export function teleportTeamHome(player: Player, rawName?: string): { ok: boolea
   const name = normalizeHomeName(rawName);
   const home = getTeamHomes(teamRes.team)[name];
   if (!home) return { ok: false, message: `Team home "${name}" not found.` };
-  if (state.teamHomes.config.blockWhileInCombat && isPlayerInCombat(player)) {
-    return { ok: false, message: "You cannot teleport to a team home while in combat." };
-  }
   if (!state.teamHomes.config.allowCrossDimension && player.dimension.id !== home.dimensionId) {
     return { ok: false, message: "Cross-dimension team homes are disabled." };
   }
-  const guard = canTeleportTo(player, { ...home, dimensionId: home.dimensionId });
-  if (!guard.ok) return guard;
-  const dimension = world.getDimension(home.dimensionId);
-  player.teleport({ x: home.x, y: home.y, z: home.z }, { dimension });
+  const result = requestPlayerTeleport(
+    player,
+    { ...home, dimensionId: home.dimensionId },
+    { blockCombat: state.teamHomes.config.blockWhileInCombat },
+  );
+  if (!result.ok) return result;
   return { ok: true, message: `Teleported to team home "${name}".` };
 }
 

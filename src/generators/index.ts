@@ -24,6 +24,7 @@ export {
   updateGeneratorConfig,
   isGeneratorAdminProtected,
   isGeneratorAutoBreakerAllowed,
+  repairGeneratorStoreNumbers,
   MAX_GENERATOR_POOL_SIZE,
 } from "./definitions";
 export {

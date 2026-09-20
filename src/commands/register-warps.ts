@@ -1,25 +1,18 @@
 import {
-  CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   CustomCommandResult,
   system,
 } from "@minecraft/server";
-import { requirePlayerResult, requireOperatorResult } from "./helpers";
-import { commandOriginToPlayer, isFeatureEnabled, isOperator, tell } from "../storage";
-import { listWarps } from "../warps";
+import { requireOperatorResult } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
+import { commandOriginToPlayer, isFeatureEnabled, tell } from "../storage";
+import { listVisibleWarps } from "../warps";
 
 export function registerWarpsCommands(registry: CustomCommandRegistry): void {
-  registry.registerCommand(
-    {
-      name: "tau:warpsadmin",
-      description: "Open warp admin menu.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:warpsadmin",
     (origin): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       const opErr = requireOperatorResult(player);
       if (opErr) return opErr;
@@ -32,17 +25,10 @@ export function registerWarpsCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:warp",
-      description: "Teleport to a warp or open warp menu.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "warp", type: CustomCommandParamType.String }],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:warp",
     (origin, warpName?: string): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       if (!isFeatureEnabled("warps")) return { status: 1, message: "Warps are disabled." };
       const name = String(warpName ?? "").trim();
@@ -53,7 +39,7 @@ export function registerWarpsCommands(registry: CustomCommandRegistry): void {
         });
         return { status: 0, message: "Opening warp menu." };
       }
-      const warp = listWarps().find((entry) => entry.id === name.toLowerCase() || entry.name.toLowerCase() === name.toLowerCase());
+      const warp = listVisibleWarps(player).find((entry) => entry.id === name.toLowerCase() || entry.name.toLowerCase() === name.toLowerCase());
       if (!warp) return { status: 1, message: `Warp "${name}" not found.` };
       system.run(async () => {
         const { teleportToWarp } = await import("../warps");

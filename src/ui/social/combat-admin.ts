@@ -1,10 +1,20 @@
 import { Player, world } from "@minecraft/server";
 import { TauUi } from "../tau-ui";
-import { ICONS, type KillConditionAction, type KillConditionRule, type KillConditionScoreAction } from "../../types";
-import { getPlayerId, isOperator, normalizeKey, saveCombat, state, tell } from "../../storage";
+import { ICONS, type KillConditionRule, type KillConditionScoreAction } from "../../types";
+import { getPlayerId, isOperator, normalizeKey, state, tell } from "../../storage";
 import { updateHomesConfig, updatePayConfig, updatePlayerSettingsConfig, updateTpaConfig } from "../../social";
 import { updateTeamHomesConfig } from "../../team-homes";
 import { acceptTeamInvite, getPlayerTeam, getTeamSummary, inviteToTeam, listTeams, revokeTeamInvite } from "../../teams";
+import {
+  commitKillConditionActions,
+  commitKillConditionRule,
+  createKillConditionRule,
+  deleteKillConditionRule,
+  duplicateKillConditionRule,
+  getKillConditionRule,
+  setKillConditionsEnabled,
+  updateCombatConfig,
+} from "../../combat";
 
 export async function showSocialSettingsAdmin(player: Player) {
   if (!isOperator(player)) return;
@@ -73,28 +83,16 @@ function splitCsv(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
-function createDefaultKillConditionRule(): KillConditionRule {
-  const now = Date.now().toString(36);
-  return {
-    id: `kill_${now}`,
-    name: "New Kill Rule",
-    enabled: true,
-    priority: 0,
-    filters: {
-      requireKillerRankMatch: false,
-      killerRanks: [],
-      requireVictimRankMatch: false,
-      victimRanks: [],
-    },
-    actions: [],
-  };
-}
-
 function formatKillRuleLine(rule: KillConditionRule): string {
   return `${rule.enabled ? "§aON" : "§cOFF"}§r ${rule.name} §7(${rule.actions.length} actions, priority ${rule.priority})`;
 }
 
-async function editKillConditionRuleDetails(player: Player, rule: KillConditionRule): Promise<void> {
+async function editKillConditionRuleDetails(player: Player, ruleId: string): Promise<void> {
+  const rule = getKillConditionRule(ruleId);
+  if (!rule) {
+    tell(player, "Kill rule no longer exists.");
+    return;
+  }
   const filters = rule.filters;
   const result = await TauUi.modal(`Kill Rule: ${rule.name}`)
     .text("name", "Name", { placeholder: "VIP Kill Reward", defaultValue: rule.name })
@@ -110,31 +108,44 @@ async function editKillConditionRuleDetails(player: Player, rule: KillConditionR
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
-  rule.name = String(result.values.name ?? rule.name).trim() || rule.name;
-  rule.enabled = Boolean(result.values.enabled);
-  rule.priority = Math.floor(Number(result.values.priority ?? 0)) || 0;
-  filters.requireKillerRankMatch = Boolean(result.values.filterKiller);
-  filters.killerRanks = splitCsv(result.values.killerRanks);
-  filters.requireVictimRankMatch = Boolean(result.values.filterVictim);
-  filters.victimRanks = splitCsv(result.values.victimRanks);
   const minStreak = String(result.values.minStreak ?? "").trim();
   const maxStreak = String(result.values.maxStreak ?? "").trim();
   const minKills = String(result.values.minKills ?? "").trim();
-  filters.minKillerKillstreak = minStreak ? Math.max(0, Math.floor(Number(minStreak))) : undefined;
-  filters.maxKillerKillstreak = maxStreak ? Math.max(0, Math.floor(Number(maxStreak))) : undefined;
-  filters.minKillerKills = minKills ? Math.max(0, Math.floor(Number(minKills))) : undefined;
-  saveCombat();
-  tell(player, "Kill rule saved.");
+  const next: KillConditionRule = {
+    ...rule,
+    name: String(result.values.name ?? rule.name).trim() || rule.name,
+    enabled: Boolean(result.values.enabled),
+    priority: Math.floor(Number(result.values.priority ?? 0)) || 0,
+    filters: {
+      ...filters,
+      requireKillerRankMatch: Boolean(result.values.filterKiller),
+      killerRanks: splitCsv(result.values.killerRanks),
+      requireVictimRankMatch: Boolean(result.values.filterVictim),
+      victimRanks: splitCsv(result.values.victimRanks),
+      minKillerKillstreak: minStreak ? Math.max(0, Math.floor(Number(minStreak))) : undefined,
+      maxKillerKillstreak: maxStreak ? Math.max(0, Math.floor(Number(maxStreak))) : undefined,
+      minKillerKills: minKills ? Math.max(0, Math.floor(Number(minKills))) : undefined,
+    },
+  };
+  const saved = commitKillConditionRule(next);
+  tell(player, saved.ok ? "Kill rule saved." : `§c${saved.message}`);
 }
 
-async function addKillScoreAction(player: Player, rule: KillConditionRule, current?: KillConditionScoreAction): Promise<void> {
+async function addKillScoreAction(player: Player, ruleId: string, index?: number): Promise<void> {
+  const rule = getKillConditionRule(ruleId);
+  if (!rule) {
+    tell(player, "Kill rule no longer exists.");
+    return;
+  }
+  const current = index === undefined ? undefined : rule.actions[index];
+  const currentScore = current?.type === "score" ? current : undefined;
   const operations: KillConditionScoreAction["operation"][] = ["add", "set", "remove"];
   const targets: KillConditionScoreAction["target"][] = ["killer", "victim"];
-  const result = await TauUi.modal(current ? "Edit Score Action" : "Add Score Action")
-    .dropdown("target", "Target", targets, Math.max(0, targets.indexOf(current?.target ?? "killer")))
-    .text("objective", "Objective", { placeholder: "money", defaultValue: current?.objective ?? "money" })
-    .dropdown("operation", "Operation", operations, Math.max(0, operations.indexOf(current?.operation ?? "add")))
-    .text("amount", "Amount", { placeholder: "100", defaultValue: String(current?.amount ?? 100) })
+  const result = await TauUi.modal(currentScore ? "Edit Score Action" : "Add Score Action")
+    .dropdown("target", "Target", targets, Math.max(0, targets.indexOf(currentScore?.target ?? "killer")))
+    .text("objective", "Objective", { placeholder: "money", defaultValue: currentScore?.objective ?? "money" })
+    .dropdown("operation", "Operation", operations, Math.max(0, operations.indexOf(currentScore?.operation ?? "add")))
+    .text("amount", "Amount", { placeholder: "100", defaultValue: String(currentScore?.amount ?? 100) })
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
@@ -145,14 +156,30 @@ async function addKillScoreAction(player: Player, rule: KillConditionRule, curre
     operation: operations[Number(result.values.operation ?? 0)] ?? "add",
     amount: Math.floor(Number(result.values.amount ?? 0)) || 0,
   };
-  if (current) Object.assign(current, action);
-  else rule.actions.push(action);
-  saveCombat();
+  const live = getKillConditionRule(ruleId);
+  if (!live) {
+    tell(player, "Kill rule no longer exists.");
+    return;
+  }
+  const actions = live.actions.slice();
+  if (index === undefined) actions.push(action);
+  else {
+    if (index < 0 || index >= actions.length) return;
+    actions[index] = action;
+  }
+  tellCommitResult(player, commitKillConditionActions(ruleId, actions));
 }
 
-async function addKillCommandAction(player: Player, rule: KillConditionRule, current?: Extract<KillConditionAction, { type: "command" }>): Promise<void> {
-  const result = await TauUi.modal(current ? "Edit Command Chain" : "Add Command Chain")
-    .text("commands", "Commands separated by ; ({killer}, {victim}, [killer_money], [victim_rank])", { placeholder: "say {killer} killed {victim};give @s diamond 1", defaultValue: current?.commands.join(";") ?? "" })
+async function addKillCommandAction(player: Player, ruleId: string, index?: number): Promise<void> {
+  const rule = getKillConditionRule(ruleId);
+  if (!rule) {
+    tell(player, "Kill rule no longer exists.");
+    return;
+  }
+  const current = index === undefined ? undefined : rule.actions[index];
+  const currentCommand = current?.type === "command" ? current : undefined;
+  const result = await TauUi.modal(currentCommand ? "Edit Command Chain" : "Add Command Chain")
+    .text("commands", "Commands separated by ; ({killer}, {victim}, [killer_money], [victim_rank])", { placeholder: "say {killer} killed {victim};give @s diamond 1", defaultValue: currentCommand?.commands.join(";") ?? "" })
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
@@ -162,13 +189,31 @@ async function addKillCommandAction(player: Player, rule: KillConditionRule, cur
     .filter((entry) => entry.length > 0)
     .slice(0, 10);
   if (commands.length === 0) return;
-  if (current) current.commands = commands;
-  else rule.actions.push({ type: "command", commands });
-  saveCombat();
+  const live = getKillConditionRule(ruleId);
+  if (!live) {
+    tell(player, "Kill rule no longer exists.");
+    return;
+  }
+  const actions = live.actions.slice();
+  if (index === undefined) actions.push({ type: "command", commands });
+  else {
+    if (index < 0 || index >= actions.length) return;
+    actions[index] = { type: "command", commands };
+  }
+  tellCommitResult(player, commitKillConditionActions(ruleId, actions));
 }
 
-async function editKillConditionActions(player: Player, rule: KillConditionRule): Promise<void> {
+function tellCommitResult(player: Player, result: { ok: boolean; message: string }): void {
+  tell(player, result.ok ? `§a${result.message}` : `§c${result.message}`);
+}
+
+async function editKillConditionActions(player: Player, ruleId: string): Promise<void> {
   while (true) {
+    const rule = getKillConditionRule(ruleId);
+    if (!rule) {
+      tell(player, "Kill rule no longer exists.");
+      return;
+    }
     const form = TauUi.action<{ index: number }>(`Actions: ${rule.name}`).body(`Actions: ${rule.actions.length}`);
     form.button("addScore", "Add Score Action", { iconPath: ICONS.shop });
     form.button("addCommand", "Add Command Chain", { iconPath: ICONS.settings });
@@ -180,32 +225,39 @@ async function editKillConditionActions(player: Player, rule: KillConditionRule)
     const response = await form.show(player);
     if (response.canceled) return;
     if (response.id === "addScore") {
-      await addKillScoreAction(player, rule);
+      await addKillScoreAction(player, rule.id);
       continue;
     }
     if (response.id === "addCommand") {
-      await addKillCommandAction(player, rule);
+      await addKillCommandAction(player, rule.id);
       continue;
     }
     if (response.id === "back" || !response.value) return;
     const actionIndex = response.value.index;
-    if (actionIndex >= rule.actions.length) return;
-    const action = rule.actions[actionIndex];
+    const live = getKillConditionRule(rule.id);
+    if (!live || actionIndex >= live.actions.length) return;
+    const action = live.actions[actionIndex];
     const manage = TauUi.action("Action").button("edit", "Edit", { iconPath: ICONS.edit }).button("delete", "Delete", { iconPath: ICONS.delete }).button("back", "Back", { iconPath: ICONS.back });
     const picked = await manage.show(player);
     if (TauUi.isCanceledOrBack(picked)) continue;
     if (picked.id === "delete") {
-      rule.actions.splice(actionIndex, 1);
-      saveCombat();
+      const afterDelete = getKillConditionRule(rule.id);
+      if (!afterDelete) return;
+      tellCommitResult(player, commitKillConditionActions(rule.id, afterDelete.actions.filter((_, i) => i !== actionIndex)));
       continue;
     }
-    if (action.type === "score") await addKillScoreAction(player, rule, action);
-    else await addKillCommandAction(player, rule, action);
+    if (action.type === "score") await addKillScoreAction(player, rule.id, actionIndex);
+    else await addKillCommandAction(player, rule.id, actionIndex);
   }
 }
 
-async function editKillConditionRule(player: Player, rule: KillConditionRule): Promise<void> {
+async function editKillConditionRule(player: Player, ruleId: string): Promise<void> {
   while (true) {
+    const rule = getKillConditionRule(ruleId);
+    if (!rule) {
+      tell(player, "Kill rule no longer exists.");
+      return;
+    }
     const form = TauUi.action(rule.name)
       .body(formatKillRuleLine(rule))
       .button("edit", "Edit Details/Filters", { iconPath: ICONS.edit })
@@ -215,16 +267,14 @@ async function editKillConditionRule(player: Player, rule: KillConditionRule): P
       .button("back", "Back", { iconPath: ICONS.back });
     const response = await form.show(player);
     if (TauUi.isCanceledOrBack(response)) return;
-    if (response.id === "edit") await editKillConditionRuleDetails(player, rule);
-    else if (response.id === "actions") await editKillConditionActions(player, rule);
+    if (response.id === "edit") await editKillConditionRuleDetails(player, rule.id);
+    else if (response.id === "actions") await editKillConditionActions(player, rule.id);
     else if (response.id === "duplicate") {
-      state.combat.config.killConditions.rules.push({ ...rule, id: `kill_${Date.now().toString(36)}`, name: `${rule.name} Copy`, filters: { ...rule.filters }, actions: rule.actions.map((action) => ({ ...action })) });
-      saveCombat();
-      tell(player, "Kill rule duplicated.");
+      const duplicated = duplicateKillConditionRule(rule.id);
+      tell(player, duplicated.ok ? "Kill rule duplicated." : `§c${duplicated.message}`);
     } else if (response.id === "delete") {
-      state.combat.config.killConditions.rules = state.combat.config.killConditions.rules.filter((entry) => entry.id !== rule.id);
-      saveCombat();
-      tell(player, "Kill rule deleted.");
+      const deleted = deleteKillConditionRule(rule.id);
+      tell(player, deleted.ok ? "Kill rule deleted." : `§c${deleted.message}`);
       return;
     }
   }
@@ -244,21 +294,22 @@ async function showKillConditionsAdmin(player: Player): Promise<void> {
     const response = await form.show(player);
     if (response.canceled) return;
     if (response.id === "toggle") {
-      store.enabled = !store.enabled;
-      saveCombat();
+      tellCommitResult(player, setKillConditionsEnabled(!store.enabled));
       continue;
     }
     if (response.id === "create") {
-      const rule = createDefaultKillConditionRule();
-      store.rules.push(rule);
-      saveCombat();
-      await editKillConditionRule(player, rule);
+      const created = createKillConditionRule();
+      if (!created.ok || !created.rule) {
+        tell(player, `§c${created.message}`);
+        continue;
+      }
+      await editKillConditionRule(player, created.rule.id);
       continue;
     }
     if (response.id === "back" || !response.value) return;
     const rule = rules[response.value.index];
     if (!rule) return;
-    await editKillConditionRule(player, rule);
+    await editKillConditionRule(player, rule.id);
   }
 }
 
@@ -292,17 +343,17 @@ export async function showCombatSettingsAdmin(player: Player): Promise<void> {
       .show(player);
     if (result.canceled) return;
 
-    combat.enabled = Boolean(result.values.enabled);
-    combat.combatTimeSeconds = Math.max(1, Math.floor(Number(result.values.combatTime ?? 15)));
-    combat.announceLogouts = Boolean(result.values.announceLogouts);
-    combat.blockCommands = Boolean(result.values.blockCommands);
-    combat.enterMessage = String(result.values.enterMessage ?? combat.enterMessage).trim() || combat.enterMessage;
-    combat.exitMessage = String(result.values.exitMessage ?? combat.exitMessage).trim() || combat.exitMessage;
-    combat.logoutBroadcastMessage = String(result.values.logoutBroadcast ?? combat.logoutBroadcastMessage).trim() || combat.logoutBroadcastMessage;
-    combat.rejoinPenaltyMessage = String(result.values.rejoinPenalty ?? combat.rejoinPenaltyMessage).trim() || combat.rejoinPenaltyMessage;
-    combat.blockedCommandMessage = String(result.values.blockedCommand ?? combat.blockedCommandMessage).trim() || combat.blockedCommandMessage;
-    saveCombat();
-    tell(player, "Combat settings saved.");
+    tellCommitResult(player, updateCombatConfig({
+      enabled: Boolean(result.values.enabled),
+      combatTimeSeconds: Math.max(1, Math.floor(Number(result.values.combatTime ?? 15))),
+      announceLogouts: Boolean(result.values.announceLogouts),
+      blockCommands: Boolean(result.values.blockCommands),
+      enterMessage: String(result.values.enterMessage ?? combat.enterMessage).trim() || combat.enterMessage,
+      exitMessage: String(result.values.exitMessage ?? combat.exitMessage).trim() || combat.exitMessage,
+      logoutBroadcastMessage: String(result.values.logoutBroadcast ?? combat.logoutBroadcastMessage).trim() || combat.logoutBroadcastMessage,
+      rejoinPenaltyMessage: String(result.values.rejoinPenalty ?? combat.rejoinPenaltyMessage).trim() || combat.rejoinPenaltyMessage,
+      blockedCommandMessage: String(result.values.blockedCommand ?? combat.blockedCommandMessage).trim() || combat.blockedCommandMessage,
+    }));
   }
 }
 

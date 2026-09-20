@@ -1,5 +1,5 @@
 import { Player, system } from "@minecraft/server";
-import { commandStripSlash, getPlayerRank, getScore, hasPermission, isFeatureEnabled, isOperator, normalizeKey, saveCommandBuilder, setScore, state, tell } from "../storage";
+import { commandStripSlash, ensureScoreboardObjective, getPlayerRank, getScore, hasPermission, isFeatureEnabled, isOperator, normalizeKey, saveCommandBuilder, setScore, state, tell } from "../storage";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
 import { type BuiltCommandAction, type BuiltCommandCondition, type BuiltCommandDefinition } from "../types";
 
@@ -128,34 +128,41 @@ function parseNestedBuiltCommand(command: string): string | undefined {
   return match?.[1];
 }
 
-function runAction(player: Player, command: BuiltCommandDefinition, action: BuiltCommandAction, options: RunOptions): void {
+function runScoreAction(player: Player, action: Extract<BuiltCommandAction, { type: "score" }>): boolean {
+  const objective = String(action.objective ?? "").trim();
+  if (!objective) return true;
+  if (!ensureScoreboardObjective(objective)) return false;
+  if (action.operation === "set") {
+    return setScore(player, objective, Math.floor(Number(action.amount) || 0));
+  }
+  const current = getScore(player, objective);
+  if (current === undefined) return false;
+  const amount = Math.max(0, Math.floor(Number(action.amount) || 0));
+  const next = action.operation === "remove" ? current - amount : current + amount;
+  return setScore(player, objective, next);
+}
+
+function runAction(player: Player, command: BuiltCommandDefinition, action: BuiltCommandAction, options: RunOptions): boolean {
   if (action.type === "message") {
     tell(player, renderBuiltCommandText(action.message, player, command));
-    return;
+    return true;
   }
 
   if (action.type === "score") {
-    const objective = String(action.objective ?? "").trim();
-    if (!objective) return;
-    const current = getScore(player, objective);
-    if (current === undefined) return;
-    const amount = Math.floor(Number(action.amount) || 0);
-    const next = action.operation === "set" ? amount : action.operation === "remove" ? current - amount : current + amount;
-    setScore(player, objective, next);
-    return;
+    return runScoreAction(player, action);
   }
 
   if (action.type === "tag") {
     const tag = String(action.tag ?? "").trim();
-    if (!tag) return;
+    if (!tag) return true;
     if (action.operation === "remove") player.removeTag(tag);
     else player.addTag(tag);
-    return;
+    return true;
   }
 
   if (action.type === "effect") {
     const effectId = String(action.effectId ?? "").trim();
-    if (!effectId) return;
+    if (!effectId) return true;
     const seconds = Math.max(1, Math.floor(Number(action.durationSeconds) || 1));
     const amplifier = Math.max(0, Math.floor(Number(action.amplifier) || 0));
     const hideParticles = action.showParticles === false ? "true" : "false";
@@ -163,23 +170,26 @@ function runAction(player: Player, command: BuiltCommandDefinition, action: Buil
       player.runCommand(`effect @s ${effectId} ${seconds} ${amplifier} ${hideParticles}`);
     } catch {
     }
-    return;
+    return true;
   }
 
   if (action.type === "command") {
     const rendered = renderCommandTemplate(renderBuiltCommandText(action.command, player, command));
-    if (!rendered) return;
+    if (!rendered) return true;
     const nestedId = parseNestedBuiltCommand(rendered);
     if (nestedId) {
       runBuiltCommand(player, nestedId, { allowNonOperator: true, depth: (options.depth ?? 0) + 1 });
-      return;
+      return true;
     }
     try {
       if (action.runAs === "world") player.dimension.runCommand(commandStripSlash(rendered));
       else player.runCommand(commandStripSlash(rendered));
     } catch {
     }
+    return true;
   }
+
+  return true;
 }
 
 export function runBuiltCommand(player: Player, id: string, options: RunOptions = {}): BuiltCommandRunResult {
@@ -216,10 +226,15 @@ export function runBuiltCommand(player: Player, id: string, options: RunOptions 
   for (const action of actions) {
     delay += getActionDelay(action);
     if (delay <= 0) {
-      runAction(player, command, action, options);
+      if (!runAction(player, command, action, options)) {
+        return { ok: false, message: `Command "${command.id}" failed during a score action; remaining actions were skipped.` };
+      }
     } else {
       const scheduledAction = action;
-      system.runTimeout(() => runAction(player, command, scheduledAction, options), delay);
+      system.runTimeout(() => {
+        if (!player.isValid) return;
+        runAction(player, command, scheduledAction, options);
+      }, delay);
     }
   }
 

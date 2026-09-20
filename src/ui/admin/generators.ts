@@ -1,8 +1,8 @@
 import { Player, world } from "@minecraft/server";
 import { TauUi } from "../tau-ui";
 import { ICONS } from "../../types";
-import { isOperator, saveGenerators, state, tell } from "../../storage";
-import { getHeldItemSnapshot, applyHeldItemSnapshotToGenerator } from "../ui-utils";
+import { isOperator, state, tell } from "../../storage";
+import { getHeldItemSnapshot } from "../ui-utils";
 import {
   addGeneratorOutputEntry,
   addGeneratorTier,
@@ -38,6 +38,7 @@ import {
   canPlayerManagePlacedGenerator,
 } from "../../generators";
 import { getTierOutputPool } from "../../generators/output-pick";
+import { parseFinite, parseIntIn, MAX_SAFE_INT } from "../../shared/numbers";
 import { parseEnchantmentsText } from "../../shared/enchantments";
 
 async function pickGeneratorDefinitionId(
@@ -119,15 +120,24 @@ export async function showGeneratorAdminMenu(player: Player) {
         String(result.values.name ?? ""),
         String(result.values.baseItemId ?? ""),
         String(result.values.outputItemId ?? ""),
-        Number(result.values.rateTicks ?? 200),
+        parseIntIn(result.values.rateTicks, 0, MAX_SAFE_INT, 200),
         Boolean(result.values.adminProtected)
       );
       if (create.ok) {
         const held = getHeldItemSnapshot(player);
         const def = getGeneratorDefinition(String(result.values.name ?? "").trim().toLowerCase());
         if (def && held) {
-          applyHeldItemSnapshotToGenerator(def, held);
-          saveGenerators();
+          updateGeneratorDefinition(def.id, {
+            baseItemId: held.itemId,
+            displayName: held.displayName ?? def.displayName,
+            lore: held.lore,
+            customData: held.customData,
+            enchantments: held.enchantments,
+            durability: held.durability,
+            maxDurability: held.maxDurability,
+            canPlaceOn: held.canPlaceOn,
+            canDestroy: held.canDestroy,
+          });
         }
       }
       tell(player, create.message);
@@ -147,16 +157,25 @@ export async function showGeneratorAdminMenu(player: Player) {
       const create = createWeightedGeneratorDefinition(
         String(result.values.name ?? ""),
         String(result.values.baseItemId ?? ""),
-        [{ itemId: String(result.values.firstOutputId ?? ""), weight: Number(result.values.firstWeight ?? 1) }],
-        Number(result.values.rateTicks ?? 200),
+        [{ itemId: String(result.values.firstOutputId ?? ""), weight: parseIntIn(result.values.firstWeight, 1, MAX_SAFE_INT, 1) }],
+        parseIntIn(result.values.rateTicks, 0, MAX_SAFE_INT, 200),
         Boolean(result.values.adminProtected)
       );
       if (create.ok) {
         const held = getHeldItemSnapshot(player);
         const def = getGeneratorDefinition(String(result.values.name ?? "").trim().toLowerCase());
         if (def && held) {
-          applyHeldItemSnapshotToGenerator(def, held);
-          saveGenerators();
+          updateGeneratorDefinition(def.id, {
+            baseItemId: held.itemId,
+            displayName: held.displayName ?? def.displayName,
+            lore: held.lore,
+            customData: held.customData,
+            enchantments: held.enchantments,
+            durability: held.durability,
+            maxDurability: held.maxDurability,
+            canPlaceOn: held.canPlaceOn,
+            canDestroy: held.canDestroy,
+          });
         }
         if (def) await showGeneratorOutputPoolManager(player, def.id);
       }
@@ -223,9 +242,9 @@ export async function showGeneratorAdminMenu(player: Player) {
         customData: String(result.values.customData ?? "{}").trim() || undefined,
         canPlaceOn: String(result.values.canPlaceOn ?? "").split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0),
         canDestroy: String(result.values.canDestroy ?? "").split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0),
-        autoBreakerCost: String(result.values.autoBreakerCost ?? "").trim().length > 0 ? Number(result.values.autoBreakerCost) : undefined,
-        durability: Number(result.values.durability ?? 0),
-        maxDurability: Number(result.values.maxDurability ?? 0),
+        autoBreakerCost: String(result.values.autoBreakerCost ?? "").trim().length > 0 ? parseFinite(String(result.values.autoBreakerCost), def.autoBreakerCost ?? Number.NaN) : undefined,
+        durability: parseIntIn(result.values.durability, 0, MAX_SAFE_INT, def.durability ?? 0),
+        maxDurability: parseIntIn(result.values.maxDurability, 0, MAX_SAFE_INT, def.maxDurability ?? 0),
         placeAnywhere: Boolean(result.values.placeAnywhere),
         autoBreakersEnabled: Boolean(result.values.autoBreakersEnabled),
         adminProtected: Boolean(result.values.adminProtected),
@@ -326,7 +345,7 @@ async function showGeneratorOutputPoolManager(player: Player, defId: string) {
         .submitButton("Add")
         .show(player);
       if (addResult.canceled) continue;
-      tell(player, addGeneratorOutputEntry(def.id, String(addResult.values.itemId ?? ""), Number(addResult.values.weight ?? 1)).message);
+      tell(player, addGeneratorOutputEntry(def.id, String(addResult.values.itemId ?? ""), parseIntIn(addResult.values.weight, 1, MAX_SAFE_INT, 1)).message);
       continue;
     }
 
@@ -352,7 +371,7 @@ async function showGeneratorOutputPoolManager(player: Player, defId: string) {
       if (editResult.canceled) continue;
       tell(player, updateGeneratorOutputEntry(def.id, entryIndex, {
         itemId: String(editResult.values.itemId ?? entry.itemId),
-        weight: Number(editResult.values.weight ?? entry.weight),
+        weight: parseIntIn(editResult.values.weight, 1, MAX_SAFE_INT, entry.weight),
       }).message);
       continue;
     }
@@ -415,7 +434,7 @@ async function showGeneratorTierOutputPoolManager(player: Player, defId: string,
         .submitButton("Add")
         .show(player);
       if (addResult.canceled) continue;
-      tell(player, addGeneratorTierOutputEntry(def.id, tier.tier, String(addResult.values.itemId ?? ""), Number(addResult.values.weight ?? 1)).message);
+      tell(player, addGeneratorTierOutputEntry(def.id, tier.tier, String(addResult.values.itemId ?? ""), parseIntIn(addResult.values.weight, 1, MAX_SAFE_INT, 1)).message);
       continue;
     }
 
@@ -461,7 +480,7 @@ async function showGeneratorTierOutputPoolManager(player: Player, defId: string,
       if (editResult.canceled) continue;
       tell(player, updateGeneratorTierOutputEntry(def.id, tier.tier, entryIndex, {
         itemId: String(editResult.values.itemId ?? entry.itemId),
-        weight: Number(editResult.values.weight ?? entry.weight),
+        weight: parseIntIn(editResult.values.weight, 1, MAX_SAFE_INT, entry.weight),
       }).message);
       continue;
     }
@@ -501,7 +520,7 @@ async function showGeneratorTierManager(player: Player, defId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      tell(player, addGeneratorTier(def.id, Number(result.values.rateTicks ?? 200), Number(result.values.upgradeCost ?? 1000)).message);
+      tell(player, addGeneratorTier(def.id, parseIntIn(result.values.rateTicks, 0, MAX_SAFE_INT, 200), parseIntIn(result.values.upgradeCost, 0, MAX_SAFE_INT, 0)).message);
       continue;
     }
 
@@ -539,8 +558,8 @@ async function showGeneratorTierManager(player: Player, defId: string) {
         .show(player);
       if (editResult.canceled) continue;
       tell(player, updateGeneratorTier(def.id, tier.tier, {
-        rateTicks: Number(editResult.values.rateTicks ?? tier.rateTicks),
-        upgradeCost: Number(editResult.values.upgradeCost ?? tier.upgradeCost),
+        rateTicks: parseIntIn(editResult.values.rateTicks, 0, MAX_SAFE_INT, tier.rateTicks),
+        upgradeCost: parseIntIn(editResult.values.upgradeCost, 0, MAX_SAFE_INT, tier.upgradeCost),
       }).message);
       continue;
     }
@@ -573,7 +592,7 @@ async function showGeneratorTierManager(player: Player, defId: string) {
         .show(player);
       if (result.canceled) continue;
       const raw = String(result.values.autoBreakerCost ?? "").trim();
-      tell(player, updateGeneratorDefinition(def.id, { autoBreakerCost: raw.length > 0 ? Number(raw) : undefined, autoBreakersEnabled: Boolean(result.values.autoBreakersEnabled) }).message);
+      tell(player, updateGeneratorDefinition(def.id, { autoBreakerCost: raw.length > 0 ? parseFinite(raw, def.autoBreakerCost ?? Number.NaN) : undefined, autoBreakersEnabled: Boolean(result.values.autoBreakersEnabled) }).message);
       continue;
     }
   }

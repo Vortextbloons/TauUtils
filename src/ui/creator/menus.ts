@@ -110,12 +110,12 @@ async function showMenuUiManagement(player: Player) {
       continue;
     }
     if (response.id === "bindings") {
-      const { showBindingsEditor } = await import("../admin-ui");
+      const { showBindingsEditor } = await import("../admin");
       await showBindingsEditor(player);
       continue;
     }
     if (response.id === "viewBindings") {
-      const { showBindingsViewer } = await import("../admin-ui");
+      const { showBindingsViewer } = await import("../admin");
       await showBindingsViewer(player);
       continue;
     }
@@ -125,7 +125,7 @@ async function showMenuUiManagement(player: Player) {
       continue;
     }
     if (response.id === "iconDev") {
-      const { showIconDevMenu } = await import("../admin-ui");
+      const { showIconDevMenu } = await import("../admin");
       await showIconDevMenu(player);
       continue;
     }
@@ -227,17 +227,17 @@ async function showWorldSystems(player: Player) {
       continue;
     }
     if (response.id === "generators") {
-      const { showGeneratorAdminMenu } = await import("../admin-ui");
+      const { showGeneratorAdminMenu } = await import("../admin");
       await showGeneratorAdminMenu(player);
       continue;
     }
     if (response.id === "crates") {
-      const { showCrateAdminMenu } = await import("../admin-ui");
+      const { showCrateAdminMenu } = await import("../admin");
       await showCrateAdminMenu(player);
       continue;
     }
     if (response.id === "prune") {
-      const { showPruneDataMenu } = await import("../admin-ui");
+      const { showPruneDataMenu } = await import("../admin");
       await showPruneDataMenu(player);
       continue;
     }
@@ -256,17 +256,17 @@ async function showAdminRules(player: Player) {
     if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "combat") {
-      const { showCombatSettingsAdmin } = await import("../social-ui");
+      const { showCombatSettingsAdmin } = await import("../social");
       await showCombatSettingsAdmin(player);
       continue;
     }
     if (response.id === "moderation") {
-      const { showModerationMenu } = await import("../admin-ui");
+      const { showModerationMenu } = await import("../admin");
       await showModerationMenu(player);
       continue;
     }
     if (response.id === "tauItems") {
-      const { showTauItemsAdminMenu } = await import("../admin-ui");
+      const { showTauItemsAdminMenu } = await import("../admin");
       await showTauItemsAdminMenu(player);
       continue;
     }

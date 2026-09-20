@@ -1,1 +1,1 @@
-export { initializeOnlinePlayersAfterReload, registerEventInterceptors } from "./events-core";
+export { getCachedPlayers, initializeOnlinePlayersAfterReload, registerEventInterceptors } from "./events-core";

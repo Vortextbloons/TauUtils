@@ -3,6 +3,7 @@ import { getPlayerId, getScore, isFeatureEnabled, isOperator, saveGenerators, se
 import { getPlayerTeam } from "../teams";
 import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from "../plots";
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent } from "../shared/item-components";
+import { parseIntIn } from "../shared/numbers";
 import type { GeneratorDefinition, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { GENERATOR_MARKER_PREFIX, GENERATOR_TIER_PREFIX, type GeneratorLocation } from "./types";
 import { clearGeneratorOutput, getDefinitionByStack, getGeneratorAutoBreakerCost, getMaxTier, getTier, isGeneratorAdminProtected, isGeneratorAutoBreakerAllowed, normalizeId, normalizeItemId, readGeneratorItemData, restoreGeneratorBlocks } from "./definitions";
@@ -16,6 +17,8 @@ let generatorProcessJobId: number | undefined;
 type GeneratorIndexes = {
   dueSorted: PlacedGenerator[];
   earliestDueAt: number;
+  earliestTurboDueAt: number;
+  definitionFingerprint: string;
 };
 
 let generatorIndexes: GeneratorIndexes | undefined;
@@ -25,14 +28,28 @@ function markGeneratorIndexesDirty(): void {
   generatorIndexesDirty = true;
 }
 
+function generatorDefinitionFingerprint(): string {
+  return Object.values(state.generators.definitions)
+    .map((def) => `${def.id}:${def.tiers.map((tier) => tier.rateTicks).join(",")}`)
+    .sort()
+    .join("|");
+}
+
 function buildGeneratorIndexes(): GeneratorIndexes {
   const dueSorted = Object.values(state.generators.placed).slice().sort((a, b) => a.nextSpawnAt - b.nextSpawnAt || a.id.localeCompare(b.id));
   const earliestDueAt = dueSorted[0]?.nextSpawnAt ?? Number.POSITIVE_INFINITY;
-  return { dueSorted, earliestDueAt };
+  let earliestTurboDueAt = Number.POSITIVE_INFINITY;
+  for (const placed of dueSorted) {
+    if (placed.nextSpawnAt >= earliestTurboDueAt) continue;
+    const tier = getTier(state.generators.definitions[placed.definitionId], placed.tier);
+    if (tier?.rateTicks === 0) earliestTurboDueAt = placed.nextSpawnAt;
+  }
+  return { dueSorted, earliestDueAt, earliestTurboDueAt, definitionFingerprint: generatorDefinitionFingerprint() };
 }
 
 function getGeneratorIndexes(): GeneratorIndexes {
-  if (!generatorIndexes || generatorIndexesDirty) {
+  const fingerprint = generatorDefinitionFingerprint();
+  if (!generatorIndexes || generatorIndexesDirty || generatorIndexes.definitionFingerprint !== fingerprint) {
     generatorIndexes = buildGeneratorIndexes();
     generatorIndexesDirty = false;
   }
@@ -290,7 +307,7 @@ function captureOriginalGeneratorBlocks(location: GeneratorLocation): Pick<Place
 
 function collectGeneratorOutput(player: Player, outputItemId: string, amount: number): void {
   try {
-    const stack = new ItemStack(normalizeItemId(outputItemId), Math.max(1, Math.floor(amount)));
+    const stack = new ItemStack(normalizeItemId(outputItemId), parseIntIn(amount, 1, 64, 1));
     const inventory = player.getComponent("minecraft:inventory")?.container;
     if (!inventory) {
       player.dimension.spawnItem(stack, player.location);
@@ -305,7 +322,8 @@ function collectGeneratorOutput(player: Player, outputItemId: string, amount: nu
 export function giveGenerator(player: Player, defId: string, amount = 1): { ok: boolean; message: string } {
   const def = state.generators.definitions[normalizeId(defId)];
   if (!def) return { ok: false, message: "Generator not found." };
-  const stack = new ItemStack(normalizeItemId(def.baseItemId), Math.max(1, Math.floor(amount)));
+  const count = parseIntIn(amount, 1, 64, 1);
+  const stack = new ItemStack(normalizeItemId(def.baseItemId), count);
   stack.nameTag = def.displayName ?? def.name;
   stack.setLore(buildGeneratorLore(def, 1));
   const placeComp = getItemCanPlaceOnComponent(stack);
@@ -315,7 +333,7 @@ export function giveGenerator(player: Player, defId: string, amount = 1): { ok: 
   const inventory = player.getComponent("minecraft:inventory")?.container;
   if (!inventory) return { ok: false, message: "Inventory unavailable." };
   if (!addItemWithoutMergingMetadata(inventory, stack)) return { ok: false, message: "Not enough inventory space." };
-  return { ok: true, message: `Gave ${amount}x ${def.name}.` };
+  return { ok: true, message: `Gave ${count}x ${def.name}.` };
 }
 
 export function getPlacedGeneratorInfoLines(location: Vector3, dimensionId: string): string[] {
@@ -540,7 +558,7 @@ export function toggleGeneratorAutoBreaker(player: Player, location: Vector3, di
   return { ok: true, message: `Bought autobreaker for $${cost}.` };
 }
 
-export function processGenerators(): void {
+export function processGenerators(cachedPlayers?: Player[]): void {
   if (!isFeatureEnabled("generators")) return;
   const now = Date.now();
   const indexes = getGeneratorIndexes();
@@ -551,7 +569,9 @@ export function processGenerators(): void {
   if (now < indexes.earliestDueAt) return;
   if (generatorProcessJobId !== undefined) return;
 
-  generatorProcessJobId = system.runJob(processGeneratorsJob(now, indexes));
+  const players = cachedPlayers ?? world.getAllPlayers();
+  if (players.length === 0) return;
+  generatorProcessJobId = system.runJob(processGeneratorsJob(now, indexes, players));
 }
 
 function runGeneratorSpawnCycle(
@@ -597,12 +617,11 @@ function runGeneratorSpawnCycle(
   return true;
 }
 
-function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generator<void, void, void> {
+function* processGeneratorsJob(now: number, indexes: GeneratorIndexes, onlinePlayers: Player[]): Generator<void, void, void> {
   if (!isFeatureEnabled("generators")) {
     generatorProcessJobId = undefined;
     return;
   }
-  const onlinePlayers = world.getAllPlayers();
   if (onlinePlayers.length === 0) {
     generatorProcessJobId = undefined;
     return;
@@ -630,43 +649,46 @@ function* processGeneratorsJob(now: number, indexes: GeneratorIndexes): Generato
   let turboSpawnsThisCycle = 0;
   let turboCursor = generatorProcessCursor;
 
-  for (let turboIndex = 0; turboIndex < placedGenerators.length && turboSpawnsThisCycle < maxTurboSpawns; turboIndex++) {
-    if (!isFeatureEnabled("generators")) break;
-    const placed = placedGenerators[turboCursor % placedGenerators.length];
-    turboCursor = (turboCursor + 1) % Math.max(1, placedGenerators.length);
-    if (!placed) {
-      yield;
-      continue;
-    }
-    if (!isGeneratorOwnerActive(placed, onlineIds, activeTeamOwnerIds)) {
-      yield;
-      continue;
-    }
-    const def = state.generators.definitions[placed.definitionId];
-    if (!def) {
-      yield;
-      continue;
-    }
-    const tier = getTier(def, placed.tier);
-    if (!tier || tier.rateTicks !== 0) {
-      yield;
-      continue;
-    }
-    if (now < placed.nextSpawnAt) {
-      yield;
-      continue;
-    }
-
-    let burstCount = 0;
-    while (burstCount < TURBO_BURST_PER_VISIT && turboSpawnsThisCycle < maxTurboSpawns) {
+  const turboDue = now >= indexes.earliestTurboDueAt;
+  if (turboDue) {
+    for (let turboIndex = 0; turboIndex < placedGenerators.length && turboSpawnsThisCycle < maxTurboSpawns; turboIndex++) {
       if (!isFeatureEnabled("generators")) break;
-      if (now < placed.nextSpawnAt) break;
-      const spawned = runGeneratorSpawnCycle(placed, def, tier, now, onlinePlayersById);
-      changedSchedule = true;
-      turboSpawnsThisCycle += 1;
-      burstCount += 1;
-      yield;
-      if (!spawned) break;
+      const placed = placedGenerators[turboCursor % placedGenerators.length];
+      turboCursor = (turboCursor + 1) % Math.max(1, placedGenerators.length);
+      if (!placed) {
+        yield;
+        continue;
+      }
+      if (!isGeneratorOwnerActive(placed, onlineIds, activeTeamOwnerIds)) {
+        yield;
+        continue;
+      }
+      const def = state.generators.definitions[placed.definitionId];
+      if (!def) {
+        yield;
+        continue;
+      }
+      const tier = getTier(def, placed.tier);
+      if (!tier || tier.rateTicks !== 0) {
+        yield;
+        continue;
+      }
+      if (now < placed.nextSpawnAt) {
+        yield;
+        continue;
+      }
+
+      let burstCount = 0;
+      while (burstCount < TURBO_BURST_PER_VISIT && turboSpawnsThisCycle < maxTurboSpawns) {
+        if (!isFeatureEnabled("generators")) break;
+        if (now < placed.nextSpawnAt) break;
+        const spawned = runGeneratorSpawnCycle(placed, def, tier, now, onlinePlayersById);
+        changedSchedule = true;
+        turboSpawnsThisCycle += 1;
+        burstCount += 1;
+        yield;
+        if (!spawned) break;
+      }
     }
   }
 

@@ -15,6 +15,8 @@ import {
 } from "../types";
 import {
   state,
+} from "./state";
+import {
   defaultConfig,
   defaultRankStore,
   defaultChatConfig,
@@ -41,6 +43,8 @@ import {
   defaultClaimStore,
   defaultCustomAreaStore,
   defaultLootChestStore,
+} from "./defaults";
+import {
   PLOTS_CONFIG_KEY,
   PLOTS_MIGRATION_MARKER_KEY,
   PLOTS_SLOT_PREFIX,
@@ -53,11 +57,12 @@ import {
   STATS_PLAYER_IDS_KEY,
   STATS_PLAYER_PREFIX,
   clearSplitDynamicJson,
-} from "./state";
+} from "./dynamic-json";
 import { clearPendingDynamicSaves } from "./save";
 import {
   CLAIMS_CLAIM_PREFIX,
   CLAIMS_CONFIG_KEY,
+  CLAIMS_MIGRATION_MARKER_KEY,
   CUSTOM_AREAS_AREA_PREFIX,
   CUSTOM_AREAS_CONFIG_KEY,
   LOOT_CHESTS_CHEST_PREFIX,
@@ -290,6 +295,7 @@ export function clearAllData() {
   world.setDynamicProperty(CUSTOM_AREAS_CONFIG_KEY, undefined);
   world.setDynamicProperty(LOOT_CHESTS_CONFIG_KEY, undefined);
   world.setDynamicProperty(CLAIMS_CONFIG_KEY, undefined);
+  world.setDynamicProperty(CLAIMS_MIGRATION_MARKER_KEY, undefined);
   world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, undefined);
   for (const key of world.getDynamicPropertyIds()) {
     if (
@@ -402,4 +408,8 @@ export function getMenuIdFromNameTag(nameTag?: string): string | undefined {
     return trimmed.slice(5).trim();
   }
   return undefined;
+}
+
+export function isFeatureActive(feature: keyof ConfigStore["features"], storeEnabled: boolean): boolean {
+  return isFeatureEnabled(feature) && storeEnabled === true;
 }

@@ -1,8 +1,9 @@
 import { Player } from "@minecraft/server";
 import { TauUi } from "../tau-ui";
 import { ICONS, type TauItemTriggerType, type TauItemConsumptionMode, type TauItemAction, type TauItemDefinition } from "../../types";
-import { isOperator, saveTauItems, state, tell } from "../../storage";
-import { createTauItemDefinition, deleteTauItemDefinition, getTauItemDefinition, giveTauItem, listTauItemIds, updateTauItemDefinition } from "../../tau-items";
+import { isOperator, state, tell } from "../../storage";
+import { createTauItemDefinition, deleteTauItemDefinition, getTauItemDefinition, giveTauItem, listTauItemIds, setTauItemsEnabled, updateTauItemDefinition } from "../../tau-items";
+import { parseFloatIn, parseIntIn, MAX_SAFE_INT } from "../../shared/numbers";
 
 const TAU_ITEM_TRIGGER_OPTIONS: TauItemTriggerType[] = ["use_air", "use_block", "hit_melee", "mine_block"];
 const TAU_ITEM_CONSUMPTION_OPTIONS: TauItemConsumptionMode[] = ["none", "consume_item", "damage_durability"];
@@ -42,6 +43,15 @@ function parseCommandList(raw: string): string[] {
 
 function serializeCommandList(commands: string[] | undefined): string {
   return (commands ?? []).join("\n");
+}
+
+function commitTauItemActionEdit(tauItemId: string, index: number, build: (entry: TauItemAction) => TauItemAction): void {
+  const live = getTauItemDefinition(tauItemId);
+  if (!live) return;
+  if (index < 0 || index >= live.actions.length) return;
+  updateTauItemDefinition(tauItemId, {
+    actions: live.actions.map((entry, i) => i === index ? build(entry) : entry),
+  });
 }
 
 const TAU_ITEM_PARTICLE_OPTIONS: Array<{ label: string; value: string }> = [
@@ -91,7 +101,7 @@ async function showTauItemActionSimpleCreate(player: Player): Promise<TauItemAct
       .submitButton("Create")
       .show(player);
     if (result.canceled) return undefined;
-    return { type: "sound", soundId: String(result.values.soundId ?? "random.levelup"), volume: Number(result.values.volume ?? 1), pitch: Number(result.values.pitch ?? 1) };
+    return { type: "sound", soundId: String(result.values.soundId ?? "random.levelup"), volume: parseFloatIn(result.values.volume, 0, MAX_SAFE_INT, 1), pitch: parseFloatIn(result.values.pitch, 0, MAX_SAFE_INT, 1) };
   }
 
   if (response.id === "particle") {
@@ -103,8 +113,8 @@ async function showTauItemActionSimpleCreate(player: Player): Promise<TauItemAct
       .submitButton("Create")
       .show(player);
     if (result.canceled) return undefined;
-    const index = Math.max(0, Math.min(options.length - 1, Math.floor(Number(result.values.particleType ?? 0))));
-    return { type: "particle", particleId: TAU_ITEM_PARTICLE_OPTIONS[index]?.value ?? TAU_ITEM_PARTICLE_OPTIONS[0].value, count: Number(result.values.count ?? 8), spread: Number(result.values.spread ?? 1.2) };
+    const index = parseIntIn(result.values.particleType, 0, options.length - 1, 0);
+    return { type: "particle", particleId: TAU_ITEM_PARTICLE_OPTIONS[index]?.value ?? TAU_ITEM_PARTICLE_OPTIONS[0].value, count: parseIntIn(result.values.count, 1, MAX_SAFE_INT, 8), spread: parseFloatIn(result.values.spread, 0, MAX_SAFE_INT, 1.2) };
   }
 
   if (response.id === "effect") {
@@ -115,8 +125,8 @@ async function showTauItemActionSimpleCreate(player: Player): Promise<TauItemAct
       .submitButton("Create")
       .show(player);
     if (result.canceled) return undefined;
-    const index = Math.max(0, Math.min(TAU_ITEM_EFFECT_OPTIONS.length - 1, Math.floor(Number(result.values.effectType ?? 0))));
-    return { type: "effect", effectId: TAU_ITEM_EFFECT_OPTIONS[index] ?? "speed", durationTicks: Number(result.values.durationTicks ?? 200), amplifier: Number(result.values.amplifier ?? 0) };
+    const index = parseIntIn(result.values.effectType, 0, TAU_ITEM_EFFECT_OPTIONS.length - 1, 0);
+    return { type: "effect", effectId: TAU_ITEM_EFFECT_OPTIONS[index] ?? "speed", durationTicks: parseIntIn(result.values.durationTicks, 1, MAX_SAFE_INT, 200), amplifier: parseIntIn(result.values.amplifier, 0, MAX_SAFE_INT, 0) };
   }
 
   if (response.id === "projectile") {
@@ -126,7 +136,7 @@ async function showTauItemActionSimpleCreate(player: Player): Promise<TauItemAct
       .submitButton("Create")
       .show(player);
     if (result.canceled) return undefined;
-    return { type: "projectile", entityId: String(result.values.entityId ?? "minecraft:snowball"), speed: Number(result.values.speed ?? 1.6) };
+    return { type: "projectile", entityId: String(result.values.entityId ?? "minecraft:snowball"), speed: parseFloatIn(result.values.speed, 0, MAX_SAFE_INT, 1.6) };
   }
 
   if (response.id === "aoe") {
@@ -137,8 +147,8 @@ async function showTauItemActionSimpleCreate(player: Player): Promise<TauItemAct
       .submitButton("Create")
       .show(player);
     if (result.canceled) return undefined;
-    const modeIndex = Math.max(0, Math.min(2, Math.floor(Number(result.values.mode ?? 0))));
-    return { type: "aoe", radius: Number(result.values.radius ?? 5), mode: ["damage", "heal", "knockback"][modeIndex] as any, amount: Number(result.values.amount ?? 4) };
+    const modeIndex = parseIntIn(result.values.mode, 0, 2, 0);
+    return { type: "aoe", radius: parseFloatIn(result.values.radius, 0, MAX_SAFE_INT, 5), mode: ["damage", "heal", "knockback"][modeIndex] as any, amount: parseFloatIn(result.values.amount, 0, MAX_SAFE_INT, 4) };
   }
 
   return undefined;
@@ -198,8 +208,7 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
     if (response.id === "simpleAdd" || response.id === "customAdd") {
       const action = response.id === "simpleAdd" ? await showTauItemActionSimpleCreate(player) : await showTauItemActionCustomCreate(player);
       if (!action) continue;
-      def.actions.push(action);
-      saveTauItems();
+      updateTauItemDefinition(def.id, { actions: [...def.actions, action] });
       continue;
     }
 
@@ -213,20 +222,21 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
       if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       if (isDelete) {
-        def.actions.splice(picked.value.index, 1);
-        saveTauItems();
+        const live = getTauItemDefinition(tauItemId);
+        if (!live) return;
+        updateTauItemDefinition(def.id, { actions: live.actions.filter((_, i) => i !== picked.value!.index) });
         continue;
       }
 
-      const action = def.actions[picked.value.index];
+      const action = getTauItemDefinition(tauItemId)?.actions[picked.value!.index];
+      if (!action) continue;
       if (action.type === "command") {
         const result = await TauUi.modal("Edit Command Chain")
           .text("commands", "Commands (one per line)", { placeholder: "say hello", defaultValue: serializeCommandList(action.commands) })
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        action.commands = parseCommandList(String(result.values.commands ?? ""));
-        saveTauItems();
+        commitTauItemActionEdit(tauItemId, picked.value!.index, (entry) => entry.type === "command" ? { ...entry, commands: parseCommandList(String(result.values.commands ?? "")) } : entry);
         continue;
       }
 
@@ -238,10 +248,12 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        action.soundId = String(result.values.soundId ?? action.soundId);
-        action.volume = Number(result.values.volume ?? action.volume ?? 1);
-        action.pitch = Number(result.values.pitch ?? action.pitch ?? 1);
-        saveTauItems();
+        commitTauItemActionEdit(tauItemId, picked.value!.index, (entry) => entry.type === "sound" ? {
+          ...entry,
+          soundId: String(result.values.soundId ?? entry.soundId),
+          volume: parseFloatIn(result.values.volume, 0, MAX_SAFE_INT, entry.volume ?? 1),
+          pitch: parseFloatIn(result.values.pitch, 0, MAX_SAFE_INT, entry.pitch ?? 1),
+        } : entry);
         continue;
       }
 
@@ -255,11 +267,13 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        const particleIndex = Math.max(0, Math.min(TAU_ITEM_PARTICLE_OPTIONS.length - 1, Math.floor(Number(result.values.particleType ?? 0))));
-        action.particleId = TAU_ITEM_PARTICLE_OPTIONS[particleIndex]?.value ?? action.particleId;
-        action.count = Number(result.values.count ?? action.count ?? 8);
-        action.spread = Number(result.values.spread ?? action.spread ?? 1.2);
-        saveTauItems();
+        const particleIndex = parseIntIn(result.values.particleType, 0, TAU_ITEM_PARTICLE_OPTIONS.length - 1, 0);
+        commitTauItemActionEdit(tauItemId, picked.value!.index, (entry) => entry.type === "particle" ? {
+          ...entry,
+          particleId: TAU_ITEM_PARTICLE_OPTIONS[particleIndex]?.value ?? entry.particleId,
+          count: parseIntIn(result.values.count, 1, MAX_SAFE_INT, entry.count ?? 8),
+          spread: parseFloatIn(result.values.spread, 0, MAX_SAFE_INT, entry.spread ?? 1.2),
+        } : entry);
         continue;
       }
 
@@ -271,10 +285,12 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        action.effectId = String(result.values.effectId ?? action.effectId);
-        action.durationTicks = Number(result.values.durationTicks ?? action.durationTicks);
-        action.amplifier = Number(result.values.amplifier ?? action.amplifier ?? 0);
-        saveTauItems();
+        commitTauItemActionEdit(tauItemId, picked.value!.index, (entry) => entry.type === "effect" ? {
+          ...entry,
+          effectId: String(result.values.effectId ?? entry.effectId),
+          durationTicks: parseIntIn(result.values.durationTicks, 1, MAX_SAFE_INT, entry.durationTicks),
+          amplifier: parseIntIn(result.values.amplifier, 0, MAX_SAFE_INT, entry.amplifier ?? 0),
+        } : entry);
         continue;
       }
 
@@ -285,9 +301,11 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        action.entityId = String(result.values.entityId ?? action.entityId);
-        action.speed = Number(result.values.speed ?? action.speed ?? 1.6);
-        saveTauItems();
+        commitTauItemActionEdit(tauItemId, picked.value!.index, (entry) => entry.type === "projectile" ? {
+          ...entry,
+          entityId: String(result.values.entityId ?? entry.entityId),
+          speed: parseFloatIn(result.values.speed, 0, MAX_SAFE_INT, entry.speed ?? 1.6),
+        } : entry);
         continue;
       }
 
@@ -300,10 +318,13 @@ async function showTauItemActionsMenu(player: Player, tauItemId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        action.radius = Number(result.values.radius ?? action.radius);
-        action.mode = ["damage", "heal", "knockback"][Math.max(0, Math.min(2, Math.floor(Number(result.values.mode ?? 0))))] as any;
-        action.amount = Number(result.values.amount ?? action.amount);
-        saveTauItems();
+        const aoeMode = (["damage", "heal", "knockback"] as const)[parseIntIn(result.values.mode, 0, 2, 0)] ?? "damage";
+        commitTauItemActionEdit(tauItemId, picked.value!.index, (entry) => entry.type === "aoe" ? {
+          ...entry,
+          radius: parseFloatIn(result.values.radius, 0, MAX_SAFE_INT, entry.radius),
+          mode: aoeMode,
+          amount: parseFloatIn(result.values.amount, 0, MAX_SAFE_INT, entry.amount),
+        } : entry);
         continue;
       }
     }
@@ -385,9 +406,9 @@ async function showTauItemCreateSimple(player: Player) {
   const displayName = String(result.values.displayName ?? "");
   const baseItemId = String(result.values.baseItemId ?? "minecraft:stick");
   const loreDescription = String(result.values.loreDescription ?? "");
-  const cooldownSeconds = Math.max(0, Number(result.values.cooldownSeconds ?? 5));
-  const maxUses = Math.max(0, Math.floor(Number(result.values.maxUses ?? 0)));
-  const consumptionIndex = Math.max(0, Math.min(TAU_ITEM_CONSUMPTION_OPTIONS.length - 1, Math.floor(Number(result.values.consumption ?? 0))));
+  const cooldownSeconds = parseFloatIn(result.values.cooldownSeconds, 0, MAX_SAFE_INT, 5);
+  const maxUses = parseIntIn(result.values.maxUses, 0, MAX_SAFE_INT, 0);
+  const consumptionIndex = parseIntIn(result.values.consumption, 0, TAU_ITEM_CONSUMPTION_OPTIONS.length - 1, 0);
   const cancelVanilla = Boolean(result.values.cancelVanilla);
 
   const triggers = await showTauItemTriggerPicker(player, ["use_air"]);
@@ -482,13 +503,13 @@ async function showTauItemEditor(player: Player, tauItemId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      const maxUses = Math.max(0, Math.floor(Number(result.values.maxUses ?? 0)));
-      const consumptionIndex = Math.max(0, Math.min(TAU_ITEM_CONSUMPTION_OPTIONS.length - 1, Math.floor(Number(result.values.consumption ?? 0))));
+      const maxUses = parseIntIn(result.values.maxUses, 0, MAX_SAFE_INT, def.maxUses ?? 0);
+      const consumptionIndex = parseIntIn(result.values.consumption, 0, TAU_ITEM_CONSUMPTION_OPTIONS.length - 1, 0);
       const res = updateTauItemDefinition(def.id, {
         displayName: String(result.values.displayName ?? def.displayName),
         baseItemId: String(result.values.baseItemId ?? def.baseItemId),
         loreDescription: String(result.values.loreDescription ?? def.loreDescription ?? ""),
-        cooldownSeconds: Math.max(0, Number(result.values.cooldownSeconds ?? def.cooldownSeconds)),
+        cooldownSeconds: parseFloatIn(result.values.cooldownSeconds, 0, MAX_SAFE_INT, def.cooldownSeconds),
         maxUses: maxUses > 0 ? maxUses : undefined,
         consumption: TAU_ITEM_CONSUMPTION_OPTIONS[consumptionIndex],
         requiredTag: String(result.values.requiredTag ?? "").trim() || undefined,
@@ -584,8 +605,8 @@ export async function showTauItemsAdminMenu(player: Player) {
     }
 
     if (response.id === "toggleEnabled") {
-      state.tauItems.config.enabled = !state.tauItems.config.enabled;
-      saveTauItems();
+      const res = setTauItemsEnabled(!state.tauItems.config.enabled);
+      tell(player, res.ok ? res.message : `§c${res.message}`);
       continue;
     }
   }

@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { getOnlinePlayerById, getPlayerId, getOnlinePlayerByName, isOperator, savePlots, saveTeams, state } from "../storage";
+import { getOnlinePlayerById, getPlayerId, getOnlinePlayerByName, isOperator, journalAck, journalAppend, journalHead, savePlots, saveTeams, state } from "../storage";
 import { type TeamDefinition } from "../types";
 import { clearPlayerPlot, reconcileAllPlotState } from "../plots";
 
@@ -58,6 +58,12 @@ export function getPlayerTeam(player: Player): TeamDefinition | undefined {
   return getTeamByPlayerId(getPlayerId(player));
 }
 
+// Operator passthrough (by design, no logic change): isTeamAdmin,
+// isTeamOwnerOrAdmin, and isTeamMember all return true for operators even when
+// the operator is not on the team's roster. Command-level operator gates remain
+// the primary authorization check; UI-level isOperator checks are kept as
+// defense-in-depth. Do not "fix" this by requiring roster membership — admin
+// moderation flows depend on operators acting on teams they do not belong to.
 export function isTeamAdmin(player: Player, team: TeamDefinition): boolean {
   if (isOperator(player)) return true;
   return team.adminPlayerIds?.includes(getPlayerId(player)) ?? false;
@@ -277,9 +283,12 @@ export function disbandTeam(owner: Player): { ok: boolean; message: string } {
       restoreMemberPersonalPlot(memberId, personalSlotId);
     }
   }
+  const disbandSeq = journalHead("team-plot") + 1;
+  journalAppend("team-plot", { kind: "disband", teamId: team.id, owner: team.ownerPlayerId });
   delete state.teams.teams[team.id];
   savePlots();
   saveTeams();
+  journalAck("team-plot", disbandSeq);
   reconcileAllPlotState("team_disband");
   return { ok: true, message: `Disbanded ${team.name}.` };
 }
@@ -328,8 +337,11 @@ export function setTeamPlotEnabled(owner: Player, enabled: boolean): { ok: boole
     }
   }
   team.teamPlotEnabled = enabled;
+  const plotSeq = journalHead("team-plot") + 1;
+  journalAppend("team-plot", { kind: enabled ? "plot_enabled" : "plot_disabled", teamId: team.id });
   savePlots();
   saveTeams();
+  journalAck("team-plot", plotSeq);
   reconcileAllPlotState(enabled ? "team_plot_enabled" : "team_plot_disabled");
   return { ok: true, message: `Team plot ${enabled ? "enabled" : "disabled"}.` };
 }

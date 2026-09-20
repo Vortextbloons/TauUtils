@@ -3,9 +3,9 @@ import { getPlayerId, getPlayerRank, isFeatureEnabled, isOperator, saveCustomAre
 import { dropCombatInventory } from "../combat";
 import { isPlayerInCombat } from "../combat";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
-import { CUSTOM_AREAS_AREA_PREFIX } from "../storage/state";
+import { CUSTOM_AREAS_AREA_PREFIX } from "../storage/dynamic-json";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
-import type { CustomAreaCommandRule, CustomAreaDefinition } from "../types";
+import type { CustomAreaCommandRule, CustomAreaDefinition, CustomAreaStore } from "../types";
 
 type AreaState = {
   areaIds: Set<string>;
@@ -192,21 +192,21 @@ function maybeDropCombatInventory(player: Player, area: CustomAreaDefinition): v
   if (dropCombatInventory(player, dropLocation)) tell(player, "§cYou entered a restricted combat area and dropped your items.");
 }
 
-export function processCustomAreas(): void {
+export function processCustomAreas(cachedPlayers?: Player[]): void {
   if (!enabled()) return;
   const allAreas = getEnabledAreaRuntime();
   if (allAreas.length === 0) return;
   if (customAreaJobId !== undefined) return;
-  customAreaJobId = system.runJob(processCustomAreasJob());
+  customAreaJobId = system.runJob(processCustomAreasJob(cachedPlayers));
 }
 
-function* processCustomAreasJob(): Generator<void, void, void> {
+function* processCustomAreasJob(cachedPlayers?: Player[]): Generator<void, void, void> {
   if (!enabled()) {
     customAreaJobId = undefined;
     return;
   }
   const now = Date.now();
-  for (const player of world.getAllPlayers()) {
+  for (const player of cachedPlayers ?? world.getAllPlayers()) {
     if (!enabled()) break;
     const playerId = getPlayerId(player);
     const location = player.location;
@@ -399,6 +399,30 @@ export function commitCustomArea(area: CustomAreaDefinition): { ok: boolean; mes
 
   invalidateCustomAreaRuntimeState(next.id);
   return { ok: true, message: `Saved area ${next.id}: ${next.dimensionId} ${coordsText(next)}`, area: next };
+}
+
+export function deleteCustomArea(areaId: string): { ok: boolean; message: string } {
+  const area = state.customAreas.areas[areaId];
+  if (!area) return { ok: false, message: "Area no longer exists." };
+  delete state.customAreas.areas[areaId];
+  if (!saveCustomAreas()) {
+    state.customAreas.areas[areaId] = area;
+    invalidateCustomAreaRuntimeState(areaId);
+    return { ok: false, message: "Failed to save area deletion." };
+  }
+  invalidateCustomAreaRuntimeState(areaId);
+  return { ok: true, message: "Area deleted." };
+}
+
+export function updateCustomAreasConfig(partial: Partial<CustomAreaStore["config"]>): { ok: boolean; message: string } {
+  const cfg = state.customAreas.config;
+  if (partial.enabled !== undefined) cfg.enabled = partial.enabled;
+  if (partial.checkIntervalTicks !== undefined) cfg.checkIntervalTicks = Math.max(1, Math.floor(partial.checkIntervalTicks));
+  if (partial.maxAreas !== undefined) cfg.maxAreas = Math.max(1, Math.floor(partial.maxAreas));
+  if (partial.maxCommandsPerArea !== undefined) cfg.maxCommandsPerArea = Math.max(1, Math.floor(partial.maxCommandsPerArea));
+  if (!saveCustomAreas()) return { ok: false, message: "Failed to save custom area settings." };
+  invalidateCustomAreaRuntimeState();
+  return { ok: true, message: "Custom area settings saved." };
 }
 
 export function applyAreaTickingArea(area: CustomAreaDefinition): { ok: boolean; message: string } {

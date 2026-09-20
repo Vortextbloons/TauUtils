@@ -2,7 +2,7 @@ import { Player, Vector3, world, system } from "@minecraft/server";
 import { getPlayerId, getOnlinePlayerById, isFeatureEnabled, isOperator, saveClaims, state, tell } from "../storage";
 import { getPlayerTeam } from "../teams";
 import { renderTemplate } from "../shared/templates";
-import type { ClaimDefinition, ClaimFlags, ClaimMemberRole } from "../types";
+import type { ClaimConfig, ClaimDefinition, ClaimFlags, ClaimMemberRole } from "../types";
 
 type RuntimeClaim = { claim: ClaimDefinition };
 type ClaimRuntimeCache = { byDimension: Map<string, RuntimeClaim[]> };
@@ -141,8 +141,7 @@ export function validateClaimBounds(ownerPlayerId: string, min: Vector3, max: Ve
   return { ok: true, message: "OK" };
 }
 
-export function commitClaim(claim: ClaimDefinition): { ok: boolean; message: string } {
-  const bounds = normalizedBounds(claim.min, claim.max);
+export function commitClaim(claim: ClaimDefinition): { ok: boolean; message: string } {  const bounds = normalizedBounds(claim.min, claim.max);
   const validation = validateClaimBounds(claim.ownerPlayerId, bounds.min, bounds.max, claim.dimensionId, state.claims.claims[claim.id] ? claim.id : undefined, claim.teamId);
   if (!validation.ok) return validation;
   claim.min = bounds.min;
@@ -162,6 +161,33 @@ export function commitClaim(claim: ClaimDefinition): { ok: boolean; message: str
   if (!saveClaims()) return { ok: false, message: "Failed to save claim." };
   invalidateClaimRuntimeState();
   return { ok: true, message: `Saved claim ${claim.name}.` };
+}
+
+export function deleteClaim(claimId: string): { ok: boolean; message: string } {
+  const claim = state.claims.claims[claimId];
+  if (!claim) return { ok: false, message: "Claim not found." };
+  delete state.claims.claims[claimId];
+  if (!saveClaims()) {
+    state.claims.claims[claimId] = claim;
+    return { ok: false, message: "Failed to save claim deletion." };
+  }
+  invalidateClaimRuntimeState();
+  return { ok: true, message: `Deleted claim ${claim.name}.` };
+}
+
+export function updateClaimsConfig(partial: Partial<Pick<ClaimConfig, "enabled" | "protectionEnabled" | "allowPlayersToToggleProtection" | "maxClaimsPerPlayer" | "maxClaimsPerTeam" | "maxClaimSize" | "maxClaimVolume" | "allowOverlaps">>): { ok: boolean; message: string } {
+  const cfg = state.claims.config;
+  if (partial.enabled !== undefined) cfg.enabled = partial.enabled;
+  if (partial.protectionEnabled !== undefined) cfg.protectionEnabled = partial.protectionEnabled;
+  if (partial.allowPlayersToToggleProtection !== undefined) cfg.allowPlayersToToggleProtection = partial.allowPlayersToToggleProtection;
+  if (partial.maxClaimsPerPlayer !== undefined) cfg.maxClaimsPerPlayer = Math.max(0, Math.floor(partial.maxClaimsPerPlayer));
+  if (partial.maxClaimsPerTeam !== undefined) cfg.maxClaimsPerTeam = Math.max(0, Math.floor(partial.maxClaimsPerTeam));
+  if (partial.maxClaimSize !== undefined) cfg.maxClaimSize = partial.maxClaimSize;
+  if (partial.maxClaimVolume !== undefined) cfg.maxClaimVolume = Math.max(1, Math.floor(partial.maxClaimVolume));
+  if (partial.allowOverlaps !== undefined) cfg.allowOverlaps = partial.allowOverlaps;
+  if (!saveClaims()) return { ok: false, message: "Failed to save claims config." };
+  invalidateClaimRuntimeState();
+  return { ok: true, message: "Claims settings saved." };
 }
 
 function sendAnnouncement(player: Player, claim: ClaimDefinition, entering: boolean): void {
@@ -185,13 +211,13 @@ function sendAnnouncement(player: Player, claim: ClaimDefinition, entering: bool
   } else tell(player, message);
 }
 
-export function processClaims(): void {
+export function processClaims(cachedPlayers?: Player[]): void {
   if (!enabled() || claimJobId !== undefined) return;
-  claimJobId = system.runJob(processClaimsJob());
+  claimJobId = system.runJob(processClaimsJob(cachedPlayers));
 }
 
-function* processClaimsJob(): Generator<void, void, void> {
-  for (const player of world.getAllPlayers()) {
+function* processClaimsJob(cachedPlayers?: Player[]): Generator<void, void, void> {
+  for (const player of cachedPlayers ?? world.getAllPlayers()) {
     if (!enabled()) break;
     const playerId = getPlayerId(player);
     const previous = playerClaimState.get(playerId);

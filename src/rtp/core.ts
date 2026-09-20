@@ -1,9 +1,9 @@
 import { EntityDamageCause, Player, Vector3, world } from "@minecraft/server";
 import { getCustomAreaAtLocation } from "../custom-areas";
 import { getClaimAt } from "../claims";
-import { isPlayerInCombat } from "../combat";
+import { requestPlayerTeleport } from "../shared/teleport-service";
 import { getPlayerId, getPlayerRank, isFeatureEnabled, saveRtp, state } from "../storage";
-import type { RtpProtection, RtpRegion } from "../types";
+import type { RtpConfig, RtpProtection, RtpRegion } from "../types";
 
 type ProtectedState = {
   until: number;
@@ -111,7 +111,6 @@ function applyProtection(player: Player, protection: RtpProtection): void {
 
 export function randomTeleport(player: Player, regionId?: string): { ok: boolean; message: string; needsSelection?: boolean } {
   if (!enabled()) return { ok: false, message: "RTP is disabled." };
-  if (isPlayerInCombat(player)) return { ok: false, message: "You cannot RTP while in combat." };
   const playerId = getPlayerId(player);
   const now = Date.now();
   const cooldownUntil = cooldownByPlayerId.get(playerId) ?? 0;
@@ -124,7 +123,12 @@ export function randomTeleport(player: Player, regionId?: string): { ok: boolean
   if (!location) return { ok: false, message: "Could not find a safe RTP location. Try again." };
   const destination = { x: location.x, y: Math.min(319, location.y + Math.max(1, region.skyHeightOffset)), z: location.z };
   applyProtection(player, region.protection);
-  player.teleport(destination, { dimension: world.getDimension(region.dimensionId) });
+  const teleported = requestPlayerTeleport(
+    player,
+    { ...destination, dimensionId: region.dimensionId },
+    { blockCombat: true },
+  );
+  if (!teleported.ok) return teleported;
   cooldownByPlayerId.set(playerId, now + Math.max(0, region.cooldownSeconds ?? state.rtp.config.cooldownSeconds) * 1000);
   return { ok: true, message: `Teleported to ${region.name}.` };
 }
@@ -137,6 +141,25 @@ export function commitRtpRegion(region: RtpRegion): { ok: boolean; message: stri
   state.rtp.regions[region.id] = region;
   saveRtp();
   return { ok: true, message: `Saved RTP region ${region.name}.` };
+}
+
+export function deleteRtpRegion(regionId: string): { ok: boolean; message: string } {
+  const region = state.rtp.regions[regionId];
+  if (!region) return { ok: false, message: "RTP region not found." };
+  delete state.rtp.regions[regionId];
+  saveRtp();
+  return { ok: true, message: `Deleted RTP region ${region.name}.` };
+}
+
+export function updateRtpConfig(partial: Partial<Pick<RtpConfig, "enabled" | "cooldownSeconds" | "maxAttempts" | "avoidClaims" | "avoidCustomAreas">>): { ok: boolean; message: string } {
+  const cfg = state.rtp.config;
+  if (partial.enabled !== undefined) cfg.enabled = partial.enabled;
+  if (partial.cooldownSeconds !== undefined) cfg.cooldownSeconds = Math.max(0, Math.floor(partial.cooldownSeconds));
+  if (partial.maxAttempts !== undefined) cfg.maxAttempts = Math.max(1, Math.floor(partial.maxAttempts));
+  if (partial.avoidClaims !== undefined) cfg.avoidClaims = partial.avoidClaims;
+  if (partial.avoidCustomAreas !== undefined) cfg.avoidCustomAreas = partial.avoidCustomAreas;
+  saveRtp();
+  return { ok: true, message: "RTP settings saved." };
 }
 
 export function shouldCancelRtpDamage(player: Player, cause?: string): boolean {

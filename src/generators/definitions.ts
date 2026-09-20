@@ -3,6 +3,8 @@ import { saveGenerators, state } from "../storage";
 import type { GeneratorDefinition, GeneratorOutputEntry, GeneratorTierDefinition, GeneratorStore, PlacedGenerator } from "../types/game";
 import { generatorCache, GENERATOR_MARKER_PREFIX, type GeneratorItemData, type GeneratorLocation } from "./types";
 import { normalizeItemId } from "../shared/item-id";
+import { normalizeId, resolveLegacyKey } from "../shared/normalize-id";
+import { parseFinite, parseIntIn, MAX_SAFE_INT } from "../shared/numbers";
 import { getTierOutputPool, getValidOutputPool } from "./output-pick";
 
 export const MAX_GENERATOR_POOL_SIZE = 32;
@@ -11,7 +13,7 @@ function sanitizeGeneratorOutputPool(pool: GeneratorOutputEntry[]): GeneratorOut
   return pool
     .map((entry) => ({
       itemId: normalizeItemId(entry.itemId),
-      weight: Math.max(1, Math.floor(Number(entry.weight) || 1)),
+      weight: parseIntIn(entry.weight, 1, MAX_SAFE_INT, 1),
     }))
     .filter((entry) => entry.itemId.length > 0)
     .slice(0, MAX_GENERATOR_POOL_SIZE);
@@ -19,10 +21,6 @@ function sanitizeGeneratorOutputPool(pool: GeneratorOutputEntry[]): GeneratorOut
 
 function copyGeneratorOutputPool(pool: GeneratorOutputEntry[]): GeneratorOutputEntry[] {
   return pool.map((entry) => ({ itemId: entry.itemId, weight: entry.weight }));
-}
-
-function normalizeId(value: string): string {
-  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_-]/g, "");
 }
 
 function parsePlotIndex(slotId: string): number {
@@ -98,11 +96,12 @@ function restoreGeneratorBlocks(placed: PlacedGenerator, preserveBase = false): 
 }
 
 export function getGeneratorAutoBreakerCost(definition: GeneratorDefinition): number {
-  if (definition.autoBreakerCost !== undefined && Number.isFinite(definition.autoBreakerCost)) {
-    return Math.max(0, Math.floor(definition.autoBreakerCost));
-  }
   const finalTier = getMaxTierEntry(definition);
-  return Math.max(0, Math.floor((finalTier?.upgradeCost ?? 0) * 2));
+  const fallback = parseIntIn(finalTier?.upgradeCost, 0, MAX_SAFE_INT, 0) * 2;
+  if (definition.autoBreakerCost !== undefined && Number.isFinite(Number(definition.autoBreakerCost))) {
+    return parseIntIn(definition.autoBreakerCost, 0, MAX_SAFE_INT, fallback);
+  }
+  return fallback;
 }
 
 export function listGeneratorDefinitions(): GeneratorDefinition[] {
@@ -110,13 +109,16 @@ export function listGeneratorDefinitions(): GeneratorDefinition[] {
 }
 
 export function getGeneratorDefinition(defId: string): GeneratorDefinition | undefined {
-  return state.generators.definitions[normalizeId(defId)];
+  const strict = state.generators.definitions[normalizeId(defId)];
+  if (strict) return strict;
+  const legacy = resolveLegacyKey(Object.keys(state.generators.definitions), defId);
+  return legacy ? state.generators.definitions[legacy] : undefined;
 }
 
 export function deleteGeneratorDefinition(defId: string): { ok: boolean; message: string } {
-  const id = normalizeId(defId);
-  const def = state.generators.definitions[id];
+  const def = getGeneratorDefinition(defId);
   if (!def) return { ok: false, message: "Generator not found." };
+  const id = def.id;
 
   for (const [placedId, placed] of Object.entries(state.generators.placed)) {
     if (placed.definitionId === id) {
@@ -133,7 +135,7 @@ export function deleteGeneratorDefinition(defId: string): { ok: boolean; message
 }
 
 export function updateGeneratorDefinition(defId: string, partial: Partial<Pick<GeneratorDefinition, "name" | "baseItemId" | "outputItemId" | "displayName" | "placeAnywhere" | "lore" | "customData" | "enchantments" | "durability" | "maxDurability" | "canPlaceOn" | "canDestroy" | "autoBreakersEnabled" | "autoBreakerCost" | "adminProtected">>): { ok: boolean; message: string } {
-  const def = state.generators.definitions[normalizeId(defId)];
+  const def = getGeneratorDefinition(defId);
   if (!def) return { ok: false, message: "Generator not found." };
 
   if (partial.name !== undefined) def.name = String(partial.name).trim() || def.name;
@@ -144,12 +146,21 @@ export function updateGeneratorDefinition(defId: string, partial: Partial<Pick<G
   if (partial.lore !== undefined) def.lore = partial.lore;
   if (partial.customData !== undefined) def.customData = partial.customData;
   if (partial.enchantments !== undefined) def.enchantments = partial.enchantments;
-  if (partial.durability !== undefined) def.durability = partial.durability;
-  if (partial.maxDurability !== undefined) def.maxDurability = partial.maxDurability;
+  if (partial.durability !== undefined) def.durability = parseIntIn(partial.durability, 0, MAX_SAFE_INT, def.durability ?? 0);
+  if (partial.maxDurability !== undefined) def.maxDurability = parseIntIn(partial.maxDurability, 0, MAX_SAFE_INT, def.maxDurability ?? 0);
   if (partial.canPlaceOn !== undefined) def.canPlaceOn = partial.canPlaceOn;
   if (partial.canDestroy !== undefined) def.canDestroy = partial.canDestroy;
   if (partial.autoBreakersEnabled !== undefined) def.autoBreakersEnabled = Boolean(partial.autoBreakersEnabled);
-  if (partial.autoBreakerCost !== undefined) def.autoBreakerCost = partial.autoBreakerCost;
+  if ("autoBreakerCost" in partial) {
+    const rawCost = partial.autoBreakerCost;
+    if (rawCost === undefined) {
+      def.autoBreakerCost = undefined;
+    } else {
+      const currentCost = def.autoBreakerCost;
+      const parsedCost = parseFinite(rawCost, currentCost ?? Number.NaN);
+      def.autoBreakerCost = Number.isFinite(parsedCost) ? parsedCost : currentCost;
+    }
+  }
   if (partial.adminProtected !== undefined) def.adminProtected = Boolean(partial.adminProtected);
 
   generatorCache.definitions = undefined;
@@ -184,7 +195,7 @@ export function createGeneratorDefinition(
     canPlaceOn: undefined,
     canDestroy: undefined,
     autoBreakerCost: undefined,
-    tiers: [{ tier: 1, rateTicks: Math.max(0, Math.floor(rateTicks)), upgradeCost: 0 }],
+    tiers: [{ tier: 1, rateTicks: parseIntIn(rateTicks, 0, MAX_SAFE_INT, 200), upgradeCost: 0 }],
     placeAnywhere: state.generators.config.defaultPlaceAnywhere,
     autoBreakersEnabled: true,
     adminProtected: Boolean(adminProtected),
@@ -202,8 +213,8 @@ export function addGeneratorTier(defId: string, rateTicks: number, upgradeCost: 
   const previousPool = def.kind === "weighted" ? copyGeneratorOutputPool(getTierOutputPool(def, nextTier - 1)) : undefined;
   def.tiers.push({
     tier: nextTier,
-    rateTicks: Math.max(0, Math.floor(rateTicks)),
-    upgradeCost: Math.max(0, Math.floor(upgradeCost)),
+    rateTicks: parseIntIn(rateTicks, 0, MAX_SAFE_INT, 200),
+    upgradeCost: parseIntIn(upgradeCost, 0, MAX_SAFE_INT, 0),
     outputPool: previousPool && previousPool.length > 0 ? previousPool : undefined,
   });
   generatorCache.definitions = undefined;
@@ -218,8 +229,8 @@ export function updateGeneratorTier(defId: string, tierNumber: number, partial: 
   const tier = def.tiers.find((entry) => entry.tier === Math.floor(tierNumber));
   if (!tier) return { ok: false, message: "Tier not found." };
 
-  if (partial.rateTicks !== undefined) tier.rateTicks = Math.max(0, Math.floor(Number(partial.rateTicks)));
-  if (partial.upgradeCost !== undefined) tier.upgradeCost = Math.max(0, Math.floor(Number(partial.upgradeCost)));
+  if (partial.rateTicks !== undefined) tier.rateTicks = parseIntIn(partial.rateTicks, 0, MAX_SAFE_INT, tier.rateTicks);
+  if (partial.upgradeCost !== undefined) tier.upgradeCost = parseIntIn(partial.upgradeCost, 0, MAX_SAFE_INT, tier.upgradeCost);
   if (partial.outputPool !== undefined) tier.outputPool = sanitizeGeneratorOutputPool(partial.outputPool);
 
   saveGenerators();
@@ -258,7 +269,7 @@ export function addGeneratorTierOutputEntry(defId: string, tierNumber: number, i
   if (!tier) return { ok: false, message: "Tier not found." };
   const pool = tier.outputPool ? copyGeneratorOutputPool(tier.outputPool) : copyGeneratorOutputPool(getTierOutputPool(def, tier.tier));
   if (pool.length >= MAX_GENERATOR_POOL_SIZE) return { ok: false, message: `Pool cannot exceed ${MAX_GENERATOR_POOL_SIZE} entries.` };
-  pool.push({ itemId: normalizeItemId(itemId), weight: Math.max(1, Math.floor(Number(weight) || 1)) });
+  pool.push({ itemId: normalizeItemId(itemId), weight: parseIntIn(weight, 1, MAX_SAFE_INT, 1) });
   return setGeneratorTierOutputPool(def.id, tier.tier, pool);
 }
 
@@ -272,7 +283,7 @@ export function updateGeneratorTierOutputEntry(defId: string, tierNumber: number
   const entry = pool[Math.floor(index)];
   if (!entry) return { ok: false, message: "Pool entry not found." };
   if (partial.itemId !== undefined) entry.itemId = normalizeItemId(partial.itemId);
-  if (partial.weight !== undefined) entry.weight = Math.max(1, Math.floor(Number(partial.weight) || 1));
+  if (partial.weight !== undefined) entry.weight = parseIntIn(partial.weight, 1, MAX_SAFE_INT, entry.weight);
   return setGeneratorTierOutputPool(def.id, tier.tier, pool);
 }
 
@@ -343,7 +354,7 @@ export function createWeightedGeneratorDefinition(
     canPlaceOn: undefined,
     canDestroy: undefined,
     autoBreakerCost: undefined,
-    tiers: [{ tier: 1, rateTicks: Math.max(0, Math.floor(rateTicks)), upgradeCost: 0 }],
+    tiers: [{ tier: 1, rateTicks: parseIntIn(rateTicks, 0, MAX_SAFE_INT, 200), upgradeCost: 0 }],
     placeAnywhere: state.generators.config.defaultPlaceAnywhere,
     autoBreakersEnabled: true,
     adminProtected: Boolean(adminProtected),
@@ -371,7 +382,7 @@ export function addGeneratorOutputEntry(defId: string, itemId: string, weight: n
 
   pool.push({
     itemId: normalizeItemId(itemId),
-    weight: Math.max(1, Math.floor(Number(weight) || 1)),
+    weight: parseIntIn(weight, 1, MAX_SAFE_INT, 1),
   });
   def.outputPool = pool;
   if (!def.outputItemId) def.outputItemId = pool[0].itemId;
@@ -394,7 +405,7 @@ export function updateGeneratorOutputEntry(
   if (!entry) return { ok: false, message: "Pool entry not found." };
 
   if (partial.itemId !== undefined) entry.itemId = normalizeItemId(partial.itemId);
-  if (partial.weight !== undefined) entry.weight = Math.max(1, Math.floor(Number(partial.weight) || 1));
+  if (partial.weight !== undefined) entry.weight = parseIntIn(partial.weight, 1, MAX_SAFE_INT, entry.weight);
 
   generatorCache.definitions = undefined;
   generatorCache.source = undefined;
@@ -486,10 +497,58 @@ export function updateGeneratorConfig(partial: Partial<GeneratorStore["config"]>
   if (partial.blockOnPlotOnly !== undefined) state.generators.config.blockOnPlotOnly = Boolean(partial.blockOnPlotOnly);
   if (partial.autoBreakersEnabled !== undefined) state.generators.config.autoBreakersEnabled = Boolean(partial.autoBreakersEnabled);
   if (partial.maxTurboSpawnsPerCycle !== undefined) {
-    state.generators.config.maxTurboSpawnsPerCycle = Math.max(1, Math.floor(Number(partial.maxTurboSpawnsPerCycle) || 32));
+    state.generators.config.maxTurboSpawnsPerCycle = parseIntIn(partial.maxTurboSpawnsPerCycle, 1, MAX_SAFE_INT, state.generators.config.maxTurboSpawnsPerCycle ?? 32);
   }
   saveGenerators();
   return { ok: true, message: "Generator settings updated." };
+}
+
+export function repairGeneratorStoreNumbers(): number {
+  let fixed = 0;
+  const fixInt = (value: unknown, min: number, fallback: number): number => {
+    return parseIntIn(value, min, MAX_SAFE_INT, fallback);
+  };
+  for (const def of Object.values(state.generators.definitions)) {
+    for (const tier of def.tiers) {
+      const rateTicks = fixInt(tier.rateTicks, 0, 200);
+      if (rateTicks !== tier.rateTicks) {
+        tier.rateTicks = rateTicks;
+        fixed += 1;
+      }
+      const upgradeCost = fixInt(tier.upgradeCost, 0, 0);
+      if (upgradeCost !== tier.upgradeCost) {
+        tier.upgradeCost = upgradeCost;
+        fixed += 1;
+      }
+      if (tier.outputPool) tier.outputPool = sanitizeGeneratorOutputPool(tier.outputPool);
+    }
+    if (def.outputPool) def.outputPool = sanitizeGeneratorOutputPool(def.outputPool);
+    if (def.autoBreakerCost !== undefined && !Number.isFinite(Number(def.autoBreakerCost))) {
+      def.autoBreakerCost = undefined;
+      fixed += 1;
+    }
+    if (def.durability !== undefined) {
+      const durability = fixInt(def.durability, 0, 0);
+      if (durability !== def.durability) {
+        def.durability = durability;
+        fixed += 1;
+      }
+    }
+    if (def.maxDurability !== undefined) {
+      const maxDurability = fixInt(def.maxDurability, 0, 0);
+      if (maxDurability !== def.maxDurability) {
+        def.maxDurability = maxDurability;
+        fixed += 1;
+      }
+    }
+  }
+  const turbo = parseIntIn(state.generators.config.maxTurboSpawnsPerCycle, 1, MAX_SAFE_INT, 32);
+  if (turbo !== state.generators.config.maxTurboSpawnsPerCycle) {
+    state.generators.config.maxTurboSpawnsPerCycle = turbo;
+    fixed += 1;
+  }
+  if (fixed > 0) saveGenerators();
+  return fixed;
 }
 
 export { normalizeId, normalizeItemId, parsePlotIndex, getMaxTier, getMaxTierEntry, getTier, getDefinitions, getDefinitionByStack, readGeneratorItemData, clearGeneratorOutput, restoreGeneratorBlocks };

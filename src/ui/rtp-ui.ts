@@ -1,8 +1,8 @@
 import { Player } from "@minecraft/server";
 import { TauUi } from "./tau-ui";
 import { ICONS, type RtpRegion } from "../types";
-import { isOperator, normalizeKey, saveRtp, state, tell } from "../storage";
-import { commitRtpRegion, listRtpRegions, normalizeRtpBounds, randomTeleport } from "../rtp";
+import { isOperator, normalizeKey, state, tell } from "../storage";
+import { commitRtpRegion, listRtpRegions, normalizeRtpBounds, randomTeleport, updateRtpConfig } from "../rtp";
 
 function parseCoords(raw: string): number[] | undefined {
   const values = raw.trim().split(/[\s,]+/).map((entry) => Number(entry));
@@ -73,17 +73,19 @@ async function editRegion(player: Player, region: RtpRegion): Promise<void> {
     return;
   }
   const bounds = normalizeRtpBounds({ x: coords[0]!, y: -64, z: coords[1]! }, { x: coords[2]!, y: 320, z: coords[3]! });
-  region.name = String(result.values.name ?? region.name).trim() || region.name;
-  region.enabled = Boolean(result.values.enabled);
-  region.min = bounds.min;
-  region.max = bounds.max;
-  region.cooldownSeconds = Math.max(0, Math.floor(Number(result.values.cooldown ?? state.rtp.config.cooldownSeconds)));
-  region.fallFromSky = true;
-  region.skyHeightOffset = Math.max(1, Math.floor(Number(result.values.skyHeightOffset ?? region.skyHeightOffset)));
-  region.avoidClaims = Boolean(result.values.avoidClaims);
-  region.avoidCustomAreas = Boolean(result.values.avoidCustomAreas);
-  region.protection.durationSeconds = Math.max(1, Math.floor(Number(result.values.protectionSeconds ?? region.protection.durationSeconds)));
-  tell(player, commitRtpRegion(region).message);
+  tell(player, commitRtpRegion({
+    ...region,
+    name: String(result.values.name ?? region.name).trim() || region.name,
+    enabled: Boolean(result.values.enabled),
+    min: bounds.min,
+    max: bounds.max,
+    cooldownSeconds: Math.max(0, Math.floor(Number(result.values.cooldown ?? state.rtp.config.cooldownSeconds))),
+    fallFromSky: true,
+    skyHeightOffset: Math.max(1, Math.floor(Number(result.values.skyHeightOffset ?? region.skyHeightOffset))),
+    avoidClaims: Boolean(result.values.avoidClaims),
+    avoidCustomAreas: Boolean(result.values.avoidCustomAreas),
+    protection: { ...region.protection, durationSeconds: Math.max(1, Math.floor(Number(result.values.protectionSeconds ?? region.protection.durationSeconds))) },
+  }).message);
 }
 
 export async function showRtpMenu(player: Player): Promise<void> {
@@ -133,13 +135,13 @@ export async function showRtpAdminMenu(player: Player): Promise<void> {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      state.rtp.config.enabled = Boolean(result.values.enabled);
-      state.rtp.config.cooldownSeconds = Math.max(0, Math.floor(Number(result.values.cooldown ?? state.rtp.config.cooldownSeconds)));
-      state.rtp.config.maxAttempts = Math.max(1, Math.floor(Number(result.values.maxAttempts ?? state.rtp.config.maxAttempts)));
-      state.rtp.config.avoidClaims = Boolean(result.values.avoidClaims);
-      state.rtp.config.avoidCustomAreas = Boolean(result.values.avoidCustomAreas);
-      saveRtp();
-      tell(player, "RTP settings saved.");
+      tell(player, updateRtpConfig({
+        enabled: Boolean(result.values.enabled),
+        cooldownSeconds: Math.max(0, Math.floor(Number(result.values.cooldown ?? state.rtp.config.cooldownSeconds))),
+        maxAttempts: Math.max(1, Math.floor(Number(result.values.maxAttempts ?? state.rtp.config.maxAttempts))),
+        avoidClaims: Boolean(result.values.avoidClaims),
+        avoidCustomAreas: Boolean(result.values.avoidCustomAreas),
+      }).message);
       continue;
     }
     if (response.id === "region" && response.value) {

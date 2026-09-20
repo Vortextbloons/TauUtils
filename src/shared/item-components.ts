@@ -24,6 +24,20 @@ export function getItemEnchantableComponent(stack: ItemStack): EnchantableCompon
   return stack.getComponent(ItemComponentTypes.Enchantable) as unknown as EnchantableComponent | undefined;
 }
 
+export type StackEnchantment = { id: string; level: number };
+
+export function readStackEnchantments(stack: ItemStack): StackEnchantment[] {
+  try {
+    const enchantable = getItemEnchantableComponent(stack);
+    const entries = enchantable?.getEnchantments() ?? [];
+    return entries
+      .map((entry) => ({ id: entry.type?.id ?? entry.typeId ?? "", level: entry.level }))
+      .filter((entry) => entry.id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function getItemDurabilityComponent(stack: ItemStack): DurabilityComponent | undefined {
   return stack.getComponent(ItemComponentTypes.Durability) as unknown as DurabilityComponent | undefined;
 }

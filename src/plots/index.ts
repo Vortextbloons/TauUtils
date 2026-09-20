@@ -3,4 +3,5 @@ export { processQueuedPlotBuildJobs, buildPlotGeometry, autoBuildPlots, updatePl
 export { getPlotOwnerIdForPlayerId, getAssignedSlotIdForOwner, getAssignedSlotForOwner, getAssignedSlotForPlayer, reconcilePlotOwnershipData } from "./ownership";
 export { assignPlayerToSlot, teleportPlayerToSlot, assignPlayerToFreeSlot, clearAllPlotSlots, clearSlotById, forceReleasePlot, ensurePlayerPlotAssigned, clearPlayerPlot, deployPlayerPlot, getPlotOwnerIdForPlayer, saveAssignedPlayerPlot, savePlotAtLocation, releasePlayerPlotByName, releasePlayerPlotById, showPlotError, getPlotTitle } from "./player-ops";
 export { syncOnlinePlotAssignments, ensureOnlinePlotsAssigned, reconcileAllPlotState, repairPlotSystem } from "./reconciliation";
+export { commitPlotConfig } from "./service";
 export type { PlotReconcileResult } from "./reconciliation";

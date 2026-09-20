@@ -1,5 +1,9 @@
 import { Player } from "@minecraft/server";
-import { state, savePrune, saveProfiles, saveStats, saveTeams, saveTeamHomes, savePlots, saveClaims, saveHomes, savePlayerSettings, tell } from "../storage";
+import { state, savePrune, saveProfiles, saveStats, saveTeams, saveTeamHomes, savePlots, saveClaims, saveHomes, savePlayerSettings, tell, clearAllTpaForPlayer } from "../storage";
+import { parseIntIn, MAX_SAFE_INT } from "../shared/numbers";
+import { invalidateClaimRuntimeState } from "../claims/core";
+import { invalidatePlotSlotCache } from "../plots/grid";
+import { invalidatePlotTitleCache } from "../plots/player-ops";
 
 export type PruneCategory = "stats" | "profiles" | "teams" | "plots" | "claims" | "homes" | "tpa" | "pay" | "playerSettings" | "teamHomes";
 
@@ -29,7 +33,7 @@ export function tellPruneResult(player: Player, result: PruneResult, dryRun: boo
 }
 
 function cutoffMs(): number {
-  const days = Math.max(1, Math.floor(state.prune.config.inactiveDays));
+  const days = parseIntIn(state.prune.config.inactiveDays, 1, MAX_SAFE_INT, 30);
   return Date.now() - days * 24 * 60 * 60 * 1000;
 }
 
@@ -58,7 +62,7 @@ export function pruneData(dryRun = true): PruneResult {
         }
       }
     }
-    if (!dryRun) saveStats();
+    if (!dryRun) saveStats(true);
   }
 
   if (prune.profiles) {
@@ -73,11 +77,19 @@ export function pruneData(dryRun = true): PruneResult {
   }
 
   if (prune.teams) {
+    const prunedTeamIds: string[] = [];
     for (const [teamId, team] of Object.entries(state.teams.teams)) {
       if (team.memberPlayerIds.length === 0 || isInactive(team.ownerPlayerId)) {
         removed += 1;
         details.push(`teams:${teamId}`);
+        prunedTeamIds.push(teamId);
         if (!dryRun) delete state.teams.teams[teamId];
+      }
+    }
+    if (!dryRun && prunedTeamIds.length > 0) {
+      const pruned = new Set(prunedTeamIds);
+      for (const [playerId, teamId] of Object.entries(state.teams.playerTeamIds)) {
+        if (pruned.has(teamId)) delete state.teams.playerTeamIds[playerId];
       }
     }
     if (!dryRun) saveTeams();
@@ -90,12 +102,17 @@ export function pruneData(dryRun = true): PruneResult {
         details.push(`plots:${slotId}`);
         if (!dryRun) {
           delete state.plots.playerToSlot[playerId];
+          delete state.plots.snapshots[playerId];
           const slot = state.plots.slots[slotId];
           if (slot) slot.occupiedByPlayerId = undefined;
         }
       }
     }
-    if (!dryRun) savePlots();
+    if (!dryRun) {
+      savePlots();
+      invalidatePlotSlotCache();
+      invalidatePlotTitleCache();
+    }
   }
 
   if (prune.claims) {
@@ -118,6 +135,7 @@ export function pruneData(dryRun = true): PruneResult {
         }
       }
       saveClaims();
+      invalidateClaimRuntimeState();
     }
   }
 
@@ -135,6 +153,30 @@ export function pruneData(dryRun = true): PruneResult {
     }
     if (!dryRun) saveHomes();
   }
+
+  if (prune.tpa) {
+    // TPA requests live in split-key dynamic properties (inbox/outbox/cooldown),
+    // not in state.tpa (config-only). Iterate known players instead of scanning
+    // dynamic property ids, and clear each inactive player's TPA keys directly.
+    for (const playerId of Object.keys(state.stats.players)) {
+      if (isInactive(playerId)) {
+        removed += 1;
+        details.push(`tpa:${playerId}`);
+        if (!dryRun) {
+          try {
+            clearAllTpaForPlayer(playerId);
+          } catch {
+            // Ignore per-player storage errors; continue pruning the rest.
+          }
+        }
+      }
+    }
+  }
+
+  // NOTE: `pay` has no per-player store (PayStore is config-only: currency
+  // objective, limits, tax, cooldown), so there is nothing to prune. The flag
+  // is intentionally kept as a no-op so saved configs and the prune settings
+  // UI, which toggles flags by key, keep working.
 
   if (prune.playerSettings) {
     for (const [playerId, settings] of Object.entries(state.playerSettings.players)) {

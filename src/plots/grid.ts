@@ -34,6 +34,17 @@ type PlotLayoutOptions = {
 
 let cachedPlotSlots: PlotSlot[] | undefined;
 let cachedPlotSlotsSource: Record<string, PlotSlot> | undefined;
+let plotLayoutVersion = 0;
+
+export function getPlotLayoutVersion(): number {
+  return plotLayoutVersion;
+}
+
+export function invalidatePlotCaches(): void {
+  plotLayoutVersion += 1;
+  cachedPlotSlots = undefined;
+  cachedPlotSlotsSource = undefined;
+}
 
 export function getPlotSlots(): PlotSlot[] {
   if (cachedPlotSlotsSource === state.plots.slots && cachedPlotSlots) return cachedPlotSlots;
@@ -72,20 +83,19 @@ export function getDimension() {
 }
 
 export function invalidatePlotSlotCache() {
-  cachedPlotSlots = undefined;
-  cachedPlotSlotsSource = undefined;
+  invalidatePlotCaches();
 }
 
 export function setPlotOriginFromPlayer(player: Player) {
   state.plots.config.origin = roundVec(player.location);
   state.plots.config.dimensionId = player.dimension.id;
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
 }
 
 export function setPlotCount(count: number) {
   state.plots.config.activePlotCount = clampCount(count);
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
 }
 
@@ -95,13 +105,13 @@ export function setPlotSize(x: number, y: number, z: number) {
     y: Math.max(1, Math.floor(y)),
     z: Math.max(1, Math.floor(z)),
   };
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
 }
 
 export function setPlotSpacing(spacing: number) {
   state.plots.config.spacing = Math.max(0, Math.floor(spacing));
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
 }
 
@@ -154,7 +164,7 @@ export function buildManualGridSlots(options?: PlotLayoutOptions): { ok: boolean
     }
   }
 
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
   return { ok: true, message: `Built ${cfg.count} plots.` };
 }
@@ -179,7 +189,7 @@ export function setSlotManualBounds(slotId: string, cornerA: Vector3, cornerB: V
     z: Math.max(a.z, b.z),
   };
   slot.manual = true;
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
   return true;
 }

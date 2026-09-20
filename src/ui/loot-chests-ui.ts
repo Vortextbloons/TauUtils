@@ -1,6 +1,6 @@
 import { Player } from "@minecraft/server";
 import { ICONS } from "./icons";
-import { isOperator, saveLootChests, state, tell } from "../storage";
+import { isOperator, state, tell } from "../storage";
 import {
   applyLootChestSnapshotToLocation,
   bindLootChestLocation,
@@ -19,6 +19,7 @@ import {
   playerBlockLocation,
   sendLootChestResult,
   updateLootChestLocation,
+  updateLootChestConfig,
   updateLootChestPool,
   updateLootChestSnapshot,
 } from "../loot-chests";
@@ -419,12 +420,12 @@ async function lootChestSettings(player: Player): Promise<void> {
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
-  cfg.enabled = result.values.enabled === true;
-  cfg.processIntervalTicks = Math.max(1, Math.floor(Number(result.values.processIntervalTicks ?? cfg.processIntervalTicks)));
-  cfg.maxRefillsPerTick = Math.max(1, Math.floor(Number(result.values.maxRefillsPerTick ?? cfg.maxRefillsPerTick)));
-  cfg.defaultRespawnTicks = Math.max(1, Math.floor(Number(result.values.defaultRespawnTicks ?? cfg.defaultRespawnTicks)));
-  saveLootChests();
-  tell(player, "§aSaved loot chest settings. Restart/reload may be needed for process interval timing changes.");
+  sendLootChestResult(player, updateLootChestConfig({
+    enabled: result.values.enabled === true,
+    processIntervalTicks: Math.max(1, Math.floor(Number(result.values.processIntervalTicks ?? cfg.processIntervalTicks))),
+    maxRefillsPerTick: Math.max(1, Math.floor(Number(result.values.maxRefillsPerTick ?? cfg.maxRefillsPerTick))),
+    defaultRespawnTicks: Math.max(1, Math.floor(Number(result.values.defaultRespawnTicks ?? cfg.defaultRespawnTicks))),
+  }));
 }
 
 export async function showLootChestsAdminMenu(player: Player): Promise<void> {

@@ -1,8 +1,8 @@
 import { Player } from "@minecraft/server";
 import { TauUi, type TauModalResult } from "./tau-ui";
 import { ICONS, type CustomAreaCommandRule, type CustomAreaDefinition, type CustomAreaEffect } from "../types";
-import { getPlayerId, isOperator, normalizeKey, saveCustomAreas, state, tell } from "../storage";
-import { applyAreaTickingArea, commitCustomArea, invalidateCustomAreaRuntimeState, normalizeAreaBounds } from "../custom-areas";
+import { getPlayerId, isOperator, normalizeKey, state, tell } from "../storage";
+import { applyAreaTickingArea, commitCustomArea, deleteCustomArea, normalizeAreaBounds, updateCustomAreasConfig } from "../custom-areas";
 
 type PendingAreaCorner = {
   x: number;
@@ -411,59 +411,67 @@ async function editArea(player: Player, areaId: string): Promise<void> {
     if (response.id === "basics") await editBasics(player, area.id);
     else if (response.id === "messages") await editMessages(player, area.id);
     else if (response.id === "permissions") await editPermissions(player, area.id);
-    else if (response.id === "commands") await listEditors(
-      player,
-      "Command Rules",
-      () => getArea(player, area.id)?.commandRules ?? [],
-      (rule) => `${rule.enabled ? "ON" : "OFF"} ${rule.commands.length} cmds / ${rule.intervalTicks}t`,
-      (rule) => {
-        const current = getArea(player, area.id);
-        return current ? addCommandRule(player, current, rule) : Promise.resolve();
-      },
-      () => {
-        const current = getArea(player, area.id);
-        return current ? addCommandRule(player, current) : Promise.resolve();
-      },
-      (index) => {
-        const current = getArea(player, area.id);
-        if (!current) return;
-        const next = copyArea(current);
-        next.commandRules.splice(index, 1);
-        state.customAreas.areas[next.id] = next;
-      },
-      () => {
-        const current = getArea(player, area.id);
-        if (current) tellCommitResult(player, commitCustomArea(current));
-      }
-    );
-    else if (response.id === "effects") await listEditors(
-      player,
-      "Effects",
-      () => getArea(player, area.id)?.effects ?? [],
-      (effect) => `${effect.enabled ? "ON" : "OFF"} ${effect.effectId} / ${effect.intervalTicks}t`,
-      (effect) => {
-        const current = getArea(player, area.id);
-        return current ? addEffect(player, current, effect) : Promise.resolve();
-      },
-      () => {
-        const current = getArea(player, area.id);
-        return current ? addEffect(player, current) : Promise.resolve();
-      },
-      (index) => {
-        const current = getArea(player, area.id);
-        if (!current) return;
-        const next = copyArea(current);
-        next.effects.splice(index, 1);
-        state.customAreas.areas[next.id] = next;
-      },
-      () => {
-        const current = getArea(player, area.id);
-        if (current) tellCommitResult(player, commitCustomArea(current));
-      }
-    );
+    else if (response.id === "commands") {
+      let stagedCommands: CustomAreaDefinition | undefined;
+      await listEditors(
+        player,
+        "Command Rules",
+        () => stagedCommands?.commandRules ?? getArea(player, area.id)?.commandRules ?? [],
+        (rule) => `${rule.enabled ? "ON" : "OFF"} ${rule.commands.length} cmds / ${rule.intervalTicks}t`,
+        (rule) => {
+          const current = stagedCommands ?? getArea(player, area.id);
+          return current ? addCommandRule(player, current, rule) : Promise.resolve();
+        },
+        () => {
+          const current = stagedCommands ?? getArea(player, area.id);
+          return current ? addCommandRule(player, current) : Promise.resolve();
+        },
+        (index) => {
+          const current = stagedCommands ?? getArea(player, area.id);
+          if (!current) return;
+          const next = copyArea(current);
+          next.commandRules.splice(index, 1);
+          stagedCommands = next;
+        },
+        () => {
+          const target = stagedCommands ?? getArea(player, area.id);
+          stagedCommands = undefined;
+          if (target) tellCommitResult(player, commitCustomArea(target));
+        }
+      );
+    }
+    else if (response.id === "effects") {
+      let stagedEffects: CustomAreaDefinition | undefined;
+      await listEditors(
+        player,
+        "Effects",
+        () => stagedEffects?.effects ?? getArea(player, area.id)?.effects ?? [],
+        (effect) => `${effect.enabled ? "ON" : "OFF"} ${effect.effectId} / ${effect.intervalTicks}t`,
+        (effect) => {
+          const current = stagedEffects ?? getArea(player, area.id);
+          return current ? addEffect(player, current, effect) : Promise.resolve();
+        },
+        () => {
+          const current = stagedEffects ?? getArea(player, area.id);
+          return current ? addEffect(player, current) : Promise.resolve();
+        },
+        (index) => {
+          const current = stagedEffects ?? getArea(player, area.id);
+          if (!current) return;
+          const next = copyArea(current);
+          next.effects.splice(index, 1);
+          stagedEffects = next;
+        },
+        () => {
+          const target = stagedEffects ?? getArea(player, area.id);
+          stagedEffects = undefined;
+          if (target) tellCommitResult(player, commitCustomArea(target));
+        }
+      );
+    }
     else if (response.id === "tickingArea") await editTickingArea(player, area.id);
     else if (response.id === "applyTickingArea") tell(player, applyAreaTickingArea(area).message);
-    else if (response.id === "delete") { delete state.customAreas.areas[area.id]; saveCustomAreas(); invalidateCustomAreaRuntimeState(area.id); tell(player, "Area deleted."); return; }
+    else if (response.id === "delete") { tellCommitResult(player, deleteCustomArea(area.id)); return; }
     else return;
   }
 }
@@ -478,12 +486,12 @@ async function globalSettings(player: Player): Promise<void> {
     .submitButton("Save")
     .show(player);
   if (result.canceled) return;
-  cfg.enabled = Boolean(result.values.enabled);
-  cfg.checkIntervalTicks = Math.max(1, Math.floor(Number(result.values.checkIntervalTicks ?? 10)));
-  cfg.maxAreas = Math.max(1, Math.floor(Number(result.values.maxAreas ?? 250)));
-  cfg.maxCommandsPerArea = Math.max(1, Math.floor(Number(result.values.maxCommandsPerArea ?? 10)));
-  saveCustomAreas();
-  invalidateCustomAreaRuntimeState();
+  tellCommitResult(player, updateCustomAreasConfig({
+    enabled: Boolean(result.values.enabled),
+    checkIntervalTicks: Math.max(1, Math.floor(Number(result.values.checkIntervalTicks ?? 10))),
+    maxAreas: Math.max(1, Math.floor(Number(result.values.maxAreas ?? 250))),
+    maxCommandsPerArea: Math.max(1, Math.floor(Number(result.values.maxCommandsPerArea ?? 10))),
+  }));
 }
 
 export async function showCustomAreasAdminMenu(player: Player): Promise<void> {

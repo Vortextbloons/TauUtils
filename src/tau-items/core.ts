@@ -3,8 +3,11 @@ import { commandStripSlash, getInventoryContainer, getPlayerId, getScore, saveTa
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate as renderSharedCommandTemplate } from "../shared/templates";
 import { getEntityHealthComponent, getItemDurabilityComponent } from "../shared/item-components";
+import { parseFloatIn, parseIntIn, MAX_SAFE_INT } from "../shared/numbers";
+import { tryGiveWithEscrow } from "../shared/inventory";
 import { type TauItemAction, type TauItemConsumptionMode, type TauItemDefinition, type TauItemTriggerType } from "../types";
 import { normalizeItemId } from "../shared/item-id";
+import { normalizeId, resolveLegacyKey } from "../shared/normalize-id";
 
 type TriggerContext = {
   location?: { x: number; y: number; z: number };
@@ -20,10 +23,6 @@ type TriggerResult = {
 const TAU_ITEM_MARKER_PREFIX = "§0TauItem:";
 const TAU_ITEM_USES_PREFIX = "§0TauUses:";
 const cooldownEndsByKey = new Map<string, number>();
-
-function normalizeId(value: string): string {
-  return String(value ?? "").trim().toLowerCase();
-}
 
 function markerLine(itemId: string): string {
   return `${TAU_ITEM_MARKER_PREFIX}${normalizeId(itemId)}`;
@@ -101,7 +100,7 @@ function remainingCooldownMs(player: Player, itemId: string): number {
 }
 
 function setCooldown(player: Player, itemId: string, seconds: number): void {
-  const ms = Math.max(0, Math.floor(seconds * 1000));
+  const ms = parseIntIn(seconds * 1000, 0, MAX_SAFE_INT, 0);
   cooldownEndsByKey.set(cooldownKey(player, itemId), Date.now() + ms);
 }
 
@@ -436,7 +435,10 @@ export function listTauItemIds(): string[] {
 }
 
 export function getTauItemDefinition(itemId: string): TauItemDefinition | undefined {
-  return state.tauItems.items[normalizeId(itemId)];
+  const strict = state.tauItems.items[normalizeId(itemId)];
+  if (strict) return strict;
+  const legacy = resolveLegacyKey(Object.keys(state.tauItems.items), itemId);
+  return legacy ? state.tauItems.items[legacy] : undefined;
 }
 
 export function createTauItemDefinition(id: string, displayName: string, baseItemId: string): { ok: boolean; message: string } {
@@ -465,11 +467,14 @@ export function updateTauItemDefinition(itemId: string, patch: Partial<TauItemDe
   if (patch.displayName !== undefined) def.displayName = String(patch.displayName).trim() || def.displayName;
   if (patch.baseItemId !== undefined) def.baseItemId = normalizeItemId(patch.baseItemId);
   if (patch.loreDescription !== undefined) def.loreDescription = String(patch.loreDescription);
-  if (patch.cooldownSeconds !== undefined) def.cooldownSeconds = Math.max(0, Number(patch.cooldownSeconds) || 0);
+  if (patch.cooldownSeconds !== undefined) def.cooldownSeconds = parseFloatIn(patch.cooldownSeconds, 0, MAX_SAFE_INT, def.cooldownSeconds);
   if (patch.requiredTag !== undefined) def.requiredTag = String(patch.requiredTag).trim() || undefined;
   if (patch.cancelVanilla !== undefined) def.cancelVanilla = Boolean(patch.cancelVanilla);
   if (patch.consumption !== undefined) def.consumption = patch.consumption;
-  if (patch.maxUses !== undefined) def.maxUses = Math.max(0, Math.floor(Number(patch.maxUses) || 0)) || undefined;
+  if (patch.maxUses !== undefined) {
+    const maxUses = parseIntIn(patch.maxUses, 0, MAX_SAFE_INT, def.maxUses ?? 0);
+    def.maxUses = maxUses > 0 ? maxUses : undefined;
+  }
   if (patch.triggers !== undefined) def.triggers = patch.triggers.slice();
   if (patch.actions !== undefined) def.actions = patch.actions.slice();
   if (patch.cost !== undefined) def.cost = patch.cost;
@@ -478,11 +483,17 @@ export function updateTauItemDefinition(itemId: string, patch: Partial<TauItemDe
 }
 
 export function deleteTauItemDefinition(itemId: string): { ok: boolean; message: string } {
-  const id = normalizeId(itemId);
-  if (!state.tauItems.items[id]) return { ok: false, message: "TauItem not found." };
-  delete state.tauItems.items[id];
+  const def = getTauItemDefinition(itemId);
+  if (!def) return { ok: false, message: "TauItem not found." };
+  delete state.tauItems.items[def.id];
   saveTauItems();
-  return { ok: true, message: `Deleted TauItem ${id}.` };
+  return { ok: true, message: `Deleted TauItem ${def.id}.` };
+}
+
+export function setTauItemsEnabled(enabled: boolean): { ok: boolean; message: string } {
+  state.tauItems.config.enabled = enabled;
+  saveTauItems();
+  return { ok: true, message: `TauItems ${enabled ? "enabled" : "disabled"}.` };
 }
 
 function buildTauItemLore(def: TauItemDefinition): string[] {
@@ -497,12 +508,49 @@ function buildTauItemLore(def: TauItemDefinition): string[] {
 export function giveTauItem(player: Player, itemId: string, amount = 1): { ok: boolean; message: string } {
   const def = getTauItemDefinition(itemId);
   if (!def) return { ok: false, message: `TauItem not found: ${itemId}` };
-  const stack = new ItemStack(normalizeItemId(def.baseItemId), Math.max(1, Math.floor(amount)));
+  const count = parseIntIn(amount, 1, 64, 1);
+  let stack: ItemStack;
+  try {
+    stack = new ItemStack(normalizeItemId(def.baseItemId), count);
+  } catch {
+    return { ok: false, message: `Invalid base item id for ${def.displayName}: ${def.baseItemId}` };
+  }
   stack.nameTag = def.displayName;
-  stack.setLore(buildTauItemLore(def));
-  const inventory = getInventoryContainer(player);
-  if (!inventory) return { ok: false, message: "Inventory unavailable." };
-  const left = inventory.addItem(stack);
-  if (left) return { ok: false, message: "Not enough inventory space." };
-  return { ok: true, message: `Gave ${stack.amount}x ${def.displayName}.` };
+  try {
+    stack.setLore(buildTauItemLore(def));
+  } catch {
+    // Ignore lore errors; the item is still valid.
+  }
+  const escrow = tryGiveWithEscrow(player, stack);
+  if (!escrow.ok) return { ok: false, message: `Unable to give ${def.displayName}.` };
+  if (escrow.dropped) return { ok: true, message: `Inventory full, dropped ${count}x ${def.displayName} at your feet.` };
+  return { ok: true, message: `Gave ${count}x ${def.displayName}.` };
+}
+
+export function repairTauItemStoreNumbers(): number {
+  let fixed = 0;
+  for (const def of Object.values(state.tauItems.items)) {
+    const cooldown = parseFloatIn(def.cooldownSeconds, 0, MAX_SAFE_INT, 5);
+    if (cooldown !== def.cooldownSeconds) {
+      def.cooldownSeconds = cooldown;
+      fixed += 1;
+    }
+    if (def.maxUses !== undefined) {
+      const maxUses = parseIntIn(def.maxUses, 0, MAX_SAFE_INT, 0);
+      const next = maxUses > 0 ? maxUses : undefined;
+      if (next !== def.maxUses) {
+        def.maxUses = next;
+        fixed += 1;
+      }
+    }
+    if (def.cost && typeof def.cost.amount === "number") {
+      const costAmount = parseFloatIn(def.cost.amount, 0, MAX_SAFE_INT, def.cost.amount);
+      if (costAmount !== def.cost.amount) {
+        def.cost.amount = costAmount;
+        fixed += 1;
+      }
+    }
+  }
+  if (fixed > 0) saveTauItems();
+  return fixed;
 }

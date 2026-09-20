@@ -8,12 +8,15 @@ import {
   system,
   world,
 } from "@minecraft/server";
-import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, setScore, state, tell } from "../storage";
+import { asPlayer, getInventoryContainer, getPlayerId, getPlayerRank, getScore, isFeatureEnabled, journalAck, journalAppend, journalHead, saveCombat, setScore, state, tell } from "../storage";
+import { safeSetDynamicJson, readDynamicJSON } from "../storage/dynamic-json";
+import { serializeItemStack, deserializeItemStack } from "../shared/item-serialization";
+import type { SerializedItemStack } from "../types";
 import { invalidatePlayerSidebarCache } from "../sidebar";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { combatTagsByPlayerId, hasActiveCombatTag, isCombatFeatureActive, isPlayerInCombat } from "./status";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
-import type { KillConditionAction, KillConditionRule, PlayerStats } from "../types";
+import type { CombatConfig, KillConditionAction, KillConditionRule, PlayerStats } from "../types";
 
 type CombatLootSnapshot = {
   inventory: ItemStack[];
@@ -28,6 +31,7 @@ type PendingCombatLogout = {
   inventory: ItemStack[];
   equipment: ItemStack[];
   attempts: number;
+  journalSeq?: number;
 };
 
 type CombatKillContext = {
@@ -41,6 +45,7 @@ const lastCombatSnapshotAtByPlayerId = new Map<string, number>();
 let pendingCombatLogoutsJobId: number | undefined;
 let combatTagsJobId: number | undefined;
 const PENALTY_KEY_PREFIX = "tau:combat:penalty:";
+const COMBAT_LOGOUT_PREFIX = "tau:combat:logout:";
 const COMBAT_SNAPSHOT_INTERVAL_MS = 3000;
 const EQUIPMENT_SLOTS: EquipmentSlot[] = [
   EquipmentSlot.Head,
@@ -56,6 +61,85 @@ function nowMs(): number {
 
 function penaltyKey(playerId: string): string {
   return `${PENALTY_KEY_PREFIX}${playerId}`;
+}
+
+function combatLogoutKey(playerId: string): string {
+  return `${COMBAT_LOGOUT_PREFIX}${playerId}`;
+}
+
+type PersistedCombatLogout = {
+  playerId: string;
+  playerName: string;
+  dimensionId: string;
+  location: { x: number; y: number; z: number };
+  inventory: SerializedItemStack[];
+  equipment: SerializedItemStack[];
+  attempts: number;
+};
+
+function persistCombatLogout(entry: PendingCombatLogout): void {
+  try {
+    const persisted: PersistedCombatLogout = {
+      playerId: entry.playerId,
+      playerName: entry.playerName,
+      dimensionId: entry.dimensionId,
+      location: entry.location,
+      inventory: entry.inventory.map((stack) => serializeItemStack(stack)),
+      equipment: entry.equipment.map((stack) => serializeItemStack(stack)),
+      attempts: entry.attempts,
+    };
+    safeSetDynamicJson(combatLogoutKey(entry.playerId), persisted);
+  } catch {
+    // RAM queue remains as fallback
+  }
+}
+
+function clearPersistedCombatLogout(playerId: string): void {
+  try {
+    world.setDynamicProperty(combatLogoutKey(playerId), undefined);
+  } catch {
+    // ignore
+  }
+}
+
+let restoredPersistedCombatLogouts = false;
+
+function restorePersistedCombatLogouts(): void {
+  if (restoredPersistedCombatLogouts) return;
+  restoredPersistedCombatLogouts = true;
+  let ids: string[] = [];
+  try {
+    ids = world.getDynamicPropertyIds();
+  } catch {
+    return;
+  }
+  for (const key of ids) {
+    if (!key.startsWith(COMBAT_LOGOUT_PREFIX)) continue;
+    const playerId = key.slice(COMBAT_LOGOUT_PREFIX.length);
+    if (!playerId) continue;
+    if (pendingCombatLogouts.some((entry) => entry.playerId === playerId)) continue;
+    const persisted = readDynamicJSON<PersistedCombatLogout | undefined>(key, undefined);
+    if (!persisted) continue;
+    try {
+      const inventory = (persisted.inventory ?? []).map((data) => deserializeItemStack(data));
+      const equipment = (persisted.equipment ?? []).map((data) => deserializeItemStack(data));
+      if (inventory.length + equipment.length === 0) {
+        clearPersistedCombatLogout(playerId);
+        continue;
+      }
+      pendingCombatLogouts.push({
+        playerId: persisted.playerId || playerId,
+        playerName: persisted.playerName || "Player",
+        dimensionId: persisted.dimensionId,
+        location: persisted.location,
+        inventory,
+        equipment,
+        attempts: Math.max(0, Math.floor(persisted.attempts ?? 0)),
+      });
+    } catch {
+      continue;
+    }
+  }
 }
 
 function formatCombatMessage(template: string, playerName: string): string {
@@ -100,9 +184,24 @@ function hasActiveTag(playerId: string): boolean {
 function setCombatTag(player: Player): void {
   const id = getPlayerId(player);
   const tagged = isTagged(player, id);
-  combatTagsByPlayerId.set(id, { expiresAt: nowMs() + getCombatDurationMs() });
-  combatSnapshotsByPlayerId.set(id, captureCombatLoot(player));
-  lastCombatSnapshotAtByPlayerId.set(id, nowMs());
+  const now = nowMs();
+  combatTagsByPlayerId.set(id, { expiresAt: now + getCombatDurationMs() });
+  const lastSnapshotAt = lastCombatSnapshotAtByPlayerId.get(id) ?? 0;
+  const cached = combatSnapshotsByPlayerId.get(id);
+  if (!tagged || now - lastSnapshotAt >= COMBAT_SNAPSHOT_INTERVAL_MS || !cached) {
+    if (cached && combatSnapshotItemCount(cached) > 0) {
+      const live = scanCombatLootFingerprint(player);
+      if (live.count > 0 && live.hash === combatSnapshotContentHash(cached)) {
+        lastCombatSnapshotAtByPlayerId.set(id, now);
+      } else {
+        combatSnapshotsByPlayerId.set(id, captureCombatLoot(player));
+        lastCombatSnapshotAtByPlayerId.set(id, now);
+      }
+    } else {
+      combatSnapshotsByPlayerId.set(id, captureCombatLoot(player));
+      lastCombatSnapshotAtByPlayerId.set(id, now);
+    }
+  }
   if (!tagged) {
     tell(player, state.combat.config.enterMessage);
     invalidatePlayerSidebarCache(player);
@@ -150,6 +249,88 @@ function cloneCombatLoot(snapshot: CombatLootSnapshot): CombatLootSnapshot {
     inventory: snapshot.inventory.map((stack) => stack.clone()),
     equipment: snapshot.equipment.map((stack) => stack.clone()),
   };
+}
+
+function combatSnapshotItemCount(snapshot: CombatLootSnapshot): number {
+  return snapshot.inventory.length + snapshot.equipment.length;
+}
+
+function mixCombatFingerprint(hash: number, typeId: string, amount: number, nameTag?: string): number {
+  for (let i = 0; i < typeId.length; i++) {
+    hash = (Math.imul(hash, 31) + typeId.charCodeAt(i)) | 0;
+  }
+  hash = (Math.imul(hash, 31) + amount) | 0;
+  const tag = String(nameTag ?? "");
+  for (let i = 0; i < tag.length; i++) {
+    hash = (Math.imul(hash, 31) + tag.charCodeAt(i)) | 0;
+  }
+  return hash | 0;
+}
+
+function scanCombatLootFingerprint(player: Player): { count: number; hash: string } {
+  let count = 0;
+  let hash = 0;
+  const container = getInventoryContainer(player);
+  if (container) {
+    for (let slot = 0; slot < container.size; slot++) {
+      try {
+        const stack = container.getItem(slot);
+        if (!stack) continue;
+        count += 1;
+        hash = mixCombatFingerprint(hash, stack.typeId, stack.amount, stack.nameTag);
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  try {
+    const equippable = player.getComponent(EntityComponentTypes.Equippable);
+    if (equippable) {
+      for (const slotType of EQUIPMENT_SLOTS) {
+        try {
+          const stack = equippable.getEquipment(slotType);
+          if (!stack) continue;
+          count += 1;
+          hash = mixCombatFingerprint(hash, stack.typeId, stack.amount, stack.nameTag);
+        } catch {
+          continue;
+        }
+      }
+    }
+  } catch {
+  }
+  return { count, hash: `${count}:${hash}` };
+}
+
+function combatSnapshotContentHash(snapshot: CombatLootSnapshot): string {
+  let hash = 0;
+  for (const stack of snapshot.inventory) {
+    try {
+      hash = mixCombatFingerprint(hash, stack.typeId, stack.amount, stack.nameTag);
+    } catch {
+      continue;
+    }
+  }
+  for (const stack of snapshot.equipment) {
+    try {
+      hash = mixCombatFingerprint(hash, stack.typeId, stack.amount, stack.nameTag);
+    } catch {
+      continue;
+    }
+  }
+  return `${combatSnapshotItemCount(snapshot)}:${hash}`;
+}
+
+function resolveCombatDropSnapshot(player: Player, playerId: string): CombatLootSnapshot | undefined {
+  const cached = combatSnapshotsByPlayerId.get(playerId);
+  if (cached) {
+    if (combatSnapshotItemCount(cached) === 0) return undefined;
+    return cloneCombatLoot(cached);
+  }
+  const liveSnapshot = captureCombatLoot(player);
+  if (combatSnapshotItemCount(liveSnapshot) === 0) return undefined;
+  return liveSnapshot;
 }
 
 function clearInventoryAndEquipment(player: Player): void {
@@ -204,25 +385,32 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
   const playerId = getPlayerId(player);
   if (!hasActiveTag(playerId)) return false;
 
-  const liveSnapshot = captureCombatLoot(player);
-  const cachedSnapshot = combatSnapshotsByPlayerId.get(playerId);
-  const liveCount = liveSnapshot.inventory.length + liveSnapshot.equipment.length;
-  const snapshot = liveCount > 0
-    ? liveSnapshot
-    : (cachedSnapshot ? cloneCombatLoot(cachedSnapshot) : { inventory: [], equipment: [] });
-  if (snapshot.inventory.length + snapshot.equipment.length === 0) {
+  const snapshot = resolveCombatDropSnapshot(player, playerId);
+  if (!snapshot) {
     combatTagsByPlayerId.delete(playerId);
     combatSnapshotsByPlayerId.delete(playerId);
     lastCombatSnapshotAtByPlayerId.delete(playerId);
     return false;
   }
 
+  const entry: PendingCombatLogout = {
+    playerId,
+    playerName: player.name,
+    dimensionId: player.dimension.id,
+    location: dropLocation,
+    inventory: snapshot.inventory,
+    equipment: snapshot.equipment,
+    attempts: 0,
+  };
+  journalAppend("combat", { op: "logout-snapshot", playerId, inventory: snapshot.inventory.length, equipment: snapshot.equipment.length });
+  entry.journalSeq = journalHead("combat");
+  persistCombatLogout(entry);
   clearInventoryAndEquipment(player);
   const failedEquipment = spawnDroppedItems(player.dimension.id, dropLocation, snapshot.equipment);
   const failedInventory = spawnDroppedItems(player.dimension.id, dropLocation, snapshot.inventory);
   const failed = [...failedEquipment, ...failedInventory];
   if (failed.length > 0) {
-    pendingCombatLogouts.push({
+    const retry: PendingCombatLogout = {
       playerId,
       playerName: player.name,
       dimensionId: player.dimension.id,
@@ -230,7 +418,13 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
       inventory: failedInventory,
       equipment: failedEquipment,
       attempts: 0,
-    });
+      journalSeq: entry.journalSeq,
+    };
+    pendingCombatLogouts.push(retry);
+    persistCombatLogout(retry);
+  } else {
+    clearPersistedCombatLogout(playerId);
+    journalAck("combat", entry.journalSeq ?? journalHead("combat"));
   }
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
@@ -239,6 +433,7 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
 }
 
 function processPendingCombatLogouts(): void {
+  restorePersistedCombatLogouts();
   if (pendingCombatLogouts.length === 0) return;
   if (pendingCombatLogoutsJobId !== undefined) return;
   pendingCombatLogoutsJobId = system.runJob(processPendingCombatLogoutsJob());
@@ -261,11 +456,15 @@ function* processPendingCombatLogoutsJob(): Generator<void, void, void> {
     const failed = [...failedEquipment, ...failedInventory];
 
     if (failed.length > 0 && logout.attempts < 20) {
-      pendingCombatLogouts.push({ ...logout, inventory: failedInventory, equipment: failedEquipment, attempts: logout.attempts + 1 });
+      const retry = { ...logout, inventory: failedInventory, equipment: failedEquipment, attempts: logout.attempts + 1 };
+      pendingCombatLogouts.push(retry);
+      persistCombatLogout(retry);
       continue;
     }
 
     if (failed.length === 0) {
+      clearPersistedCombatLogout(logout.playerId);
+      journalAck("combat", logout.journalSeq ?? journalHead("combat"));
       // Marker meaning: "combat-log loot was already dropped at logout location".
       // It is a one-time rejoin notification only; do NOT clear inventory/equipment
       // when reading it in handleCombatJoin() - the items were dropped on disconnect,
@@ -308,14 +507,14 @@ export function handleCombatLeave(player: Player): void {
 
   if (!hasActiveTag(playerId)) return;
 
-  const liveSnapshot = captureCombatLoot(player);
-  const cachedSnapshot = combatSnapshotsByPlayerId.get(playerId);
-  const liveCount = liveSnapshot.inventory.length + liveSnapshot.equipment.length;
-  const snapshot = liveCount > 0
-    ? liveSnapshot
-    : (cachedSnapshot ? cloneCombatLoot(cachedSnapshot) : { inventory: [], equipment: [] });
+  const snapshot = resolveCombatDropSnapshot(player, playerId);
 
-  clearInventoryAndEquipment(player);
+  if (!snapshot) {
+    combatTagsByPlayerId.delete(playerId);
+    combatSnapshotsByPlayerId.delete(playerId);
+    lastCombatSnapshotAtByPlayerId.delete(playerId);
+    return;
+  }
 
   const location = {
     x: player.location.x,
@@ -323,7 +522,7 @@ export function handleCombatLeave(player: Player): void {
     z: player.location.z,
   };
   const dimensionId = player.dimension.id;
-  pendingCombatLogouts.push({
+  const entry: PendingCombatLogout = {
     playerId,
     playerName: player.name,
     dimensionId,
@@ -331,7 +530,12 @@ export function handleCombatLeave(player: Player): void {
     inventory: snapshot.inventory,
     equipment: snapshot.equipment,
     attempts: 0,
-  });
+  };
+  journalAppend("combat", { op: "logout-snapshot", playerId, inventory: snapshot.inventory.length, equipment: snapshot.equipment.length });
+  entry.journalSeq = journalHead("combat");
+  persistCombatLogout(entry);
+  clearInventoryAndEquipment(player);
+  pendingCombatLogouts.push(entry);
 
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
@@ -499,7 +703,7 @@ export function shouldBlockCommandWhileTagged(player: Player, message: string): 
   return true;
 }
 
-export function processCombatTags(): void {
+export function processCombatTags(cachedPlayers?: Player[]): void {
   if (!isCombatSystemEnabled()) {
     if (combatTagsJobId !== undefined) {
       system.clearJob(combatTagsJobId);
@@ -515,17 +719,17 @@ export function processCombatTags(): void {
   processPendingCombatLogouts();
   if (combatTagsByPlayerId.size === 0) return;
   if (combatTagsJobId !== undefined) return;
-  combatTagsJobId = system.runJob(processCombatTagsJob());
+  combatTagsJobId = system.runJob(processCombatTagsJob(cachedPlayers));
 }
 
-function* processCombatTagsJob(): Generator<void, void, void> {
+function* processCombatTagsJob(cachedPlayers?: Player[]): Generator<void, void, void> {
   if (!isCombatSystemEnabled()) {
     combatTagsJobId = undefined;
     return;
   }
   const now = nowMs();
   const onlineById = new Map<string, Player>();
-  for (const player of world.getAllPlayers()) {
+  for (const player of cachedPlayers ?? world.getAllPlayers()) {
     onlineById.set(getPlayerId(player), player);
   }
 
@@ -535,8 +739,19 @@ function* processCombatTagsJob(): Generator<void, void, void> {
     if (now - (lastCombatSnapshotAtByPlayerId.get(playerId) ?? 0) < COMBAT_SNAPSHOT_INTERVAL_MS) continue;
     const player = onlineById.get(playerId);
     if (player) {
-      combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
-      lastCombatSnapshotAtByPlayerId.set(playerId, now);
+      const cached = combatSnapshotsByPlayerId.get(playerId);
+      if (cached && combatSnapshotItemCount(cached) > 0) {
+        const live = scanCombatLootFingerprint(player);
+        if (live.count > 0 && live.hash === combatSnapshotContentHash(cached)) {
+          lastCombatSnapshotAtByPlayerId.set(playerId, now);
+        } else {
+          combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
+          lastCombatSnapshotAtByPlayerId.set(playerId, now);
+        }
+      } else {
+        combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
+        lastCombatSnapshotAtByPlayerId.set(playerId, now);
+      }
     }
     yield;
   }
@@ -554,4 +769,96 @@ function* processCombatTagsJob(): Generator<void, void, void> {
     yield;
   }
   combatTagsJobId = undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Commit services: domain write path for admin UI mutations.
+// ---------------------------------------------------------------------------
+
+export function getKillConditionRule(ruleId: string): KillConditionRule | undefined {
+  return state.combat.config.killConditions.rules.find((rule) => rule.id === ruleId);
+}
+
+export function commitKillConditionRule(rule: KillConditionRule): { ok: boolean; message: string } {
+  if (!rule.id) return { ok: false, message: "Kill rule ID is missing." };
+  const rules = state.combat.config.killConditions.rules;
+  const index = rules.findIndex((entry) => entry.id === rule.id);
+  const next: KillConditionRule = {
+    ...rule,
+    filters: { ...rule.filters, killerRanks: [...rule.filters.killerRanks], victimRanks: [...rule.filters.victimRanks] },
+    actions: rule.actions.map((action) => ({ ...action })),
+  };
+  if (index >= 0) rules[index] = next;
+  else rules.push(next);
+  saveCombat();
+  return { ok: true, message: `Saved kill rule ${next.name}.` };
+}
+
+export function createKillConditionRule(): { ok: boolean; message: string; rule?: KillConditionRule } {
+  const rule: KillConditionRule = {
+    id: `kill_${Date.now().toString(36)}`,
+    name: "New Kill Rule",
+    enabled: true,
+    priority: 0,
+    filters: {
+      requireKillerRankMatch: false,
+      killerRanks: [],
+      requireVictimRankMatch: false,
+      victimRanks: [],
+    },
+    actions: [],
+  };
+  const saved = commitKillConditionRule(rule);
+  if (!saved.ok) return saved;
+  return { ok: true, message: `Created kill rule ${rule.name}.`, rule: getKillConditionRule(rule.id) };
+}
+
+export function duplicateKillConditionRule(ruleId: string): { ok: boolean; message: string; rule?: KillConditionRule } {
+  const source = getKillConditionRule(ruleId);
+  if (!source) return { ok: false, message: "Kill rule not found." };
+  const copy: KillConditionRule = {
+    ...source,
+    id: `kill_${Date.now().toString(36)}`,
+    name: `${source.name} Copy`,
+    filters: { ...source.filters, killerRanks: [...source.filters.killerRanks], victimRanks: [...source.filters.victimRanks] },
+    actions: source.actions.map((action) => ({ ...action })),
+  };
+  const saved = commitKillConditionRule(copy);
+  if (!saved.ok) return saved;
+  return { ok: true, message: "Kill rule duplicated.", rule: getKillConditionRule(copy.id) };
+}
+
+export function deleteKillConditionRule(ruleId: string): { ok: boolean; message: string } {
+  const rules = state.combat.config.killConditions.rules;
+  if (!rules.some((entry) => entry.id === ruleId)) return { ok: false, message: "Kill rule not found." };
+  state.combat.config.killConditions.rules = rules.filter((entry) => entry.id !== ruleId);
+  saveCombat();
+  return { ok: true, message: "Kill rule deleted." };
+}
+
+export function commitKillConditionActions(ruleId: string, actions: KillConditionAction[]): { ok: boolean; message: string } {
+  const rule = getKillConditionRule(ruleId);
+  if (!rule) return { ok: false, message: "Kill rule not found." };
+  return commitKillConditionRule({ ...rule, actions: actions.map((action) => ({ ...action })) });
+}
+
+export function setKillConditionsEnabled(enabled: boolean): { ok: boolean; message: string } {
+  state.combat.config.killConditions.enabled = enabled;
+  saveCombat();
+  return { ok: true, message: `Kill conditions ${enabled ? "enabled" : "disabled"}.` };
+}
+
+export function updateCombatConfig(partial: Partial<Omit<CombatConfig, "killConditions">>): { ok: boolean; message: string } {
+  const config = state.combat.config;
+  if (partial.enabled !== undefined) config.enabled = partial.enabled;
+  if (partial.combatTimeSeconds !== undefined) config.combatTimeSeconds = Math.max(1, Math.floor(partial.combatTimeSeconds));
+  if (partial.announceLogouts !== undefined) config.announceLogouts = partial.announceLogouts;
+  if (partial.blockCommands !== undefined) config.blockCommands = partial.blockCommands;
+  if (partial.enterMessage !== undefined) config.enterMessage = partial.enterMessage;
+  if (partial.exitMessage !== undefined) config.exitMessage = partial.exitMessage;
+  if (partial.logoutBroadcastMessage !== undefined) config.logoutBroadcastMessage = partial.logoutBroadcastMessage;
+  if (partial.rejoinPenaltyMessage !== undefined) config.rejoinPenaltyMessage = partial.rejoinPenaltyMessage;
+  if (partial.blockedCommandMessage !== undefined) config.blockedCommandMessage = partial.blockedCommandMessage;
+  saveCombat();
+  return { ok: true, message: "Combat settings saved." };
 }

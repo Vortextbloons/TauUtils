@@ -1,5 +1,7 @@
+import { normalizeKey } from "./normalize-id";
+
 export function normalizeItemId(value: string): string {
-  return String(value ?? "").trim().toLowerCase();
+  return normalizeKey(value);
 }
 
 export function normalizeBlockId(value: string): string {

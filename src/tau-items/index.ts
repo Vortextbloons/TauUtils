@@ -1,1 +1,1 @@
-export { tryHandleTauItemTrigger, listTauItemIds, getTauItemDefinition, createTauItemDefinition, updateTauItemDefinition, deleteTauItemDefinition, giveTauItem } from "./core";
+export { tryHandleTauItemTrigger, listTauItemIds, getTauItemDefinition, createTauItemDefinition, updateTauItemDefinition, deleteTauItemDefinition, setTauItemsEnabled, giveTauItem, repairTauItemStoreNumbers } from "./core";

@@ -1,3 +1,5 @@
+import { COMMAND_DESCRIPTORS } from "./descriptors";
+
 const topics: Record<string, string[]> = {
   "": [
     "§6TauUI Help §7- Available topics:",
@@ -24,32 +26,6 @@ const topics: Record<string, string[]> = {
   ],
   commands: [
     "§6--- Commands ---",
-    "§e/tau:open <menu_id> §7- Open a saved menu",
-    "§e/tau:shop <profile> §7- Open a shop profile",
-    "§e/tau:myshop §7- Manage your player-run shop",
-    "§e/tau:market §7- Browse public player listings",
-    "§e/tau:shopadmin §7- Player shop admin settings (op)",
-    "§e/tau:shopclaim §7- Claim offline player-shop earnings",
-    "§e/tau:config §7- Open feature config (op)",
-    "§e/tau:creator §7- Open admin UI creator (op)",
-    "§e/tau:sidebar §7- Open sidebar editor (op)",
-    "§e/tau:warp [name] §7- Teleport to warp or open menu",
-    "§e/tau:warps §7- Open warp list",
-    "§e/tau:warpsadmin §7- Open warp admin menu (op)",
-    "§e/tau:plot §7- Open your plot info/teleport menu",
-    "§e/tau:plots §7- Open plot admin menu (op)",
-    "§e/tau:generatorsadmin §7- Open generator admin (op)",
-    "§e/tau:crate §7- Open crate admin (op)",
-    "§e/tau:item §7- Open TauItems admin (op)",
-    "§e/tau:lootchests §7- Open loot chest admin (op)",
-    "§e/tau:rank §7- Open rank manager (op)",
-    "§e/tau:profile §7- Open profile browser",
-    "§e/tau:stats §7- View or edit stats",
-    "§e/tau:richest §7- View richest players",
-    "§e/tau:help [topic] §7- Show this help",
-    "§e/tau:cleardata §7- Wipe all Tau data (op)",
-    "§e/tau:debugscore <obj> §7- Debug scoreboard score",
-    "§e/tau:credits §7- Show credits",
   ],
   shop: [
     "§6--- Shop System ---",
@@ -247,6 +223,40 @@ const topics: Record<string, string[]> = {
   ],
 };
 
+function formatDescriptorLine(usage: string, description: string): string {
+  return `§e${usage} §7- ${description}`;
+}
+
+function getDescriptorLinesForTopic(topic: string): string[] {
+  return COMMAND_DESCRIPTORS.filter((entry) => entry.helpTopic === topic).map((entry) =>
+    formatDescriptorLine(entry.usage, entry.description)
+  );
+}
+
+function getAllCommandLinesGrouped(): string[] {
+  const lines: string[] = [...topics["commands"]];
+  const seenTopics = new Set<string>();
+  for (const entry of COMMAND_DESCRIPTORS) {
+    if (seenTopics.has(entry.helpTopic)) continue;
+    seenTopics.add(entry.helpTopic);
+    lines.push(`§7[${entry.helpTopic}]`);
+    lines.push(...getDescriptorLinesForTopic(entry.helpTopic));
+  }
+  return lines;
+}
+
+function usageAlreadyMentioned(proseText: string, usage: string): boolean {
+  const token = usage.split(" ")[0];
+  return token.length > 0 && proseText.includes(token);
+}
+
 export function getHelpLines(topicKey: string): string[] {
-  return topics[topicKey] ?? topics[""];
+  if (topicKey === "commands") return getAllCommandLinesGrouped();
+  const prose = topics[topicKey];
+  if (!prose) return topics[""];
+  const proseText = prose.join("\n");
+  const generated = COMMAND_DESCRIPTORS.filter(
+    (entry) => entry.helpTopic === topicKey && !usageAlreadyMentioned(proseText, entry.usage)
+  ).map((entry) => formatDescriptorLine(entry.usage, entry.description));
+  return generated.length > 0 ? [...prose, ...generated] : prose;
 }

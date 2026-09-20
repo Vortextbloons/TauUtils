@@ -28,7 +28,7 @@ import {
   isProtectedCrateKey,
 } from "../utils";
 import { normalizeItemId } from "../../shared/item-id";
-import { ICONS } from "../../ui/icons";
+import { ICONS } from "../../types";
 
 type SellAllSlotPlan = {
   slot: number;

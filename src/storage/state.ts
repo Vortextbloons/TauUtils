@@ -35,10 +35,31 @@ import {
 } from "../types";
 import { invalidateBannedItemCache } from "../moderation/banned-items";
 import { normalizeBlockId } from "../shared/item-id";
+import { repairGeneratorStoreNumbers } from "../generators/definitions";
+import { repairTauItemStoreNumbers } from "../tau-items/core";
+import { repairCrateStoreNumbers } from "../crates/core";
 import {
   readDynamicJSON,
   readSplitDynamicJson,
   safeSetDynamicJson,
+  CLAIMS_CLAIM_PREFIX,
+  CLAIMS_CONFIG_KEY,
+  CUSTOM_AREAS_AREA_PREFIX,
+  CUSTOM_AREAS_CONFIG_KEY,
+  LOOT_CHESTS_CHEST_PREFIX,
+  LOOT_CHESTS_CONFIG_KEY,
+  LOOT_CHESTS_POOL_PREFIX,
+  LOOT_CHESTS_SNAPSHOT_PREFIX,
+  PLAYER_SHOPS_CONFIG_KEY,
+  PLAYER_SHOPS_EARNINGS_PREFIX,
+  PLAYER_SHOPS_LISTING_PREFIX,
+  PLAYER_SHOPS_SHOP_PREFIX,
+  PLOTS_CONFIG_KEY,
+  PLOTS_PLAYER_SLOT_PREFIX,
+  PLOTS_SLOT_PREFIX,
+  PLOTS_SNAPSHOT_PREFIX,
+  STATS_PLAYER_IDS_KEY,
+  STATS_PLAYER_PREFIX,
 } from "./dynamic-json";
 import {
   defaultChatConfig,
@@ -70,12 +91,15 @@ import {
 } from "./defaults";
 import { loadStatsFromSplitKeys } from "./split-keys/stats";
 import { loadPlayerShopsFromSplitKeys, rememberPlayerShopSplitKeys } from "./split-keys/player-shops";
-import { loadCustomAreasFromSplitKeys } from "./split-keys/custom-areas";
-import { loadLootChestsFromSplitKeys } from "./split-keys/loot-chests";
-import { loadClaimsFromSplitKeys } from "./split-keys/claims";
+import { loadCustomAreasFromSplitKeys, rememberCustomAreaSplitKeys } from "./split-keys/custom-areas";
+import { loadLootChestsFromSplitKeys, rememberLootChestSplitKeys } from "./split-keys/loot-chests";
+import { loadClaimsFromSplitKeys, migrateLegacyClaimsToSplitOneShot } from "./split-keys/claims";
 import { loadPlotsFromSplitKeys, normalizePlotStore, rememberPlotSplitKeys, migrateLegacyPlotsToSplitOneShot } from "./split-keys/plots";
-import { ensureTpaDefaults, loadTpaFromSplitKeys } from "./split-keys/tpa";
+import { ensureTpaDefaults, loadTpaFromSplitKeys, TPA_COOLDOWN_PREFIX, TPA_INBOX_PREFIX, TPA_OUTBOX_PREFIX } from "./split-keys/tpa";
 import { runStorageMigrations } from "./migrations";
+import { validateAllStores } from "./validators";
+import { verifySplitManifests, type SplitStoreName } from "./manifests";
+import { loadIdentityAliases } from "./identity";
 
 // ---------------------------------------------------------------------------
 // State object
@@ -165,6 +189,49 @@ function applyMissingDefaults<T extends Record<string, unknown>>(target: T | und
     }
   }
   return output;
+}
+
+// Build per-store entry key lists from the caller-passed id list so manifest
+// verification adds no new world.getDynamicPropertyIds() scans.
+function collectSplitManifestEntries(dynamicPropertyIds: string[]): Record<SplitStoreName, string[]> {
+  const entries: Record<SplitStoreName, string[]> = {
+    stats: [],
+    plots: [],
+    "player-shops": [],
+    claims: [],
+    "custom-areas": [],
+    "loot-chests": [],
+    tpa: [],
+  };
+  for (const key of dynamicPropertyIds) {
+    if (key === STATS_PLAYER_IDS_KEY || key.startsWith(STATS_PLAYER_PREFIX)) entries.stats.push(key);
+    else if (
+      key === PLOTS_CONFIG_KEY ||
+      key.startsWith(PLOTS_SLOT_PREFIX) ||
+      key.startsWith(PLOTS_PLAYER_SLOT_PREFIX) ||
+      key.startsWith(PLOTS_SNAPSHOT_PREFIX)
+    ) entries.plots.push(key);
+    else if (
+      key === PLAYER_SHOPS_CONFIG_KEY ||
+      key.startsWith(PLAYER_SHOPS_SHOP_PREFIX) ||
+      key.startsWith(PLAYER_SHOPS_LISTING_PREFIX) ||
+      key.startsWith(PLAYER_SHOPS_EARNINGS_PREFIX)
+    ) entries["player-shops"].push(key);
+    else if (key === CLAIMS_CONFIG_KEY || key.startsWith(CLAIMS_CLAIM_PREFIX)) entries.claims.push(key);
+    else if (key === CUSTOM_AREAS_CONFIG_KEY || key.startsWith(CUSTOM_AREAS_AREA_PREFIX)) entries["custom-areas"].push(key);
+    else if (
+      key === LOOT_CHESTS_CONFIG_KEY ||
+      key.startsWith(LOOT_CHESTS_POOL_PREFIX) ||
+      key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) ||
+      key.startsWith(LOOT_CHESTS_CHEST_PREFIX)
+    ) entries["loot-chests"].push(key);
+    else if (
+      key.startsWith(TPA_INBOX_PREFIX) ||
+      key.startsWith(TPA_OUTBOX_PREFIX) ||
+      key.startsWith(TPA_COOLDOWN_PREFIX)
+    ) entries.tpa.push(key);
+  }
+  return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +394,7 @@ export function loadState() {
       teleport: area.permissions?.teleport ?? true,
     };
   }
+  rememberCustomAreaSplitKeys(state.customAreas);
   state.plots = normalizePlotStore(state.plots);
   const splitLootChests = loadLootChestsFromSplitKeys(dynamicPropertyIds);
   state.lootChests = splitLootChests.hasSplitData ? splitLootChests.store : readDynamicJSON<LootChestStore>(STORAGE_KEYS.lootChests, defaultLootChestStore());
@@ -334,7 +402,9 @@ export function loadState() {
   state.lootChests.pools ??= {};
   state.lootChests.snapshots ??= {};
   state.lootChests.chests ??= {};
-  world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
+  // Legacy single-blob cleanup happens on the next verified split save, never
+  // on load while it may still be the only good copy.
+  rememberLootChestSplitKeys(state.lootChests);
   state.commandBuilder = readDynamicJSON<CommandBuilderStore>(STORAGE_KEYS.commandBuilder, defaultCommandBuilderStore());
   state.commandBuilder.config = applyMissingDefaults(state.commandBuilder.config as unknown as Record<string, unknown>, defaultCommandBuilderStore().config as unknown as Record<string, unknown>) as unknown as CommandBuilderStore["config"];
   state.commandBuilder.commands ??= {};
@@ -350,8 +420,11 @@ export function loadState() {
   for (const [code, playerId] of Object.entries(state.referrals.codeToPlayerId)) {
     if (!state.referrals.players[playerId]) delete state.referrals.codeToPlayerId[code];
   }
-  const splitClaims = loadClaimsFromSplitKeys(dynamicPropertyIds);
-  state.claims = splitClaims.hasSplitData ? splitClaims.store : defaultClaimStore();
+  const claimsMigration = migrateLegacyClaimsToSplitOneShot(dynamicPropertyIds);
+  const splitClaims = claimsMigration.store !== undefined
+    ? { store: claimsMigration.store, hasSplitData: true }
+    : loadClaimsFromSplitKeys(dynamicPropertyIds);
+  state.claims = splitClaims.hasSplitData ? splitClaims.store : readDynamicJSON<ClaimStore>(STORAGE_KEYS.claims, defaultClaimStore());
   state.claims.config = applyMissingDefaults(state.claims.config as unknown as Record<string, unknown>, defaultClaimStore().config as unknown as Record<string, unknown>) as unknown as ClaimStore["config"];
   state.claims.config.defaultFlags = applyMissingDefaults(state.claims.config.defaultFlags as unknown as Record<string, unknown>, defaultClaimStore().config.defaultFlags as unknown as Record<string, unknown>) as unknown as ClaimStore["config"]["defaultFlags"];
   state.claims.claims ??= {};
@@ -396,18 +469,57 @@ export function loadState() {
   if (cratesChanged) {
     safeSetDynamicJson(STORAGE_KEYS.crates, state.crates);
   }
+  try {
+    loadIdentityAliases();
+  } catch {
+    // identity aliases are advisory only; ignore load failures
+  }
+  try {
+    const fixedGenerators = repairGeneratorStoreNumbers();
+    const fixedTauItems = repairTauItemStoreNumbers();
+    const fixedCrates = repairCrateStoreNumbers();
+    const fixedTotal = fixedGenerators + fixedTauItems + fixedCrates;
+    const validation = validateAllStores({
+      forms: state.forms,
+      shops: state.shops,
+      teams: state.teams,
+      homes: state.homes,
+      generators: state.generators,
+      crates: state.crates,
+      tauItems: state.tauItems,
+      playerShops: state.playerShops,
+      claims: state.claims,
+      customAreas: state.customAreas,
+      lootChests: state.lootChests,
+    });
+    const manifestCheck = verifySplitManifests(collectSplitManifestEntries(dynamicPropertyIds));
+    const details: string[] = [];
+    if (fixedTotal > 0) {
+      details.push(`repaired ${fixedTotal} non-finite numeric fields (generators:${fixedGenerators} tauItems:${fixedTauItems} crates:${fixedCrates})`);
+    }
+    if (validation.fixed > 0) {
+      const breakdown = Object.entries(validation.perStore)
+        .map(([store, count]) => `${store}:${count}`)
+        .join(" ");
+      details.push(`repaired ${validation.fixed} store fields (${breakdown})`);
+    }
+    if (!validation.ok) {
+      details.push("one or more store slices failed validation; defaults kept where possible");
+    }
+    if (!manifestCheck.ok) {
+      details.push(`manifest issues [${manifestCheck.issues.join(", ")}]; split data untouched`);
+    }
+    if (details.length > 0) {
+      console.warn(`[TauUtils] Persistence check — ${details.join(" | ")}.`);
+    }
+  } catch {
+    // ignore load-time numeric repair failures; stores remain usable
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Re-exports — all moved symbols so consumers see them from "./state"
-// ---------------------------------------------------------------------------
-
-export { defaultConfig, defaultRankStore, defaultChatConfig, defaultPlayerStats, defaultPlotStore, defaultTpaStore, defaultHomeStore, defaultPayStore, defaultPlayerSettingsStore, defaultTeamStore, defaultTeamHomeStore, defaultPruneStore, defaultWarpStore, defaultGeneratorStore, defaultModerationStore, defaultCrateStore, defaultTauItemsStore, defaultCombatStore, defaultCommandBuilderStore, defaultCustomRewardStore, defaultReferralStore, defaultPlayerShopStore, defaultCustomAreaStore, defaultLootChestStore, defaultClaimStore, defaultRtpStore } from "./defaults";
-export { PLAYER_SHOPS_CONFIG_KEY, PLAYER_SHOPS_SHOP_PREFIX, PLAYER_SHOPS_LISTING_PREFIX, PLAYER_SHOPS_EARNINGS_PREFIX, CUSTOM_AREAS_AREA_PREFIX, PLOTS_CONFIG_KEY, PLOTS_SLOT_PREFIX, PLOTS_PLAYER_SLOT_PREFIX, PLOTS_SNAPSHOT_PREFIX, PLOTS_MIGRATION_MARKER_KEY, STATS_PLAYER_IDS_KEY, STATS_PLAYER_PREFIX, readSplitDynamicJson, clearSplitDynamicJson, writeSplitDynamicJson, safeSetDynamicJson, parseJSON } from "./dynamic-json";
-export { markStatsPlayerDirty, markStatsPlayerIdsDirty } from "./split-keys/stats";
-export { writePlayerShopsIncrementalToSplitKeys } from "./split-keys/player-shops";
-export { writeCustomAreasToSplitKeys } from "./split-keys/custom-areas";
-export { writeLootChestsToSplitKeys } from "./split-keys/loot-chests";
-export { writeClaimsToSplitKeys } from "./split-keys/claims";
-export { normalizePlotStore, writePlotsIncrementalToSplitKeys } from "./split-keys/plots";
-export { TPA_INBOX_PREFIX, TPA_OUTBOX_PREFIX, TPA_COOLDOWN_PREFIX, readTpaInbox, writeTpaInbox, readTpaOutbox, writeTpaOutbox, readTpaCooldown, writeTpaCooldown, clearTpaInboxFor, clearTpaOutboxFor, clearTpaCooldownFor, clearAllTpaForPlayer, tpaInboxPlayerIds, tpaOutboxPlayerIds, ensureTpaDefaults } from "./split-keys/tpa";
+// NOTE: former re-export barrel (defaults, dynamic-json, split-keys, TPA)
+// was removed. Import canonical homes directly:
+// defaults from "./defaults", JSON helpers from "./dynamic-json",
+// split-key fns from "./split-keys/*", TPA from "./split-keys/tpa",
+// or the package barrel "../storage".

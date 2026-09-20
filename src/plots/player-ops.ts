@@ -1,6 +1,7 @@
 import { Player, Vector3, system } from "@minecraft/server";
 import { type PlotSlot } from "../types";
 import { getPlayerId, isFeatureEnabled, savePlots, saveGenerators, state, tell } from "../storage";
+import { requestPlayerTeleport } from "../shared/teleport-service";
 import { getPlotSlots, getDimension } from "./grid";
 import { clearSlot, saveAndClearSlot, captureSlotGenerators, saveSlotSnapshot, loadSlotSnapshot, applyAutoBuildRoof, getPlotForLocation } from "./build";
 import { getPlotOwnerIdForPlayerId, resolveAuthoritativeOwnedSlotId } from "./ownership";
@@ -13,6 +14,10 @@ type PlotTitleCacheEntry = {
 
 const plotTitleCache = new Map<string, PlotTitleCacheEntry>();
 let clearFreePlotSlotsJobId: number | undefined;
+
+export function invalidatePlotTitleCache(): void {
+  plotTitleCache.clear();
+}
 
 function plotTitleCacheKey(slot: PlotSlot): string {
   const teamVersion = Object.values(state.teams.teams)
@@ -70,7 +75,11 @@ export function teleportPlayerToSlot(player: Player, slotId: string): { ok: bool
   if (player.dimension.id !== dim.id) return { ok: false, message: `Player is in ${player.dimension.id}, slot is in ${dim.id}.` };
   const cx = (slot.min.x + slot.max.x) / 2 + 0.5;
   const cz = (slot.min.z + slot.max.z) / 2 + 0.5;
-  player.teleport({ x: cx, y: slot.min.y + 1, z: cz }, { dimension: dim });
+  const result = requestPlayerTeleport(
+    player,
+    { x: cx, y: slot.min.y + 1, z: cz, dimensionId: dim.id },
+  );
+  if (!result.ok) return result;
   return { ok: true, message: `Teleported to ${slotId}.` };
 }
 

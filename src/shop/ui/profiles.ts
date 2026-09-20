@@ -1,7 +1,7 @@
 import { Player } from "@minecraft/server";
 import { TauUi } from "../../ui";
 import { state, saveShops, tell } from "../../storage";
-import { ICONS } from "../../ui/icons";
+import { ICONS } from "../../types";
 import { showShopItemEditor } from "./editor";
 
 export async function showShopProfilesEditor(player: Player) {

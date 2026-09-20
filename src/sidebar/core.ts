@@ -3,7 +3,8 @@ import { ICONS, type SidebarDefinition } from "../types";
 import { TauUi } from "../ui";
 import { getPlayerId, isFeatureEnabled, isOperator, saveSidebars, state, tell } from "../storage";
 import { renderTemplate } from "../shared/templates";
-import { registerBackgroundTask, registerEveryTickTask } from "../scheduler";
+import { parseIntIn, MAX_SAFE_INT, MIN_SAFE_INT } from "../shared/numbers";
+import { registerBackgroundTask } from "../scheduler";
 import { getPlayerSettings, setSidebarOptOutHandler } from "../social/core";
 
 let tpsSampleTick = 0;
@@ -113,7 +114,7 @@ function getEnabledSidebarCache(): SidebarRuntimeCache {
       .map((sidebar) => ({
         sidebar,
         lines: sidebar.lines.map((line) => line.trim()).filter((line) => line.length > 0).slice(0, 15),
-        updateInterval: Math.max(1, Math.floor(sidebar.updateInterval || 20)),
+        updateInterval: parseIntIn(sidebar.updateInterval, 1, MAX_SAFE_INT, 20),
       }));
     enabledSidebarCache = {
       ordered,
@@ -211,6 +212,7 @@ function applySidebarForPlayer(player: Player, runtime: SidebarRuntime) {
 }
 
 function renderSidebarTick() {
+  sampleTpsOnRenderTick();
   if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) {
     playerRenderCache.clear();
     return;
@@ -242,9 +244,11 @@ function* renderSidebarJob(players: Player[]): Generator<void, void, void> {
   }
 }
 
-function sampleTpsTick() {
+const SIDEBAR_RENDER_INTERVAL_TICKS = 5;
+
+function sampleTpsOnRenderTick() {
   if (!isFeatureEnabled("sidebars") || !state.sidebars.enabled) return;
-  tpsSampleTick++;
+  tpsSampleTick += SIDEBAR_RENDER_INTERVAL_TICKS;
   const now = Date.now();
   const elapsed = now - tpsSampleTime;
   if (elapsed >= 1000) {
@@ -260,8 +264,7 @@ export function registerSidebarSystem() {
   ensureDefaultSidebarExists();
   ensureSidebarDefaults();
   sanitizeAllSidebars();
-  registerEveryTickTask("sidebar-tps-sample", sampleTpsTick);
-  registerBackgroundTask("sidebar-render", 5, renderSidebarTick, 3);
+  registerBackgroundTask("sidebar-render", SIDEBAR_RENDER_INTERVAL_TICKS, renderSidebarTick, 3);
 }
 
 async function createOrEditSidebar(player: Player, sidebarId?: string) {
@@ -296,8 +299,8 @@ async function createOrEditSidebar(player: Player, sidebarId?: string) {
 
   existing.id = id;
   existing.title = String(result.values.title ?? "").trim() || "Sidebar";
-  existing.updateInterval = Math.max(1, Math.floor(Number(result.values.updateInterval ?? 20)));
-  existing.priority = Math.floor(Number(result.values.priority ?? 10));
+  existing.updateInterval = parseIntIn(result.values.updateInterval, 1, MAX_SAFE_INT, existing.updateInterval ?? 20);
+  existing.priority = parseIntIn(result.values.priority, MIN_SAFE_INT, MAX_SAFE_INT, existing.priority ?? 10);
   existing.moneyObjective = String(result.values.moneyObjective ?? "money").trim() || "money";
   existing.enabled = Boolean(result.values.enabled);
   existing.scroll = Boolean(result.values.scroll);

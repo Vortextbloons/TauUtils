@@ -381,7 +381,7 @@ export async function showConfigMenu(player: Player) {
     if (response.id === "back") return;
 
     if (response.id === "socialSettings") {
-      const { showSocialSettingsAdmin } = await import("../social-ui");
+      const { showSocialSettingsAdmin } = await import("../social");
       await showSocialSettingsAdmin(player);
       continue;
     }

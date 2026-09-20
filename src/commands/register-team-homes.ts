@@ -1,32 +1,27 @@
-import { CommandPermissionLevel, CustomCommandParamType, CustomCommandRegistry, system } from "@minecraft/server";
-import { ok, registerPlayerCommand, resultFrom } from "./helpers";
+import { CustomCommandRegistry, system } from "@minecraft/server";
+import { ok, requireFeatureResult, resultFrom } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
+import { commandOriginToPlayer } from "../storage";
 import { deleteTeamHome, setTeamHome, teleportTeamHome } from "../team-homes";
 
 export function registerTeamHomesCommands(registry: CustomCommandRegistry): void {
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:teamsethome",
-      description: "Set a team home at your current location.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "name", type: CustomCommandParamType.String }],
-    },
-    "teamHomes",
-    (player, name) => resultFrom(setTeamHome(player, name))
+    "tau:teamsethome",
+    (origin, name) => {
+      const featErr = requireFeatureResult("teamHomes");
+      if (featErr) return featErr;
+      return resultFrom(setTeamHome(commandOriginToPlayer(origin)!, name));
+    }
   );
 
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:teamhome",
-      description: "Teleport to a team home or open team home UI.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "name", type: CustomCommandParamType.String }],
-    },
-    "teamHomes",
-    (player, name) => {
+    "tau:teamhome",
+    (origin, name) => {
+      const featErr = requireFeatureResult("teamHomes");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const homeName = String(name ?? "").trim();
       if (!homeName) {
         system.run(async () => {
@@ -39,16 +34,13 @@ export function registerTeamHomesCommands(registry: CustomCommandRegistry): void
     }
   );
 
-  registerPlayerCommand<[string]>(
+  registerDescribedCommand<[string]>(
     registry,
-    {
-      name: "tau:delteamhome",
-      description: "Delete a team home.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      mandatoryParameters: [{ name: "name", type: CustomCommandParamType.String }],
-    },
-    "teamHomes",
-    (player, name) => resultFrom(deleteTeamHome(player, name))
+    "tau:delteamhome",
+    (origin, name) => {
+      const featErr = requireFeatureResult("teamHomes");
+      if (featErr) return featErr;
+      return resultFrom(deleteTeamHome(commandOriginToPlayer(origin)!, name));
+    }
   );
 }

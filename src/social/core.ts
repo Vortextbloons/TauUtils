@@ -1,8 +1,11 @@
-import { Player, world } from "@minecraft/server";
+import { Player } from "@minecraft/server";
 import {
   getOnlinePlayerById,
   getPlayerId,
   getScore,
+  journalAck,
+  journalAppend,
+  journalHead,
   saveHomes,
   savePay,
   savePlayerSettings,
@@ -17,7 +20,8 @@ import {
   readTpaInbox,
   readTpaOutbox,
 } from "../storage";
-import { canTeleportTo } from "../shared/teleport-guard";
+import { isFeatureActive } from "../storage/helpers";
+import { requestPlayerTeleport } from "../shared/teleport-service";
 import type { TpaRequest } from "../types";
 
 const payCooldownBySenderId: Record<string, number> = {};
@@ -121,7 +125,7 @@ function emitTpaIncoming(targetId: string, request: TpaRequest): void {
 }
 
 export function createTpaRequest(from: Player, to: Player): { ok: boolean; message: string; request?: TpaRequest } {
-  if (!state.tpa.config.enabled) return { ok: false, message: "TPA is disabled." };
+  if (!isFeatureActive("tpa", state.tpa.config.enabled)) return { ok: false, message: "TPA is disabled." };
   if (from.id === to.id) return { ok: false, message: "You cannot send a TPA request to yourself." };
 
   const toSettings = getPlayerSettings(to);
@@ -196,12 +200,17 @@ export function acceptTpaRequest(target: Player, requestId?: string): { ok: bool
   if (request.expiresAt < nowMs()) return { ok: false, message: "TPA request expired." };
   const requester = getOnlinePlayerById(request.fromPlayerId);
   if (!requester) return { ok: false, message: `${request.fromName} is not online.` };
-  const guard = canTeleportTo(requester, { ...target.location, dimensionId: target.dimension.id }, { blockCombat: true });
-  if (!guard.ok) return guard;
-
-  requester.teleport(target.location, { dimension: target.dimension });
+  const tpaSeq = journalHead("tpa") + 1;
+  journalAppend("tpa", { kind: "accept", requestId: request.requestId, from: request.fromPlayerId, to: targetId });
+  const teleported = requestPlayerTeleport(
+    requester,
+    { ...target.location, dimensionId: target.dimension.id },
+    { blockCombat: true },
+  );
+  if (!teleported.ok) return teleported;
 
   removeRequestFromOutbox(request.fromPlayerId, request.requestId);
+  journalAck("tpa", tpaSeq);
 
   return { ok: true, message: `${request.fromName} teleported to you.`, requesterName: request.fromName };
 }
@@ -240,7 +249,7 @@ export function clearSocialRuntimeForPlayer(playerId: string): void {
 }
 
 export function setHome(player: Player, rawName?: string): { ok: boolean; message: string } {
-  if (!state.homes.config.enabled) return { ok: false, message: "Homes are disabled." };
+  if (!isFeatureActive("homes", state.homes.config.enabled)) return { ok: false, message: "Homes are disabled." };
   const name = String(rawName ?? "home").trim().toLowerCase() || "home";
   const playerId = getPlayerId(player);
   const homes = state.homes.homesByPlayerId[playerId] ?? {};
@@ -275,7 +284,7 @@ export function deleteHome(player: Player, rawName?: string): { ok: boolean; mes
 }
 
 export function teleportHome(player: Player, rawName?: string): { ok: boolean; message: string } {
-  if (!state.homes.config.enabled) return { ok: false, message: "Homes are disabled." };
+  if (!isFeatureActive("homes", state.homes.config.enabled)) return { ok: false, message: "Homes are disabled." };
   const name = String(rawName ?? "home").trim().toLowerCase() || "home";
   const homes = state.homes.homesByPlayerId[getPlayerId(player)] ?? {};
   const home = homes[name];
@@ -283,15 +292,17 @@ export function teleportHome(player: Player, rawName?: string): { ok: boolean; m
   if (!state.homes.config.allowCrossDimension && player.dimension.id !== home.dimensionId) {
     return { ok: false, message: "Cross-dimension homes are disabled." };
   }
-  const guard = canTeleportTo(player, { ...home, dimensionId: home.dimensionId }, { blockCombat: true });
-  if (!guard.ok) return guard;
-  const dimension = world.getDimension(home.dimensionId);
-  player.teleport({ x: home.x, y: home.y, z: home.z }, { dimension });
+  const result = requestPlayerTeleport(
+    player,
+    { ...home, dimensionId: home.dimensionId },
+    { blockCombat: true },
+  );
+  if (!result.ok) return result;
   return { ok: true, message: `Teleported to "${name}".` };
 }
 
 export function payPlayer(from: Player, to: Player, amountRaw: number): { ok: boolean; message: string } {
-  if (!state.pay.config.enabled) return { ok: false, message: "Pay is disabled." };
+  if (!isFeatureActive("pay", state.pay.config.enabled)) return { ok: false, message: "Pay is disabled." };
   if (from.id === to.id) return { ok: false, message: "You cannot pay yourself." };
 
   const amount = Math.floor(amountRaw);
@@ -323,6 +334,8 @@ export function payPlayer(from: Player, to: Player, amountRaw: number): { ok: bo
 
   const tax = Math.floor((amount * Math.max(0, state.pay.config.taxPercent)) / 100);
   const received = Math.max(0, amount - tax);
+  const paySeq = journalHead("pay") + 1;
+  journalAppend("pay", { kind: "pay", from: senderId, to: getPlayerId(to), amount, received, objective });
   if (!setScore(from, objective, senderBalance - amount)) {
     return { ok: false, message: "Failed to update sender balance." };
   }
@@ -332,5 +345,6 @@ export function payPlayer(from: Player, to: Player, amountRaw: number): { ok: bo
   }
 
   payCooldownBySenderId[senderId] = now + Math.max(1, state.pay.config.cooldownSeconds) * 1000;
+  journalAck("pay", paySeq);
   return { ok: true, message: `Paid ${to.name} ${received}${tax > 0 ? ` (tax ${tax})` : ""}.` };
 }

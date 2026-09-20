@@ -1,26 +1,16 @@
 import {
-  CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   CustomCommandResult,
   system,
   world,
 } from "@minecraft/server";
+import { registerDescribedCommand } from "./descriptors";
 import { commandOriginToPlayer, getPlayerId, isFeatureEnabled, isOperator, setPlayerStatById, tell } from "../storage";
 
 export function registerStatsCommands(registry: CustomCommandRegistry): void {
-  registry.registerCommand(
-    {
-      name: "tau:stats",
-      description: "View or edit player stats.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "target", type: CustomCommandParamType.String },
-        { name: "stat", type: CustomCommandParamType.String },
-        { name: "value", type: CustomCommandParamType.String },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:stats",
     (origin, target?: string, stat?: string, value?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin);
       const targetName = String(target ?? "").trim();

@@ -4,12 +4,9 @@ import {
   type RankDefinition,
 } from "../types";
 import { getPlayerTeam } from "../teams";
-import {
-  state,
-  defaultPlayerStats,
-  markStatsPlayerDirty,
-  markStatsPlayerIdsDirty,
-} from "./state";
+import { state } from "./state";
+import { defaultPlayerStats } from "./defaults";
+import { markStatsPlayerDirty, markStatsPlayerIdsDirty } from "./split-keys/stats";
 import { saveRanks } from "./save";
 import { normalizeKey, isOperator, getScore } from "./helpers";
 

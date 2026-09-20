@@ -1,10 +1,14 @@
 import { Block, ItemStack, Player, system, world } from "@minecraft/server";
-import { getInventoryContainer, getPlayerId, getScore, saveCrates, setScore, state } from "../storage";
+import { getInventoryContainer, ensureScoreboardObjective, getPlayerId, getScore, saveCrates, setScore, state } from "../storage";
 import { runBuiltCommandFromConfiguredCommand } from "../command-builder";
 import { renderCommandTemplate } from "../shared/templates";
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
+import { parseIntIn } from "../shared/numbers";
+import { tryGiveWithEscrow } from "../shared/inventory";
 import { type CrateAnimationPreset, type CrateDefinition, type CrateParticlePreset, type CrateReward } from "../types";
 import { normalizeBlockId, normalizeItemId } from "../shared/item-id";
+import { normalizeId, resolveLegacyKey } from "../shared/normalize-id";
+import { pickWeighted } from "../shared/weighted-pick";
 
 export type CrateBlockLocation = {
   dimensionId: string;
@@ -29,8 +33,8 @@ const KEY_MARKER_PREFIX = "§0[TAU_CRATE:";
 const activePlayers = new Set<string>();
 const activeLocations = new Set<string>();
 
-function normalizeId(value: string): string {
-  return String(value ?? "").trim().toLowerCase();
+function chooseWeightedReward(rewards: CrateReward[]): CrateReward | undefined {
+  return pickWeighted(rewards.filter((reward) => Number.isFinite(reward.weight) && reward.weight > 0));
 }
 
 function blockKey(dimensionId: string, x: number, y: number, z: number): string {
@@ -148,18 +152,6 @@ function spawnCrateParticles(player: Player, particleId: string, count = 6): voi
   }
 }
 
-function chooseWeightedReward(rewards: CrateReward[]): CrateReward | undefined {
-  const valid = rewards.filter((reward) => Number.isFinite(reward.weight) && reward.weight > 0);
-  if (valid.length === 0) return undefined;
-  const total = valid.reduce((sum, reward) => sum + reward.weight, 0);
-  let roll = Math.random() * total;
-  for (const reward of valid) {
-    roll -= reward.weight;
-    if (roll <= 0) return reward;
-  }
-  return valid[valid.length - 1];
-}
-
 function sampleRewardName(crate: CrateDefinition, winner: CrateReward, winnerBias: number): string {
   const names = crate.rewards.map((reward) => reward.label).filter((label) => label.length > 0);
   if (names.length === 0) return winner.label;
@@ -223,9 +215,14 @@ function giveReward(player: Player, crate: CrateDefinition, reward: CrateReward)
   }
 
   if (reward.type === "score") {
-    const current = getScore(player, reward.objective);
-    if (current !== undefined) {
-      setScore(player, reward.objective, current + Math.max(0, Math.floor(reward.amount)));
+    const objective = String(reward.objective ?? "").trim();
+    if (!objective) return { ok: false, message: `Invalid score objective for reward: ${reward.label}.` };
+    if (!ensureScoreboardObjective(objective)) return { ok: false, message: `Missing scoreboard objective "${objective}".` };
+    const current = getScore(player, objective);
+    if (current === undefined) return { ok: false, message: `Missing scoreboard objective "${objective}".` };
+    const amount = Math.max(0, Math.floor(Number(reward.amount) || 0));
+    if (!setScore(player, objective, current + amount)) {
+      return { ok: false, message: `Failed to update score "${objective}".` };
     }
     return { ok: true, message: `Granted ${reward.label}.` };
   }
@@ -277,6 +274,10 @@ function runRevealSequence(player: Player, crate: CrateDefinition, reward: Crate
   const brakingDelays = [2, 3, 5, 8, 10, 14, 20];
 
   const runBlur = (index: number) => {
+    if (!player.isValid) {
+      done();
+      return;
+    }
     if (index >= blurSteps) {
       runBrake(0);
       return;
@@ -288,6 +289,10 @@ function runRevealSequence(player: Player, crate: CrateDefinition, reward: Crate
   };
 
   const runBrake = (index: number) => {
+    if (!player.isValid) {
+      done();
+      return;
+    }
     if (index >= brakingDelays.length) {
       showTitle(player, `§b§l${reward.label.toUpperCase()}`, "§a§lLOOT CLAIMED!", 3, 100, 40);
       spawnCrateParticles(player, particlePreset.burst, 20);
@@ -336,6 +341,7 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
     return { handled: true, message: `You need a valid ${entry.crate.displayName} key.` };
   }
   system.runTimeout(() => {
+    if (!player.isValid) return;
     const pid = getPlayerId(player);
     if (activePlayers.has(pid)) return;
     if (activeLocations.has(entry.locationKey)) return;
@@ -359,6 +365,9 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
     }
 
     runRevealSequence(player, entry.crate, reward, () => {
+      activePlayers.delete(pid);
+      activeLocations.delete(entry.locationKey);
+      if (!player.isValid) return;
       const result = giveReward(player, entry.crate, reward);
       if (!result.ok) {
         try {
@@ -366,7 +375,9 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
         } catch {
           // ignore
         }
-      } else if (result.message) {
+        return;
+      }
+      if (result.message) {
         try {
           player.sendMessage(`§a[Crate] ${result.message}`);
         } catch {
@@ -374,8 +385,6 @@ export function tryHandleCrateInteract(player: Player, block: Block, heldItem?: 
         }
       }
       maybeBroadcastRareWin(player, entry.crate, reward);
-      activePlayers.delete(pid);
-      activeLocations.delete(entry.locationKey);
     });
   }, 1);
 
@@ -387,21 +396,48 @@ export function clearCrateRuntimeForPlayer(playerId: string): void {
 }
 
 export function giveCrateKey(player: Player, crateId: string, amount: number): { ok: boolean; message: string } {
-  const crate = state.crates.crates[normalizeId(crateId)];
+  const crate = getCrateDefinition(crateId);
   if (!crate) return { ok: false, message: `Crate not found: ${crateId}` };
+  const count = parseIntIn(amount, 1, 64, 1);
   let stack: ItemStack;
   try {
-    stack = new ItemStack(normalizeItemId(crate.keyItemId), Math.max(1, Math.floor(amount || 1)));
+    stack = new ItemStack(normalizeItemId(crate.keyItemId), count);
     stack.nameTag = `§6${crate.displayName} Key`;
     stack.setLore([crate.keyLoreLine, markerLine(crate.id)]);
   } catch {
     return { ok: false, message: `Invalid key item id for ${crate.displayName}: ${crate.keyItemId}` };
   }
-  const inventory = getInventoryContainer(player);
-  if (!inventory) return { ok: false, message: `Inventory unavailable while giving ${crate.displayName} key.` };
-  const left = inventory.addItem(stack);
-  if (left) return { ok: false, message: `Not enough inventory space for ${crate.displayName} key.` };
-  return { ok: true, message: `Gave ${stack.amount} key(s) for ${crate.displayName}.` };
+  const escrow = tryGiveWithEscrow(player, stack);
+  if (!escrow.ok) return { ok: false, message: `Unable to give ${crate.displayName} key.` };
+  if (escrow.dropped) return { ok: true, message: `Inventory full, dropped ${count}x ${crate.displayName} key at your feet.` };
+  return { ok: true, message: `Gave ${count} key(s) for ${crate.displayName}.` };
+}
+
+export function repairCrateStoreNumbers(): number {
+  let fixed = 0;
+  for (const crate of Object.values(state.crates.crates)) {
+    const threshold = parseIntIn(crate.rareBroadcastWeightThreshold, 1, Number.MAX_SAFE_INTEGER, 5);
+    if (threshold !== crate.rareBroadcastWeightThreshold) {
+      crate.rareBroadcastWeightThreshold = threshold;
+      fixed += 1;
+    }
+    for (const reward of crate.rewards) {
+      const weight = parseIntIn(reward.weight, 1, Number.MAX_SAFE_INTEGER, 1);
+      if (weight !== reward.weight) {
+        reward.weight = weight;
+        fixed += 1;
+      }
+      if (reward.type === "item" || reward.type === "score") {
+        const amount = parseIntIn(reward.amount, reward.type === "item" ? 1 : 0, Number.MAX_SAFE_INTEGER, 1);
+        if (amount !== reward.amount) {
+          reward.amount = amount;
+          fixed += 1;
+        }
+      }
+    }
+  }
+  if (fixed > 0) saveCrates();
+  return fixed;
 }
 
 function registerCrateLocation(
@@ -512,4 +548,59 @@ export function removeCrateAtCoordinates(dimensionId: string, x: number, y: numb
 
 export function listCrateIds(): string[] {
   return Object.keys(state.crates.crates).sort((a, b) => a.localeCompare(b));
+}
+
+export function getCrateDefinition(crateId: string): CrateDefinition | undefined {
+  const strict = state.crates.crates[normalizeId(crateId)];
+  if (strict) return strict;
+  const legacy = resolveLegacyKey(Object.keys(state.crates.crates), crateId);
+  return legacy ? state.crates.crates[legacy] : undefined;
+}
+
+export function commitCrate(crate: CrateDefinition): { ok: boolean; message: string } {
+  if (!crate.id) return { ok: false, message: "Crate ID is missing." };
+  state.crates.crates[crate.id] = crate;
+  saveCrates();
+  return { ok: true, message: `Saved crate ${crate.displayName}.` };
+}
+
+export function commitCratePatch(
+  crateId: string,
+  patch: Partial<Pick<CrateDefinition, "displayName" | "crateBlockId" | "keyItemId" | "keyLoreLine" | "animationPreset" | "particlePreset" | "broadcastRareWins" | "rareBroadcastWeightThreshold">>,
+): { ok: boolean; message: string } {
+  const crate = getCrateDefinition(crateId);
+  if (!crate) return { ok: false, message: "Crate not found." };
+  const next: CrateDefinition = { ...crate, ...patch, id: crate.id, rewards: crate.rewards };
+  return commitCrate(next);
+}
+
+export function createCrateDefinition(def: CrateDefinition): { ok: boolean; message: string } {
+  const id = normalizeId(def.id);
+  if (!id) return { ok: false, message: "Crate id is required." };
+  if (state.crates.crates[id]) return { ok: false, message: "That crate already exists." };
+  return commitCrate({ ...def, id });
+}
+
+export function deleteCrateDefinition(crateId: string): { ok: boolean; message: string } {
+  const crate = getCrateDefinition(crateId);
+  if (!crate) return { ok: false, message: "Crate not found." };
+  const id = crate.id;
+  delete state.crates.crates[id];
+  for (const [key, entry] of Object.entries(state.crates.locations)) {
+    if (entry.crateId === id) delete state.crates.locations[key];
+  }
+  saveCrates();
+  return { ok: true, message: `Deleted crate ${crate.displayName}.` };
+}
+
+export function setCratesEnabled(enabled: boolean): { ok: boolean; message: string } {
+  state.crates.config.enabled = enabled;
+  saveCrates();
+  return { ok: true, message: `Crates ${enabled ? "enabled" : "disabled"}.` };
+}
+
+export function commitCrateRewards(crateId: string, rewards: CrateReward[]): { ok: boolean; message: string } {
+  const crate = getCrateDefinition(crateId);
+  if (!crate) return { ok: false, message: "Crate not found." };
+  return commitCrate({ ...crate, rewards });
 }

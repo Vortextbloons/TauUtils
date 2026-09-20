@@ -1,8 +1,8 @@
 import { Player, world } from "@minecraft/server";
 import { TauUi } from "./tau-ui";
 import { ICONS } from "../types";
-import { isFeatureEnabled, isOperator, savePlots, state, tell } from "../storage";
-import { assignPlayerToSlot, autoBuildPlots, buildManualGridSlots, buildPlotGeometry, clearAllPlotSlots, forceReleasePlot, getAssignedSlotForOwner, getAssignedSlotForPlayer, getPlotStatusLines, repairPlotSystem, setPlotCount, setPlotOriginFromPlayer, setPlotSize, setPlotSpacing, setSlotManualBounds, teleportPlayerToSlot, updatePlotAutoBuildSettings, validatePlotLayout } from "../plots";
+import { isFeatureEnabled, isOperator, state, tell } from "../storage";
+import { assignPlayerToSlot, autoBuildPlots, buildManualGridSlots, buildPlotGeometry, clearAllPlotSlots, commitPlotConfig, forceReleasePlot, getAssignedSlotForOwner, getAssignedSlotForPlayer, getPlotStatusLines, repairPlotSystem, setPlotCount, setPlotOriginFromPlayer, setPlotSize, setPlotSpacing, setSlotManualBounds, teleportPlayerToSlot, updatePlotAutoBuildSettings, validatePlotLayout } from "../plots";
 import { getPlayerTeam } from "../teams";
 
 export async function showPlotManager(player: Player) {
@@ -39,9 +39,7 @@ export async function showPlotManager(player: Player) {
     if (response.canceled) return;
 
     if (response.id === "toggle") {
-      cfg.enabled = !cfg.enabled;
-      state.plots.config.enabled = cfg.enabled;
-      savePlots();
+      commitPlotConfig({ enabled: !cfg.enabled });
       continue;
     }
     if (response.id === "origin") {
@@ -83,8 +81,7 @@ export async function showPlotManager(player: Player) {
       if (result.canceled) continue;
       const ticks = Math.max(1, Math.floor(Number(result.values.ticks ?? cfg.saveIntervalTicks)));
       if (Number.isFinite(ticks)) {
-        state.plots.config.saveIntervalTicks = ticks;
-        savePlots();
+        commitPlotConfig({ saveIntervalTicks: ticks });
         tell(player, `Plot save interval set to ${ticks} ticks.`);
       }
       continue;

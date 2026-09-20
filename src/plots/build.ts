@@ -2,7 +2,7 @@ import { Player, Vector3, system, world } from "@minecraft/server";
 import { STORAGE_KEYS, type PlacedGenerator, type PlotSnapshot, type PlotSlot, type TeamDefinition } from "../types";
 import { getPlayerId, isFeatureEnabled, saveGenerators, savePlots, saveTeams, state, tell } from "../storage";
 import { restoreGeneratorBlocks } from "../generators/definitions";
-import { getPlotSlots, getDimension, invalidatePlotSlotCache, parseSlotIndex, slotName, buildManualGridSlots, MAX_FILL_VOLUME, MAX_FILL_SPAN, BUILD_PROXIMITY_RADIUS } from "./grid";
+import { getPlotSlots, getDimension, getPlotLayoutVersion, invalidatePlotCaches, parseSlotIndex, slotName, buildManualGridSlots, MAX_FILL_VOLUME, MAX_FILL_SPAN, BUILD_PROXIMITY_RADIUS } from "./grid";
 
 export function reorderPlotSlots(): boolean {
   const orderedSlots = getPlotSlots().slice().sort((a, b) => parseSlotIndex(a.id) - parseSlotIndex(b.id) || a.id.localeCompare(b.id));
@@ -57,7 +57,7 @@ export function reorderPlotSlots(): boolean {
   state.plots.slots = nextSlots;
   state.plots.playerToSlot = nextPlayerToSlot;
   state.plots.snapshots = nextSnapshots;
-  invalidatePlotSlotCache();
+  invalidatePlotCaches();
   savePlots();
   saveTeams();
   return true;
@@ -94,15 +94,11 @@ function hasActiveFillWork(): boolean {
 }
 
 type PlotSpatialIndex = {
-  signature: string;
+  layoutVersion: number;
   buckets: Map<string, PlotSlot[]>;
 };
 
 let plotSpatialIndex: PlotSpatialIndex | undefined;
-
-function plotSpatialSignature(): string {
-  return `${state.plots.config.dimensionId}|${getPlotSlots().map((slot) => `${slot.id}:${slot.min.x},${slot.min.y},${slot.min.z}:${slot.max.x},${slot.max.y},${slot.max.z}`).join("|")}`;
-}
 
 function bucketCoord(value: number): number {
   return Math.floor(value / PLOT_SPATIAL_CELL_SIZE);
@@ -132,12 +128,12 @@ function buildPlotSpatialIndex(): PlotSpatialIndex {
       }
     }
   }
-  return { signature: plotSpatialSignature(), buckets };
+  return { layoutVersion: getPlotLayoutVersion(), buckets };
 }
 
 function getPlotSpatialIndex(): PlotSpatialIndex {
-  const signature = plotSpatialSignature();
-  if (!plotSpatialIndex || plotSpatialIndex.signature !== signature) {
+  const layoutVersion = getPlotLayoutVersion();
+  if (!plotSpatialIndex || plotSpatialIndex.layoutVersion !== layoutVersion) {
     plotSpatialIndex = buildPlotSpatialIndex();
   }
   return plotSpatialIndex;
@@ -145,6 +141,7 @@ function getPlotSpatialIndex(): PlotSpatialIndex {
 
 export function invalidatePlotRuntimeCaches(): void {
   plotSpatialIndex = undefined;
+  invalidatePlotCaches();
 }
 
 function canUsePlotCommandsNow(): boolean {

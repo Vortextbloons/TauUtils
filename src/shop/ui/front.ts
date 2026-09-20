@@ -40,7 +40,8 @@ import {
   promptHeldItemPricing,
 } from "../utils";
 import { normalizeItemId } from "../../shared/item-id";
-import { ICONS } from "../../ui/icons";
+import { parseIntIn, MAX_SAFE_INT } from "../../shared/numbers";
+import { ICONS } from "../../types";
 import { kitBuilderFlow, showShopItemActions, getKitDraft } from "./editor";
 import { sellAllSellableItems, openShopTransaction } from "./transaction";
 
@@ -251,9 +252,9 @@ async function addShopItemFlow(player: Player, profile: ShopProfile, category?: 
   const displayName = String(result.values.displayName ?? "").trim();
   const cat = String(result.values.category ?? "").trim();
   const canBuy = Boolean(result.values.canBuy);
-  const buyPrice = Math.max(0, Math.floor(Number(result.values.buyPrice ?? 0)));
+  const buyPrice = parseIntIn(result.values.buyPrice, 0, MAX_SAFE_INT, 0);
   const canSell = Boolean(result.values.canSell);
-  const sellPrice = Math.max(0, Math.floor(Number(result.values.sellPrice ?? 0)));
+  const sellPrice = parseIntIn(result.values.sellPrice, 0, MAX_SAFE_INT, 0);
   const quantities = cleanQuantities(String(result.values.quantities ?? "1"));
 
   if (!itemId) {
@@ -320,7 +321,9 @@ export async function editKitItemFlow(player: Player, profile: ShopProfile, item
 export function cleanQuantities(raw: string): number[] {
   return raw
     .split(",")
-    .map((v) => Math.max(1, Math.floor(Number(v.trim()))))
+    .map((v) => Number(v.trim()))
+    .filter((v) => Number.isFinite(v))
+    .map((v) => parseIntIn(v, 1, MAX_SAFE_INT, 1))
     .filter((v, i, a) => a.indexOf(v) === i)
     .sort((a, b) => a - b);
 }
@@ -333,11 +336,11 @@ function normalizeHeldShopItemResult(
   const label = String(values.label ?? "").trim();
   const displayName = String(values.displayName ?? "").trim();
   const category = String(values.category ?? "").trim();
-  const amount = Math.max(1, Math.floor(Number(values.amount ?? held.amount ?? 1)));
+  const amount = parseIntIn(values.amount, 1, MAX_SAFE_INT, Math.max(1, Math.floor(held.amount) || 1));
   const canBuy = Boolean(values.canBuy);
-  const buyPrice = Math.max(0, Math.floor(Number(values.buyPrice ?? 0)));
+  const buyPrice = parseIntIn(values.buyPrice, 0, MAX_SAFE_INT, 0);
   const canSell = Boolean(values.canSell);
-  const sellPrice = Math.max(0, Math.floor(Number(values.sellPrice ?? 0)));
+  const sellPrice = parseIntIn(values.sellPrice, 0, MAX_SAFE_INT, 0);
   const extras = cleanQuantities(String(values.quantities ?? ""));
 
   return {

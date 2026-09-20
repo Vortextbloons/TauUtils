@@ -1,25 +1,20 @@
 import {
-  CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   system,
 } from "@minecraft/server";
-import { fail, ok, registerPlayerCommand, resultFrom } from "./helpers";
-import { getOnlinePlayerByName, tell } from "../storage";
+import { fail, ok, requireFeatureResult, resultFrom } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
+import { commandOriginToPlayer, getOnlinePlayerByName, tell } from "../storage";
 import { acceptTpaRequest, cancelOutgoingTpaRequest, createTpaRequest, deleteHome, denyTpaRequest, payPlayer, setHome, teleportHome } from "../social";
 
 export function registerSocialCommands(registry: CustomCommandRegistry): void {
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:tpa",
-      description: "Open the TPA menu or send a teleport request to a player.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "target", type: CustomCommandParamType.String }],
-    },
-    "tpa",
-    (player, target) => {
+    "tau:tpa",
+    (origin, target) => {
+      const featErr = requireFeatureResult("tpa");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const targetName = String(target ?? "").trim();
       if (!targetName) {
         system.run(async () => {
@@ -36,69 +31,53 @@ export function registerSocialCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:tpaccept",
-      description: "Accept oldest TPA request, or a specific one by id.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "requestId", type: CustomCommandParamType.String }],
-    },
-    "tpa",
-    (player, requestId) => resultFrom(acceptTpaRequest(player, requestId ? String(requestId) : undefined))
+    "tau:tpaccept",
+    (origin, requestId) => {
+      const featErr = requireFeatureResult("tpa");
+      if (featErr) return featErr;
+      return resultFrom(acceptTpaRequest(commandOriginToPlayer(origin)!, requestId ? String(requestId) : undefined));
+    }
   );
 
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:tpdeny",
-      description: "Deny oldest TPA request, or a specific one by id.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "requestId", type: CustomCommandParamType.String }],
-    },
-    "tpa",
-    (player, requestId) => resultFrom(denyTpaRequest(player, requestId ? String(requestId) : undefined))
+    "tau:tpdeny",
+    (origin, requestId) => {
+      const featErr = requireFeatureResult("tpa");
+      if (featErr) return featErr;
+      return resultFrom(denyTpaRequest(commandOriginToPlayer(origin)!, requestId ? String(requestId) : undefined));
+    }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:tpacancel",
-      description: "Cancel an outgoing TPA request by id.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      mandatoryParameters: [{ name: "requestId", type: CustomCommandParamType.String }],
-    },
-    "tpa",
-    (player, requestId) => resultFrom(cancelOutgoingTpaRequest(player, String(requestId ?? "").trim()))
+    "tau:tpacancel",
+    (origin, requestId) => {
+      const featErr = requireFeatureResult("tpa");
+      if (featErr) return featErr;
+      return resultFrom(cancelOutgoingTpaRequest(commandOriginToPlayer(origin)!, String(requestId ?? "").trim()));
+    }
   );
 
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:sethome",
-      description: "Set a named home.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "name", type: CustomCommandParamType.String }],
-    },
-    "homes",
-    (player, name) => resultFrom(setHome(player, name))
+    "tau:sethome",
+    (origin, name) => {
+      const featErr = requireFeatureResult("homes");
+      if (featErr) return featErr;
+      return resultFrom(setHome(commandOriginToPlayer(origin)!, name));
+    }
   );
 
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:home",
-      description: "Teleport to a home or open home UI.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "name", type: CustomCommandParamType.String }],
-    },
-    "homes",
-    (player, name) => {
+    "tau:home",
+    (origin, name) => {
+      const featErr = requireFeatureResult("homes");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const homeName = String(name ?? "").trim();
       if (!homeName) {
         system.run(async () => {
@@ -111,33 +90,23 @@ export function registerSocialCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand<[string]>(
+  registerDescribedCommand<[string]>(
     registry,
-    {
-      name: "tau:delhome",
-      description: "Delete a named home.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      mandatoryParameters: [{ name: "name", type: CustomCommandParamType.String }],
-    },
-    "homes",
-    (player, name) => resultFrom(deleteHome(player, name))
+    "tau:delhome",
+    (origin, name) => {
+      const featErr = requireFeatureResult("homes");
+      if (featErr) return featErr;
+      return resultFrom(deleteHome(commandOriginToPlayer(origin)!, name));
+    }
   );
 
-  registerPlayerCommand<[string | undefined, string | undefined]>(
+  registerDescribedCommand<[string | undefined, string | undefined]>(
     registry,
-    {
-      name: "tau:pay",
-      description: "Pay another player.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "target", type: CustomCommandParamType.String },
-        { name: "amount", type: CustomCommandParamType.String },
-      ],
-    },
-    "pay",
-    (player, target, amount) => {
+    "tau:pay",
+    (origin, target, amount) => {
+      const featErr = requireFeatureResult("pay");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const targetName = String(target ?? "").trim();
       if (!targetName) {
         system.run(async () => {
@@ -158,16 +127,13 @@ export function registerSocialCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:settings",
-      description: "Open player social settings.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "playerConfig",
-    (player) => {
+    "tau:settings",
+    (origin) => {
+      const featErr = requireFeatureResult("playerConfig");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       system.run(async () => {
         const { showPlayerSettingsMenu } = await import("../ui");
         showPlayerSettingsMenu(player);

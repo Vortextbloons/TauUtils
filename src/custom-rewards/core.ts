@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { commandStripSlash, getScore, hasPermission, isFeatureEnabled, isOperator, normalizeKey, saveCustomRewards, setScore, state, tell } from "../storage";
+import { commandStripSlash, ensureScoreboardObjective, getScore, hasPermission, isFeatureEnabled, isOperator, normalizeKey, saveCustomRewards, setScore, state, tell } from "../storage";
 import { deserializeItemStack } from "../shared/item-serialization";
 import { renderTemplate } from "../shared/templates";
 import { type CustomRewardAction, type CustomRewardDefinition } from "../types";
@@ -65,33 +65,41 @@ function canRunReward(player: Player, reward: CustomRewardDefinition, options: R
   return !permission || hasPermission(player, permission) || isOperator(player);
 }
 
-function runAction(player: Player, action: CustomRewardAction, options: RunRewardOptions): void {
+function runScoreAction(player: Player, action: Extract<CustomRewardAction, { type: "score" }>): boolean {
+  const objective = String(action.objective ?? "").trim();
+  if (!objective) return true;
+  if (!ensureScoreboardObjective(objective)) return false;
+  if (action.operation === "set") {
+    return setScore(player, objective, Math.floor(Number(action.amount) || 0));
+  }
+  const current = getScore(player, objective);
+  if (current === undefined) return false;
+  const amount = Math.max(0, Math.floor(Number(action.amount) || 0));
+  const next = action.operation === "remove" ? current - amount : current + amount;
+  return setScore(player, objective, next);
+}
+
+function runAction(player: Player, action: CustomRewardAction, options: RunRewardOptions): boolean {
   if (action.type === "message") {
     tell(player, renderRewardText(action.message, player, options.extra));
-    return;
+    return true;
   }
 
   if (action.type === "score") {
-    const objective = String(action.objective ?? "").trim();
-    if (!objective) return;
-    const current = getScore(player, objective) ?? 0;
-    const amount = Math.floor(Number(action.amount) || 0);
-    const next = action.operation === "set" ? amount : action.operation === "remove" ? current - amount : current + amount;
-    setScore(player, objective, next);
-    return;
+    return runScoreAction(player, action);
   }
 
   if (action.type === "tag") {
     const tag = String(action.tag ?? "").trim();
-    if (!tag) return;
+    if (!tag) return true;
     if (action.operation === "remove") player.removeTag(tag);
     else player.addTag(tag);
-    return;
+    return true;
   }
 
   if (action.type === "effect") {
     const effectId = String(action.effectId ?? "").trim();
-    if (!effectId) return;
+    if (!effectId) return true;
     const seconds = Math.max(1, Math.floor(Number(action.durationSeconds) || 1));
     const amplifier = Math.max(0, Math.floor(Number(action.amplifier) || 0));
     const hideParticles = action.showParticles === false ? "true" : "false";
@@ -99,18 +107,18 @@ function runAction(player: Player, action: CustomRewardAction, options: RunRewar
       player.runCommand(`effect @s ${effectId} ${seconds} ${amplifier} ${hideParticles}`);
     } catch {
     }
-    return;
+    return true;
   }
 
   if (action.type === "item") {
     const itemId = String(action.itemId ?? "").trim();
     const amount = Math.max(1, Math.min(64, Math.floor(Number(action.amount) || 1)));
-    if (!itemId) return;
+    if (!itemId) return true;
     try {
       player.runCommand(`give @s ${itemId} ${amount}`);
     } catch {
     }
-    return;
+    return true;
   }
 
   if (action.type === "item_stack") {
@@ -120,18 +128,21 @@ function runAction(player: Player, action: CustomRewardAction, options: RunRewar
       if (!inventory || inventory.addItem(stack)) player.dimension.spawnItem(stack, player.location);
     } catch {
     }
-    return;
+    return true;
   }
 
   if (action.type === "command") {
     const command = renderRewardText(action.command, player, options.extra).trim();
-    if (!command) return;
+    if (!command) return true;
     try {
       if (action.runAs === "world") player.dimension.runCommand(commandStripSlash(command));
       else player.runCommand(commandStripSlash(command));
     } catch {
     }
+    return true;
   }
+
+  return true;
 }
 
 export function runCustomReward(player: Player, id: string, options: RunRewardOptions = {}): RewardRunResult {
@@ -141,6 +152,10 @@ export function runCustomReward(player: Player, id: string, options: RunRewardOp
   if (!reward.enabled) return { ok: false, message: `Reward "${reward.id}" is disabled.` };
   if (!canRunReward(player, reward, options)) return { ok: false, message: "You do not have permission to run this reward." };
 
-  for (const action of reward.actions.slice(0, state.customRewards.config.maxActionsPerReward)) runAction(player, action, options);
+  for (const action of reward.actions.slice(0, state.customRewards.config.maxActionsPerReward)) {
+    if (!runAction(player, action, options)) {
+      return { ok: false, message: `Reward "${reward.id}" failed during a score action; remaining actions were skipped.` };
+    }
+  }
   return { ok: true, message: `Ran reward ${reward.id}.` };
 }

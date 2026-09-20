@@ -1,27 +1,20 @@
 import {
-  CommandPermissionLevel,
-  CustomCommandParamType,
   CustomCommandRegistry,
   CustomCommandResult,
   system,
 } from "@minecraft/server";
-import { requirePlayerResult, requireOperatorResult } from "./helpers";
-import { commandOriginToPlayer, isFeatureEnabled, isOperator, tell } from "../storage";
+import { requireOperatorResult } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
+import { commandOriginToPlayer, isFeatureEnabled, tell } from "../storage";
 import { pruneData, tellPruneResult } from "../prune";
 import { listCrateIds } from "../crates";
 import { listTauItemIds } from "../tau-items";
 
 export function registerWorldCommands(registry: CustomCommandRegistry): void {
-  registry.registerCommand(
-    {
-      name: "tau:generatorsadmin",
-      description: "Open generator admin menu.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:generatorsadmin",
     (origin): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       const opErr = requireOperatorResult(player);
       if (opErr) return opErr;
@@ -34,21 +27,10 @@ export function registerWorldCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:crate",
-      description: "Manage crates and keys.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "action", type: CustomCommandParamType.String },
-        { name: "crate", type: CustomCommandParamType.String },
-        { name: "amount", type: CustomCommandParamType.String },
-      ],
-    },
-    (origin, action?: string, crateArg?: string, amountArg?: string): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
+  registerDescribedCommand(
+    registry,
+    "tau:crate",
+    (origin, action?: string): CustomCommandResult => {
       const player = commandOriginToPlayer(origin)!;
       if (!isFeatureEnabled("crates")) return { status: 1, message: "Crates are disabled." };
       const opErr = requireOperatorResult(player);
@@ -70,17 +52,10 @@ export function registerWorldCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:item",
-      description: "Manage Tau custom items.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "action", type: CustomCommandParamType.String }],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:item",
     (origin, action?: string): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       if (!isFeatureEnabled("items")) return { status: 1, message: "TauItems are disabled." };
       const opErr = requireOperatorResult(player);
@@ -102,16 +77,10 @@ export function registerWorldCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:lootchests",
-      description: "Open loot chest admin menu.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:lootchests",
     (origin): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       const opErr = requireOperatorResult(player);
       if (opErr) return opErr;
@@ -124,16 +93,10 @@ export function registerWorldCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:dev_icon",
-      description: "Open icon dev browser.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:dev_icon",
     (origin): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       const opErr = requireOperatorResult(player);
       if (opErr) return opErr;
@@ -145,19 +108,10 @@ export function registerWorldCommands(registry: CustomCommandRegistry): void {
     }
   );
 
-  registry.registerCommand(
-    {
-      name: "tau:prune",
-      description: "Preview or execute data pruning.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [
-        { name: "action", type: CustomCommandParamType.String },
-      ],
-    },
+  registerDescribedCommand(
+    registry,
+    "tau:prune",
     (origin, action?: string): CustomCommandResult => {
-      const err = requirePlayerResult(origin);
-      if (err) return err;
       const player = commandOriginToPlayer(origin)!;
       const opErr = requireOperatorResult(player);
       if (opErr) return opErr;

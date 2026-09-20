@@ -1,6 +1,7 @@
 import { world } from "@minecraft/server";
 import { STORAGE_KEYS, type TpaRequest } from "../../types";
 import { parseJSON, safeSetDynamicJson, setDynamicJsonIfChanged } from "../dynamic-json";
+import { updateManifestAfterSplitWrite } from "../manifests";
 
 export const TPA_INBOX_PREFIX = `${STORAGE_KEYS.tpa}:inbox:`;
 export const TPA_COOLDOWN_PREFIX = `${STORAGE_KEYS.tpa}:cooldown:`;
@@ -130,13 +131,36 @@ export function ensureTpaDefaults(): void {
 }
 
 export function directSaveTpaInbox(playerId: string, requests: TpaRequest[]): boolean {
-  return safeSetDynamicJson(inboxKey(playerId), requests);
+  const key = inboxKey(playerId);
+  persistedInboxKeys.add(key);
+  const ok = safeSetDynamicJson(key, requests);
+  if (ok) refreshTpaManifest();
+  return ok;
 }
 
 export function directSaveTpaOutbox(playerId: string, requests: TpaRequest[]): boolean {
-  return safeSetDynamicJson(outboxKey(playerId), requests);
+  const key = outboxKey(playerId);
+  persistedOutboxKeys.add(key);
+  const ok = safeSetDynamicJson(key, requests);
+  if (ok) refreshTpaManifest();
+  return ok;
 }
 
 export function directSaveTpaCooldown(playerId: string, untilMs: number): boolean {
-  return safeSetDynamicJson(cooldownKey(playerId), untilMs);
+  const key = cooldownKey(playerId);
+  persistedCooldownKeys.add(key);
+  const ok = safeSetDynamicJson(key, untilMs);
+  if (ok) refreshTpaManifest();
+  return ok;
+}
+
+// Refresh the tpa split manifest from the tracked per-player key sets.
+// Best-effort tripwire only; never deletes split data.
+export function refreshTpaManifest(): boolean {
+  try {
+    const keys = [...persistedInboxKeys, ...persistedOutboxKeys, ...persistedCooldownKeys];
+    return updateManifestAfterSplitWrite("tpa", keys);
+  } catch {
+    return false;
+  }
 }

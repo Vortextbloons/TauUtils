@@ -2,6 +2,10 @@ const { execSync } = require("child_process");
 const { existsSync, readFileSync, mkdirSync, rmSync, renameSync } = require("fs");
 const { resolve } = require("path");
 
+// NOTE: Release zipping is Windows-only. It shells out to powershell
+// Compress-Archive, so `npm run package` / `build:production` require Windows
+// PowerShell. Decided: keep Windows-only, no new packaging dependencies.
+
 const envPath = resolve(__dirname, "..", ".env");
 let downloadPath = "";
 

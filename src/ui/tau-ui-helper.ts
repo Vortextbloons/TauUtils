@@ -1,20 +1,5 @@
-import type { ActionType, FormElement } from "../types";
+import type { FormElement } from "../types";
 import { ICONS, isWorkingIconPath } from "./icons";
-
-export function iconForAction(action: ActionType): string {
-  switch (action) {
-    case "COMMAND_PLAYER":
-    case "COMMAND_SUDO":
-      return ICONS.command;
-    case "OPEN_MENU":
-      return ICONS.menu;
-    case "SHOP_TRANSACTION":
-      return ICONS.shop;
-    case "CLOSE":
-    default:
-      return ICONS.cancel;
-  }
-}
 
 export function iconForElement(kind: FormElement["kind"]): string {
   switch (kind) {

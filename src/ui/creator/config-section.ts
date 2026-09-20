@@ -13,12 +13,12 @@ export async function showConfigSection(player: Player) {
     if (TauUi.isCanceledOrBack(response)) return;
 
     if (response.id === "featureToggles") {
-      const { showConfigMenu } = await import("../admin-ui");
+      const { showConfigMenu } = await import("../admin");
       await showConfigMenu(player);
       continue;
     }
     if (response.id === "socialSettings") {
-      const { showSocialSettingsAdmin } = await import("../social-ui");
+      const { showSocialSettingsAdmin } = await import("../social");
       await showSocialSettingsAdmin(player);
       continue;
     }

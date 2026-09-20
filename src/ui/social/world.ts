@@ -3,7 +3,7 @@ import { TauUi } from "../tau-ui";
 import { ICONS } from "../../types";
 import { getPlayerId, isOperator, state, tell } from "../../storage";
 import { createTeam, disbandTeam, getPlayerTeam, getTeamSummary, joinTeam, kickFromTeam, leaveTeam, listTeams, setTeamFriendlyFire, setTeamPlotEnabled } from "../../teams";
-import { createWarp, deleteWarp, listWarps, setWarpLocation, teleportToWarp } from "../../warps";
+import { createWarp, deleteWarp, listWarps, listVisibleWarps, setWarpLocation, teleportToWarp } from "../../warps";
 import { showTeamInviteCenter, showPendingTeamInvites } from "./combat-admin";
 import { showTeamHomesMenu } from "./team-homes";
 
@@ -155,7 +155,7 @@ export async function showWarpMenu(player: Player) {
     return;
   }
   while (true) {
-    const warps = listWarps();
+    const warps = listVisibleWarps(player);
     const form = TauUi.action("§dWarps§r")
       .body("§7Teleport to admin-managed warp points.§r")
       .button("list", "Warp List", { iconPath: ICONS.sidebar })

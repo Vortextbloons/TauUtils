@@ -1,8 +1,8 @@
 import { Player } from "@minecraft/server";
 import { TauUi } from "./tau-ui";
 import { ICONS, type ClaimAnnouncementTarget, type ClaimDefinition } from "../types";
-import { getPlayerId, isOperator, normalizeKey, saveClaims, state, tell } from "../storage";
-import { commitClaim, invalidateClaimRuntimeState, normalizeClaimBounds } from "../claims";
+import { getPlayerId, isOperator, normalizeKey, state, tell } from "../storage";
+import { commitClaim, deleteClaim, normalizeClaimBounds, updateClaimsConfig } from "../claims";
 import { getPlayerTeam } from "../teams";
 
 function copyClaim(claim: ClaimDefinition): ClaimDefinition {
@@ -90,10 +90,8 @@ async function editClaim(player: Player, claimId: string): Promise<void> {
     if (response.id === "delete") {
       const ok = await TauUi.confirm(player, { title: "Delete Claim", body: `Delete ${claim.name}?`, confirmText: "Delete" });
       if (!ok) continue;
-      delete state.claims.claims[claim.id];
-      saveClaims();
-      invalidateClaimRuntimeState();
-      tell(player, "Claim deleted.");
+      const deleted = deleteClaim(claim.id);
+      tell(player, `${deleted.ok ? "§a" : "§c"}${deleted.message}`);
       return;
     }
     if (response.id === "settings") {
@@ -178,15 +176,17 @@ export async function showClaimsAdminMenu(player: Player): Promise<void> {
     .show(player);
   if (result.canceled) return;
   const maxSize = String(result.values.maxSize ?? "").trim().split(/[\s,]+/).map((entry) => Number(entry));
-  cfg.enabled = Boolean(result.values.enabled);
-  cfg.protectionEnabled = Boolean(result.values.protectionEnabled);
-  cfg.allowPlayersToToggleProtection = Boolean(result.values.allowPlayersToToggleProtection);
-  cfg.maxClaimsPerPlayer = Math.max(0, Math.floor(Number(result.values.maxClaimsPerPlayer ?? cfg.maxClaimsPerPlayer)));
-  cfg.maxClaimsPerTeam = Math.max(0, Math.floor(Number(result.values.maxClaimsPerTeam ?? cfg.maxClaimsPerTeam)));
-  if (maxSize.length === 3 && maxSize.every(Number.isFinite)) cfg.maxClaimSize = { x: Math.max(1, Math.floor(maxSize[0]!)), y: Math.max(1, Math.floor(maxSize[1]!)), z: Math.max(1, Math.floor(maxSize[2]!)) };
-  cfg.maxClaimVolume = Math.max(1, Math.floor(Number(result.values.maxClaimVolume ?? cfg.maxClaimVolume)));
-  cfg.allowOverlaps = Boolean(result.values.allowOverlaps);
-  saveClaims();
-  invalidateClaimRuntimeState();
-  tell(player, "Claims admin settings saved.");
+  const size = maxSize.length === 3 && maxSize.every(Number.isFinite)
+    ? { x: Math.max(1, Math.floor(maxSize[0]!)), y: Math.max(1, Math.floor(maxSize[1]!)), z: Math.max(1, Math.floor(maxSize[2]!)) }
+    : undefined;
+  tell(player, updateClaimsConfig({
+    enabled: Boolean(result.values.enabled),
+    protectionEnabled: Boolean(result.values.protectionEnabled),
+    allowPlayersToToggleProtection: Boolean(result.values.allowPlayersToToggleProtection),
+    maxClaimsPerPlayer: Math.max(0, Math.floor(Number(result.values.maxClaimsPerPlayer ?? cfg.maxClaimsPerPlayer))),
+    maxClaimsPerTeam: Math.max(0, Math.floor(Number(result.values.maxClaimsPerTeam ?? cfg.maxClaimsPerTeam))),
+    ...(size ? { maxClaimSize: size } : {}),
+    maxClaimVolume: Math.max(1, Math.floor(Number(result.values.maxClaimVolume ?? cfg.maxClaimVolume))),
+    allowOverlaps: Boolean(result.values.allowOverlaps),
+  }).message);
 }

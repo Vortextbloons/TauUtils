@@ -69,4 +69,6 @@ export type FormDefinition = {
   body?: string;
   layout: FormLayout;
   elements: FormElement[];
+  operatorOnly?: boolean;
+  requiredPermission?: string;
 };

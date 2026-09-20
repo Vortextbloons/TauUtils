@@ -1,4 +1,4 @@
-import { ItemStack, Player, world } from "@minecraft/server";
+import { ItemStack, Player, system, world } from "@minecraft/server";
 import { getInventoryContainer, isOperator, state } from "../storage";
 import { normalizeItemId } from "../shared/item-id";
 
@@ -41,20 +41,47 @@ type Cancelable = { cancel: boolean };
 export function enforceBannedItemUse(player: Player, itemStack?: ItemStack, cancelTarget?: Cancelable): boolean {
   if (isOperator(player)) return false;
   if (state.moderation.bannedItems.length === 0) return false;
-  const container = getInventoryContainer(player);
-  if (!container) return false;
 
-  let blocked = false;
-  const clearSelectedSlot = (): void => {
-    container.setItem(player.selectedSlotIndex, undefined);
-    blocked = true;
-    if (cancelTarget) cancelTarget.cancel = true;
-  };
+  // Synchronous before-event section: reads + cancel decision only.
+  // Inventory mutation is deferred to system.run below (before-events are read-only).
+  let eventStackBanned = false;
+  try {
+    eventStackBanned = itemStack ? isBannedItemId(itemStack.typeId) : false;
+  } catch {
+    eventStackBanned = false;
+  }
+  let heldSlot = -1;
+  try {
+    const container = getInventoryContainer(player);
+    const held = container?.getItem(player.selectedSlotIndex);
+    if (held && isBannedItemId(held.typeId)) heldSlot = player.selectedSlotIndex;
+  } catch {
+    heldSlot = -1;
+  }
+  if (!eventStackBanned && heldSlot < 0) return false;
+  if (cancelTarget) cancelTarget.cancel = true;
 
-  if (itemStack && isBannedItemId(itemStack.typeId)) clearSelectedSlot();
-  const held = container.getItem(player.selectedSlotIndex);
-  if (held && isBannedItemId(held.typeId)) clearSelectedSlot();
-  return blocked;
+  // Snapshot taken synchronously; verified again in the deferred pass so a
+  // legitimate item swapped into the slot during the gap is never deleted.
+  const snapshotSlot = heldSlot >= 0 ? heldSlot : player.selectedSlotIndex;
+  system.run(() => {
+    try {
+      if (!player.isValid) return;
+      const container = getInventoryContainer(player);
+      if (!container) return;
+      let currentTypeId: string | undefined;
+      try {
+        currentTypeId = container.getItem(snapshotSlot)?.typeId;
+      } catch {
+        return;
+      }
+      if (!currentTypeId || !isBannedItemId(currentTypeId)) return;
+      container.setItem(snapshotSlot, undefined);
+    } catch {
+      // ignore deferred cleanup errors
+    }
+  });
+  return true;
 }
 
 export function snapshotContainerExcludingBanned(

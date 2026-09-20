@@ -114,6 +114,7 @@ export type FeatureFlags = {
   teamHomes: boolean;
   customRewards: boolean;
   referrals: boolean;
+  playerShops: boolean;
 };
 
 export type ConfigStore = {

@@ -19,6 +19,7 @@ export const LOOT_CHESTS_SNAPSHOT_PREFIX = `${STORAGE_KEYS.lootChests}:snapshot:
 export const LOOT_CHESTS_CHEST_PREFIX = `${STORAGE_KEYS.lootChests}:chest:`;
 export const CLAIMS_CONFIG_KEY = `${STORAGE_KEYS.claims}:config`;
 export const CLAIMS_CLAIM_PREFIX = `${STORAGE_KEYS.claims}:claim:`;
+export const CLAIMS_MIGRATION_MARKER_KEY = `${STORAGE_KEYS.claims}:migration_v2_done`;
 
 export const PLOTS_CONFIG_KEY = `${STORAGE_KEYS.plots}:config`;
 export const PLOTS_SLOT_PREFIX = `${STORAGE_KEYS.plots}:slot:`;
@@ -153,6 +154,28 @@ export function setDynamicJsonIfChanged(key: string, value: unknown, persisted: 
 export function clearPersistedDynamicKey(key: string, persisted: Map<string, string>): void {
   world.setDynamicProperty(key, undefined);
   persisted.delete(key);
+}
+
+// ---------------------------------------------------------------------------
+// Corrupt-value quarantine — never delete the only copy of unreadable data.
+// ---------------------------------------------------------------------------
+
+export const CORRUPT_QUARANTINE_PREFIX = "tau:corrupt";
+
+export function quarantineCorruptDynamicValue(key: string, raw: string): void {
+  try {
+    if (estimateUtf8Bytes(raw) > MAX_DYNAMIC_STRING_BYTES) {
+      console.warn(
+        `[TauUtils] Corrupt value for ${key} too large to quarantine (${estimateUtf8Bytes(raw)} bytes); dropping without backup.`
+      );
+      return;
+    }
+    const quarantineKey = `${CORRUPT_QUARANTINE_PREFIX}:${key}:${Date.now()}`;
+    world.setDynamicProperty(quarantineKey, raw);
+    console.warn(`[TauUtils] Quarantined corrupt value for ${key} to ${quarantineKey}.`);
+  } catch {
+    console.warn(`[TauUtils] Failed to quarantine corrupt value for ${key}.`);
+  }
 }
 
 // ---------------------------------------------------------------------------

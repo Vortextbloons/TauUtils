@@ -1,20 +1,18 @@
-import { CommandPermissionLevel, CustomCommandParamType, CustomCommandRegistry, system } from "@minecraft/server";
+import { CustomCommandRegistry, system } from "@minecraft/server";
 import { runCustomReward } from "../custom-rewards";
 import { redeemReferralCode } from "../referrals";
-import { ok, registerPlayerCommand, resultFrom } from "./helpers";
+import { ok, requireFeatureResult, resultFrom } from "./helpers";
+import { registerDescribedCommand } from "./descriptors";
+import { commandOriginToPlayer } from "../storage";
 
 export function registerRewardsReferralsCommands(registry: CustomCommandRegistry): void {
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:reward",
-      description: "Run a custom reward you have permission to use.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "id", type: CustomCommandParamType.String }],
-    },
-    "customRewards",
-    (player, id) => {
+    "tau:reward",
+    (origin, id) => {
+      const featErr = requireFeatureResult("customRewards");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const rewardId = String(id ?? "").trim();
       if (!rewardId) {
         system.run(async () => {
@@ -27,17 +25,13 @@ export function registerRewardsReferralsCommands(registry: CustomCommandRegistry
     }
   );
 
-  registerPlayerCommand<[string | undefined]>(
+  registerDescribedCommand<[string | undefined]>(
     registry,
-    {
-      name: "tau:referral",
-      description: "Redeem another player's referral code.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-      optionalParameters: [{ name: "code", type: CustomCommandParamType.String }],
-    },
-    "referrals",
-    (player, code) => {
+    "tau:referral",
+    (origin, code) => {
+      const featErr = requireFeatureResult("referrals");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       const referralCode = String(code ?? "").trim();
       if (!referralCode) {
         system.run(async () => {
@@ -50,16 +44,13 @@ export function registerRewardsReferralsCommands(registry: CustomCommandRegistry
     }
   );
 
-  registerPlayerCommand(
+  registerDescribedCommand(
     registry,
-    {
-      name: "tau:referrals",
-      description: "Open referral admin/player menu.",
-      cheatsRequired: false,
-      permissionLevel: CommandPermissionLevel.Any,
-    },
-    "referrals",
-    (player) => {
+    "tau:referrals",
+    (origin) => {
+      const featErr = requireFeatureResult("referrals");
+      if (featErr) return featErr;
+      const player = commandOriginToPlayer(origin)!;
       system.run(async () => {
         const { showReferralMenu } = await import("../ui");
         showReferralMenu(player);

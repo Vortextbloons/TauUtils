@@ -1,7 +1,6 @@
-import { Player, world, ItemStack, EntityComponentTypes } from "@minecraft/server";
+import { Player, EntityComponentTypes } from "@minecraft/server";
 import type { CrateItemReward } from "../types";
-import { state, tell, getInventoryContainer } from "../storage";
-import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent } from "../shared/item-components";
+import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, readStackEnchantments } from "../shared/item-components";
 
 export function getHeldItemSnapshot(player: Player): {
   itemId: string;
@@ -34,13 +33,8 @@ export function getHeldItemSnapshot(player: Player): {
     lore: held.getLore().map((line: string) => String(line)),
   };
 
-  const enchantComp = getItemEnchantableComponent(held);
-  if (enchantComp?.getEnchantments) {
-    try {
-      snapshot.enchantments = enchantComp.getEnchantments().map((entry: any) => ({ id: entry.type?.id ?? entry.typeId, level: entry.level }));
-    } catch {
-    }
-  }
+  const stackEnchantments = readStackEnchantments(held);
+  if (stackEnchantments.length > 0) snapshot.enchantments = stackEnchantments;
 
   const durability = getItemDurabilityComponent(held);
   if (durability) {
@@ -87,21 +81,3 @@ export function heldItemToCrateReward(player: Player, label: string, weight: num
   };
 }
 
-export function applyHeldItemSnapshotToGenerator(def: any, snapshot: ReturnType<typeof getHeldItemSnapshot>): void {
-  if (!snapshot) return;
-  def.baseItemId = snapshot.itemId;
-  def.displayName = snapshot.displayName ?? def.displayName;
-  def.lore = snapshot.lore;
-  def.customData = snapshot.customData;
-  def.enchantments = snapshot.enchantments;
-  def.durability = snapshot.durability;
-  def.maxDurability = snapshot.maxDurability;
-  def.canPlaceOn = snapshot.canPlaceOn;
-  def.canDestroy = snapshot.canDestroy;
-}
-
-export function getOnlinePlayerByName(name: string): Player | undefined {
-  const normalized = String(name ?? "").trim().toLowerCase();
-  if (!normalized) return undefined;
-  return world.getAllPlayers().find((entry) => entry.name.toLowerCase() === normalized);
-}

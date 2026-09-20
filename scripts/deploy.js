@@ -4,6 +4,8 @@ const { resolve } = require("path");
 const envPath = resolve(__dirname, "..", ".env");
 let mcDev = "";
 
+const skipDeploy = process.argv.includes("--skip-deploy");
+
 if (existsSync(envPath)) {
   const env = readFileSync(envPath, "utf8");
   for (const line of env.split("\n")) {
@@ -18,6 +20,10 @@ if (existsSync(envPath)) {
 }
 
 if (!mcDev) {
+  if (skipDeploy) {
+    console.log("DEPLOY_PATH not set; --skip-deploy passed, skipping deploy.");
+    process.exit(0);
+  }
   console.error("DEPLOY_PATH not set in .env. Copy .env.example to .env and set your path.");
   process.exit(1);
 }

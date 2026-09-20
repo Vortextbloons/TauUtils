@@ -10,31 +10,6 @@ import { startTpaExpiryLoop } from "./social";
 import { bootstrapTpaNotify } from "./ui/social/tpa";
 import { formatTauUtilsLoadedMessage } from "./shared/version";
 
-export { state } from "./storage";
-export {
-  tell,
-  findForm,
-  findShopProfile,
-  canonicalShopId,
-  saveForms,
-  saveShops,
-  saveBinds,
-  saveSidebars,
-  saveRanks,
-  saveChat,
-  getRankById,
-  getPlayerRank,
-  assignRank,
-  removeRank,
-  hasPermission,
-  formatChatMessage,
-} from "./storage";
-
-export { openFormById, showCreatorMenu, showBindingsEditor, showRankManager, showRankEditor, showPlayerRankAssign, showRankMenu, showProfileBrowser, showPlayerProfileViewer, showPlayerProfileEditor, showPlotManager, showTpaMenu, showHomesMenu, showPayMenu, showPlayerSettingsMenu, showTeamMenu } from "./ui";
-export { openShopTransaction, showShopProfilesEditor, sellAllSellableItems } from "./shop";
-export { openMyPlayerShop, openPlayerMarketplace, openPlayerShopAdmin, claimPlayerShopEarnings } from "./player-shops";
-export { showSidebarEditor } from "./sidebar";
-
 function ensureDefaults() {
   if (!state.shops.default) {
     state.shops.default = {

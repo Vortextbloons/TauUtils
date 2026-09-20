@@ -4,6 +4,11 @@ import { ICONS, type CrateAnimationPreset, type CrateReward } from "../../types"
 import { normalizeBlockId } from "../../shared/item-id";
 import { isOperator, saveCrates, state, tell } from "../../storage";
 import {
+  commitCratePatch,
+  commitCrateRewards,
+  createCrateDefinition,
+  deleteCrateDefinition,
+  getCrateDefinition,
   getLookedAtBlockLocation,
   giveCrateKey,
   listCrateIds,
@@ -12,8 +17,10 @@ import {
   setCrateAtBlock,
   setCrateAtCoordinates,
   setCrateBlockIdFromLooked,
+  setCratesEnabled,
 } from "../../crates";
 import { getHeldItemSnapshot, heldItemToCrateReward } from "../ui-utils";
+import { parseIntIn, MAX_SAFE_INT } from "../../shared/numbers";
 
 function parseCoord(value: unknown, fallback: number): number {
   const parsed = Math.floor(Number(value));
@@ -98,8 +105,9 @@ async function showCrateEditor(player: Player, crateId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      crate.displayName = String(result.values.displayName ?? crate.displayName).trim() || crate.displayName;
-      saveCrates();
+      tellCrateResult(player, commitCratePatch(crate.id, {
+        displayName: String(result.values.displayName ?? crate.displayName).trim() || crate.displayName,
+      }));
       continue;
     }
 
@@ -110,9 +118,9 @@ async function showCrateEditor(player: Player, crateId: string) {
         .show(player);
       if (result.canceled) continue;
       const previousBlockId = crate.crateBlockId;
-      crate.crateBlockId = normalizeBlockId(String(result.values.blockId ?? crate.crateBlockId).trim() || crate.crateBlockId);
-      saveCrates();
-      if (locations.length > 0 && crate.crateBlockId !== previousBlockId) {
+      const nextBlockId = normalizeBlockId(String(result.values.blockId ?? crate.crateBlockId).trim() || crate.crateBlockId);
+      tellCrateResult(player, commitCratePatch(crate.id, { crateBlockId: nextBlockId }));
+      if (locations.length > 0 && nextBlockId !== previousBlockId) {
         tell(player, "§eCrate block id changed. Existing world blocks must match or registrations may fail on use.");
       }
       continue;
@@ -129,8 +137,9 @@ async function showCrateEditor(player: Player, crateId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      crate.keyItemId = normalizeBlockId(String(result.values.itemId ?? crate.keyItemId).trim() || crate.keyItemId);
-      saveCrates();
+      tellCrateResult(player, commitCratePatch(crate.id, {
+        keyItemId: normalizeBlockId(String(result.values.itemId ?? crate.keyItemId).trim() || crate.keyItemId),
+      }));
       continue;
     }
 
@@ -140,8 +149,9 @@ async function showCrateEditor(player: Player, crateId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      crate.keyLoreLine = String(result.values.loreLine ?? crate.keyLoreLine).trim() || crate.keyLoreLine;
-      saveCrates();
+      tellCrateResult(player, commitCratePatch(crate.id, {
+        keyLoreLine: String(result.values.loreLine ?? crate.keyLoreLine).trim() || crate.keyLoreLine,
+      }));
       continue;
     }
 
@@ -152,9 +162,8 @@ async function showCrateEditor(player: Player, crateId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      const preset = presets[Math.max(0, Math.min(presets.length - 1, Math.floor(Number(result.values.preset ?? 0))))] ?? "arcane";
-      crate.animationPreset = preset;
-      saveCrates();
+      const preset = presets[parseIntIn(result.values.preset, 0, presets.length - 1, 0)] ?? "arcane";
+      tellCrateResult(player, commitCratePatch(crate.id, { animationPreset: preset }));
       continue;
     }
 
@@ -165,14 +174,14 @@ async function showCrateEditor(player: Player, crateId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      crate.particlePreset = (["arcane", "ember", "frost", "void"][Math.max(0, Math.min(3, Math.floor(Number(result.values.preset ?? 0))))] ?? "arcane") as any;
-      saveCrates();
+      tellCrateResult(player, commitCratePatch(crate.id, {
+        particlePreset: (["arcane", "ember", "frost", "void"][parseIntIn(result.values.preset, 0, 3, 0)] ?? "arcane") as CrateAnimationPreset,
+      }));
       continue;
     }
 
     if (response.id === "toggleRare") {
-      crate.broadcastRareWins = !crate.broadcastRareWins;
-      saveCrates();
+      tellCrateResult(player, commitCratePatch(crate.id, { broadcastRareWins: !crate.broadcastRareWins }));
       continue;
     }
 
@@ -182,9 +191,9 @@ async function showCrateEditor(player: Player, crateId: string) {
         .submitButton("Save")
         .show(player);
       if (result.canceled) continue;
-      const threshold = Math.max(1, Math.floor(Number(result.values.threshold ?? crate.rareBroadcastWeightThreshold)));
-      if (Number.isFinite(threshold)) crate.rareBroadcastWeightThreshold = threshold;
-      saveCrates();
+      tellCrateResult(player, commitCratePatch(crate.id, {
+        rareBroadcastWeightThreshold: parseIntIn(result.values.threshold, 1, MAX_SAFE_INT, crate.rareBroadcastWeightThreshold),
+      }));
       continue;
     }
 
@@ -263,8 +272,8 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
       if (result.canceled) continue;
       const label = String(result.values.label ?? "").trim();
       const itemId = String(result.values.itemId ?? "").trim();
-      const amount = Math.max(1, Math.floor(Number(result.values.amount ?? 1)));
-      const weight = Math.max(1, Math.floor(Number(result.values.weight ?? 1)));
+      const amount = parseIntIn(result.values.amount, 1, MAX_SAFE_INT, 1);
+      const weight = parseIntIn(result.values.weight, 1, MAX_SAFE_INT, 1);
       const useHeld = Boolean(result.values.useHeld);
       if (useHeld) {
         const heldReward = heldItemToCrateReward(player, label, weight, amount);
@@ -272,11 +281,10 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
           tell(player, "§cNo held item found to copy.");
           continue;
         }
-        crate.rewards.push(heldReward);
+        tellCrateResult(player, commitCrateRewards(crate.id, [...crate.rewards, heldReward]));
       } else {
-        crate.rewards.push({ type: "item", label, itemId, amount, weight });
+        tellCrateResult(player, commitCrateRewards(crate.id, [...crate.rewards, { type: "item", label, itemId, amount, weight }]));
       }
-      saveCrates();
       continue;
     }
 
@@ -289,8 +297,7 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
         .submitButton("Create")
         .show(player);
       if (result.canceled) continue;
-      crate.rewards.push({ type: "score", label: String(result.values.label ?? "").trim(), objective: String(result.values.objective ?? "").trim(), amount: Math.floor(Number(result.values.amount ?? 1)), weight: Math.max(1, Math.floor(Number(result.values.weight ?? 1))) });
-      saveCrates();
+      tellCrateResult(player, commitCrateRewards(crate.id, [...crate.rewards, { type: "score", label: String(result.values.label ?? "").trim(), objective: String(result.values.objective ?? "").trim(), amount: parseIntIn(result.values.amount, 0, MAX_SAFE_INT, 1), weight: parseIntIn(result.values.weight, 1, MAX_SAFE_INT, 1) }]));
       continue;
     }
 
@@ -302,8 +309,7 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
         .submitButton("Create")
         .show(player);
       if (result.canceled) continue;
-      crate.rewards.push({ type: "tag", label: String(result.values.label ?? "").trim(), tag: String(result.values.tag ?? "").trim(), weight: Math.max(1, Math.floor(Number(result.values.weight ?? 1))) });
-      saveCrates();
+      tellCrateResult(player, commitCrateRewards(crate.id, [...crate.rewards, { type: "tag", label: String(result.values.label ?? "").trim(), tag: String(result.values.tag ?? "").trim(), weight: parseIntIn(result.values.weight, 1, MAX_SAFE_INT, 1) }]));
       continue;
     }
 
@@ -315,8 +321,7 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
         .submitButton("Create")
         .show(player);
       if (result.canceled) continue;
-      crate.rewards.push({ type: "command", label: String(result.values.label ?? "").trim(), command: String(result.values.command ?? "").trim(), weight: Math.max(1, Math.floor(Number(result.values.weight ?? 1))) });
-      saveCrates();
+      tellCrateResult(player, commitCrateRewards(crate.id, [...crate.rewards, { type: "command", label: String(result.values.label ?? "").trim(), command: String(result.values.command ?? "").trim(), weight: parseIntIn(result.values.weight, 1, MAX_SAFE_INT, 1) }]));
       continue;
     }
 
@@ -332,8 +337,7 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
       if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
       if (isDelete) {
-        crate.rewards.splice(picked.value.index, 1);
-        saveCrates();
+        tellCrateResult(player, commitCrateRewards(crate.id, crate.rewards.filter((_, index) => index !== picked.value!.index)));
         continue;
       }
 
@@ -348,17 +352,18 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        reward.label = String(result.values.label ?? reward.label).trim() || reward.label;
-        reward.itemId = String(result.values.itemId ?? reward.itemId).trim() || reward.itemId;
-        reward.amount = Math.max(1, Math.floor(Number(result.values.amount ?? reward.amount)));
-        reward.weight = Math.max(1, Math.floor(Number(result.values.weight ?? reward.weight)));
+        const nextItem = { ...reward };
+        nextItem.label = String(result.values.label ?? reward.label).trim() || reward.label;
+        nextItem.itemId = String(result.values.itemId ?? reward.itemId).trim() || reward.itemId;
+        nextItem.amount = parseIntIn(result.values.amount, 1, MAX_SAFE_INT, reward.amount);
+        nextItem.weight = parseIntIn(result.values.weight, 1, MAX_SAFE_INT, reward.weight);
         if (Boolean(result.values.useHeld)) {
-          const heldReward = heldItemToCrateReward(player, reward.label, reward.weight, reward.amount);
+          const heldReward = heldItemToCrateReward(player, nextItem.label, nextItem.weight, nextItem.amount);
           if (heldReward) {
-            Object.assign(reward, heldReward);
+            Object.assign(nextItem, heldReward);
           }
         }
-        saveCrates();
+        tellCrateResult(player, commitCrateRewards(crate.id, crate.rewards.map((entry, index) => index === picked.value!.index ? nextItem : entry)));
         continue;
       }
 
@@ -371,11 +376,12 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        reward.label = String(result.values.label ?? reward.label).trim() || reward.label;
-        reward.objective = String(result.values.objective ?? reward.objective).trim() || reward.objective;
-        reward.amount = Math.floor(Number(result.values.amount ?? reward.amount));
-        reward.weight = Math.max(1, Math.floor(Number(result.values.weight ?? reward.weight)));
-        saveCrates();
+        const nextScore = { ...reward };
+        nextScore.label = String(result.values.label ?? reward.label).trim() || reward.label;
+        nextScore.objective = String(result.values.objective ?? reward.objective).trim() || reward.objective;
+        nextScore.amount = parseIntIn(result.values.amount, 0, MAX_SAFE_INT, reward.amount);
+        nextScore.weight = parseIntIn(result.values.weight, 1, MAX_SAFE_INT, reward.weight);
+        tellCrateResult(player, commitCrateRewards(crate.id, crate.rewards.map((entry, index) => index === picked.value!.index ? nextScore : entry)));
         continue;
       }
 
@@ -387,10 +393,11 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        reward.label = String(result.values.label ?? reward.label).trim() || reward.label;
-        reward.tag = String(result.values.tag ?? reward.tag).trim() || reward.tag;
-        reward.weight = Math.max(1, Math.floor(Number(result.values.weight ?? reward.weight)));
-        saveCrates();
+        const nextTag = { ...reward };
+        nextTag.label = String(result.values.label ?? reward.label).trim() || reward.label;
+        nextTag.tag = String(result.values.tag ?? reward.tag).trim() || reward.tag;
+        nextTag.weight = parseIntIn(result.values.weight, 1, MAX_SAFE_INT, reward.weight);
+        tellCrateResult(player, commitCrateRewards(crate.id, crate.rewards.map((entry, index) => index === picked.value!.index ? nextTag : entry)));
         continue;
       }
 
@@ -402,10 +409,11 @@ async function showCrateRewardEditor(player: Player, crateId: string) {
           .submitButton("Save")
           .show(player);
         if (result.canceled) continue;
-        reward.label = String(result.values.label ?? reward.label).trim() || reward.label;
-        reward.command = String(result.values.command ?? reward.command).trim() || reward.command;
-        reward.weight = Math.max(1, Math.floor(Number(result.values.weight ?? reward.weight)));
-        saveCrates();
+        const nextCommand = { ...reward };
+        nextCommand.label = String(result.values.label ?? reward.label).trim() || reward.label;
+        nextCommand.command = String(result.values.command ?? reward.command).trim() || reward.command;
+        nextCommand.weight = parseIntIn(result.values.weight, 1, MAX_SAFE_INT, reward.weight);
+        tellCrateResult(player, commitCrateRewards(crate.id, crate.rewards.map((entry, index) => index === picked.value!.index ? nextCommand : entry)));
         continue;
       }
     }
@@ -454,26 +462,34 @@ export async function showCrateAdminMenu(player: Player) {
         tell(player, "That crate already exists.");
         continue;
       }
-      state.crates.crates[id] = {
+      const created = createCrateDefinition({
         id,
         displayName: String(result.values.displayName ?? "Crate").trim() || "Crate",
         crateBlockId: normalizeBlockId(String(result.values.blockId ?? "minecraft:gilded_blackstone").trim() || "minecraft:gilded_blackstone"),
         keyItemId: normalizeBlockId(String(result.values.keyItemId ?? "minecraft:tripwire_hook").trim() || "minecraft:tripwire_hook"),
         keyLoreLine: String(result.values.keyLore ?? "§6Key").trim() || "§6Key",
-        animationPreset: (["arcane", "ember", "frost", "void"][Math.max(0, Math.min(3, Math.floor(Number(result.values.animationPreset ?? 0))))] ?? "arcane") as CrateAnimationPreset,
+        animationPreset: (["arcane", "ember", "frost", "void"][parseIntIn(result.values.animationPreset, 0, 3, 0)] ?? "arcane") as CrateAnimationPreset,
         particlePreset: "arcane",
         broadcastRareWins: true,
         rareBroadcastWeightThreshold: 5,
         rewards: [],
-      };
+      });
+      if (!created.ok) {
+        tellCrateResult(player, created);
+        continue;
+      }
       if (Boolean(result.values.useHeldKey)) {
         const held = getHeldItemSnapshot(player);
-        if (held) {
-          state.crates.crates[id].keyItemId = normalizeBlockId(held.itemId);
-          if (Boolean(result.values.useHeldLore) && held.lore && held.lore.length > 0) state.crates.crates[id].keyLoreLine = held.lore[0] ?? state.crates.crates[id].keyLoreLine;
+        const current = getCrateDefinition(id);
+        if (held && current) {
+          tellCrateResult(player, commitCratePatch(id, {
+            keyItemId: normalizeBlockId(held.itemId),
+            keyLoreLine: Boolean(result.values.useHeldLore) && held.lore && held.lore.length > 0
+              ? held.lore[0] ?? current.keyLoreLine
+              : current.keyLoreLine,
+          }));
         }
       }
-      saveCrates();
       continue;
     }
 
@@ -503,18 +519,12 @@ export async function showCrateAdminMenu(player: Player) {
       const picked = await pick.show(player);
       if (TauUi.isCanceledOrBack(picked)) continue;
       if (picked.value === undefined) continue;
-      const targetId = picked.value.crateId;
-      delete state.crates.crates[targetId];
-      for (const [key, entry] of Object.entries(state.crates.locations)) {
-        if (entry.crateId === targetId) delete state.crates.locations[key];
-      }
-      saveCrates();
+      tellCrateResult(player, deleteCrateDefinition(picked.value.crateId));
       continue;
     }
 
     if (response.id === "toggleEnabled") {
-      state.crates.config.enabled = !state.crates.config.enabled;
-      saveCrates();
+      tellCrateResult(player, setCratesEnabled(!state.crates.config.enabled));
       continue;
     }
   }
