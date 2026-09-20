@@ -48,6 +48,15 @@ export function tryGiveWithEscrow(player: Player, stack: ItemStack): EscrowGiveR
       return { ok: false, dropped: false };
     }
   }
+  // Clone the input up front: addItem may partially consume it, and on a
+  // partial fit we restore the snapshot (wiping the fitted portion) then
+  // drop the FULL original stack so no items are destroyed.
+  let pristine: ItemStack;
+  try {
+    pristine = stack.clone();
+  } catch {
+    return { ok: false, dropped: false };
+  }
   let leftover: ItemStack | undefined;
   try {
     leftover = captured.container.addItem(stack);
@@ -58,7 +67,7 @@ export function tryGiveWithEscrow(player: Player, stack: ItemStack): EscrowGiveR
   if (!leftover) return { ok: true, dropped: false };
   restoreInventorySnapshot(captured.container, captured.snapshot);
   try {
-    player.dimension.spawnItem(leftover, player.location);
+    player.dimension.spawnItem(pristine, player.location);
     return { ok: true, dropped: true };
   } catch {
     return { ok: false, dropped: false };

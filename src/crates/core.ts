@@ -61,7 +61,10 @@ function hasKeyForCrate(crate: CrateDefinition, stack?: ItemStack): boolean {
   if (!stack) return false;
   if (normalizeItemId(stack.typeId) !== normalizeItemId(crate.keyItemId)) return false;
   const lore = stack.getLore().map((line) => String(line).trim());
-  return lore.includes(crate.keyLoreLine) && lore.includes(markerLine(crate.id));
+  if (!lore.includes(crate.keyLoreLine)) return false;
+  // Accept the current normalized marker and legacy raw-id markers issued
+  // before strict id normalization.
+  return lore.includes(markerLine(crate.id)) || lore.includes(`${KEY_MARKER_PREFIX}${crate.id}]`);
 }
 
 function consumeHeldItem(player: Player): boolean {
@@ -316,7 +319,7 @@ function findCrateAtBlock(block: Block): { crate: CrateDefinition; locationKey: 
   const key = blockKey(block.dimension.id, block.location.x, block.location.y, block.location.z);
   const location = state.crates.locations[key];
   if (!location) return undefined;
-  const crate = state.crates.crates[normalizeId(location.crateId)];
+  const crate = getCrateDefinition(location.crateId);
   if (!crate) return undefined;
   return { crate, locationKey: key };
 }
@@ -577,7 +580,7 @@ export function commitCratePatch(
 export function createCrateDefinition(def: CrateDefinition): { ok: boolean; message: string } {
   const id = normalizeId(def.id);
   if (!id) return { ok: false, message: "Crate id is required." };
-  if (state.crates.crates[id]) return { ok: false, message: "That crate already exists." };
+  if (getCrateDefinition(def.id)) return { ok: false, message: "That crate already exists." };
   return commitCrate({ ...def, id });
 }
 

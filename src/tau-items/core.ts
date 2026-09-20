@@ -68,7 +68,9 @@ function writeRemainingUses(stack: ItemStack, remainingUses: number): void {
 function getTauItemFromStack(stack?: ItemStack): TauItemDefinition | undefined {
   const id = readTauItemId(stack);
   if (!id) return undefined;
-  return state.tauItems.items[id];
+  // Route through the definition getter so legacy raw-id markers resolve via
+  // the legacy-key fallback instead of missing the store.
+  return getTauItemDefinition(id);
 }
 
 function actionBar(player: Player, text: string): void {
@@ -444,7 +446,7 @@ export function getTauItemDefinition(itemId: string): TauItemDefinition | undefi
 export function createTauItemDefinition(id: string, displayName: string, baseItemId: string): { ok: boolean; message: string } {
   const normalized = normalizeId(id);
   if (!normalized) return { ok: false, message: "Item id is required." };
-  if (state.tauItems.items[normalized]) return { ok: false, message: "That TauItem already exists." };
+  if (getTauItemDefinition(id)) return { ok: false, message: "That TauItem already exists." };
   state.tauItems.items[normalized] = {
     id: normalized,
     displayName: displayName.trim() || normalized,

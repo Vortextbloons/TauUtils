@@ -178,7 +178,7 @@ export function createGeneratorDefinition(
 ): { ok: boolean; message: string } {
   const id = normalizeId(name);
   if (!id) return { ok: false, message: "Generator name is required." };
-  if (state.generators.definitions[id]) return { ok: false, message: "That generator already exists." };
+  if (getGeneratorDefinition(name)) return { ok: false, message: "That generator already exists." };
 
   state.generators.definitions[id] = {
     id,
@@ -333,7 +333,7 @@ export function createWeightedGeneratorDefinition(
 ): { ok: boolean; message: string } {
   const id = normalizeId(name);
   if (!id) return { ok: false, message: "Generator name is required." };
-  if (state.generators.definitions[id]) return { ok: false, message: "That generator already exists." };
+  if (getGeneratorDefinition(name)) return { ok: false, message: "That generator already exists." };
 
   const pool = sanitizeGeneratorOutputPool(initialPool);
   if (pool.length === 0) return { ok: false, message: "Weighted generators need at least one pool entry." };

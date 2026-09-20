@@ -236,7 +236,7 @@ export function getLootChestLocation(location: LocationInput): LootChestLocation
 export function createLootChestPool(name: string): RefillResult & { pool?: LootChestPool } {
   const id = normalizeId(name);
   if (!id) return { ok: false, message: "Pool name is required." };
-  if (state.lootChests.pools[id]) return { ok: false, message: `Pool already exists: ${id}` };
+  if (getLootChestPool(name)) return { ok: false, message: `Pool already exists: ${id}` };
   const pool: LootChestPool = { id, name: name.trim(), enabled: true, snapshotIds: [] };
   state.lootChests.pools[id] = pool;
   saveLootChests();

@@ -12,12 +12,24 @@ export function normalizeId(value: string): string {
 // Legacy fallback for keys stored before strict normalization (raw or
 // trim+lowercase ids with spaces/specials). Strict-first callers use this
 // only on a miss, so the hot path stays O(1) and old worlds keep resolving.
+// Matches when the stored key equals the raw id (case/trim-insensitive) or
+// normalizes to the same strict id, bridging space-vs-underscore drift.
 export function resolveLegacyKey(keys: Iterable<string>, rawId: string): string | undefined {
   const trimmed = String(rawId ?? "").trim();
   if (!trimmed) return undefined;
   const lowered = trimmed.toLowerCase();
+  const strict = normalizeId(trimmed);
   for (const key of keys) {
     if (key === trimmed || key.toLowerCase() === lowered) return key;
+  }
+  if (strict) {
+    for (const key of keys) {
+      try {
+        if (normalizeId(key) === strict) return key;
+      } catch {
+        continue;
+      }
+    }
   }
   return undefined;
 }

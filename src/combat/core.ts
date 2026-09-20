@@ -323,14 +323,15 @@ function combatSnapshotContentHash(snapshot: CombatLootSnapshot): string {
 }
 
 function resolveCombatDropSnapshot(player: Player, playerId: string): CombatLootSnapshot | undefined {
-  const cached = combatSnapshotsByPlayerId.get(playerId);
-  if (cached) {
-    if (combatSnapshotItemCount(cached) === 0) return undefined;
-    return cloneCombatLoot(cached);
-  }
+  // Live inventory wins: the cached snapshot can be up to 3 s stale, so
+  // dropping it while clearing the live inventory loses newly acquired items
+  // and resurrects consumed ones. The cache is only a fallback for a failed
+  // live capture, never a replacement for live contents.
   const liveSnapshot = captureCombatLoot(player);
-  if (combatSnapshotItemCount(liveSnapshot) === 0) return undefined;
-  return liveSnapshot;
+  if (combatSnapshotItemCount(liveSnapshot) > 0) return liveSnapshot;
+  const cached = combatSnapshotsByPlayerId.get(playerId);
+  if (cached && combatSnapshotItemCount(cached) > 0) return cloneCombatLoot(cached);
+  return undefined;
 }
 
 function clearInventoryAndEquipment(player: Player): void {

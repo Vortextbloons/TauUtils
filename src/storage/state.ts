@@ -256,7 +256,10 @@ export function loadState() {
   state.profiles = readDynamicJSON<PlayerProfilesStore>("tau:profiles", { configs: {} });
   const splitPlots = loadPlotsFromSplitKeys(dynamicPropertyIds);
   state.plots = splitPlots.hasSplitData ? normalizePlotStore(splitPlots.store) : defaultPlotStore();
-  rememberPlotSplitKeys(state.plots);
+  // Only seed the persisted-key map from verified split reads. On a legacy or
+  // fresh load the map must stay empty so the first save writes every key
+  // instead of skipping everything as "unchanged" and deleting the legacy blob.
+  if (splitPlots.hasSplitData) rememberPlotSplitKeys(state.plots);
   state.tpa = readDynamicJSON<TpaStore>(STORAGE_KEYS.tpa, defaultTpaStore());
   state.tpa.config = applyMissingDefaults(state.tpa.config as unknown as Record<string, unknown>, defaultTpaStore().config as unknown as Record<string, unknown>) as unknown as TpaStore["config"];
   loadTpaFromSplitKeys(dynamicPropertyIds);
@@ -376,7 +379,8 @@ export function loadState() {
   state.playerShops.shops ??= {};
   state.playerShops.listings ??= {};
   state.playerShops.earningsByPlayerId ??= {};
-  rememberPlayerShopSplitKeys(state.playerShops);
+  // See plots note above: never seed from legacy/defaults data.
+  if (splitShops.hasSplitData) rememberPlayerShopSplitKeys(state.playerShops);
   const splitCustomAreas = loadCustomAreasFromSplitKeys(dynamicPropertyIds);
   state.customAreas = splitCustomAreas.hasSplitData ? splitCustomAreas.store : readDynamicJSON<CustomAreaStore>(STORAGE_KEYS.customAreas, defaultCustomAreaStore());
   state.customAreas.config = applyMissingDefaults(state.customAreas.config as unknown as Record<string, unknown>, defaultCustomAreaStore().config as unknown as Record<string, unknown>) as unknown as CustomAreaStore["config"];
@@ -394,7 +398,8 @@ export function loadState() {
       teleport: area.permissions?.teleport ?? true,
     };
   }
-  rememberCustomAreaSplitKeys(state.customAreas);
+  // See plots note above: never seed from legacy/defaults data.
+  if (splitCustomAreas.hasSplitData) rememberCustomAreaSplitKeys(state.customAreas);
   state.plots = normalizePlotStore(state.plots);
   const splitLootChests = loadLootChestsFromSplitKeys(dynamicPropertyIds);
   state.lootChests = splitLootChests.hasSplitData ? splitLootChests.store : readDynamicJSON<LootChestStore>(STORAGE_KEYS.lootChests, defaultLootChestStore());
@@ -403,8 +408,9 @@ export function loadState() {
   state.lootChests.snapshots ??= {};
   state.lootChests.chests ??= {};
   // Legacy single-blob cleanup happens on the next verified split save, never
-  // on load while it may still be the only good copy.
-  rememberLootChestSplitKeys(state.lootChests);
+  // on load while it may still be the only good copy. The persisted-key map is
+  // seeded from verified split reads only (see plots note above).
+  if (splitLootChests.hasSplitData) rememberLootChestSplitKeys(state.lootChests);
   state.commandBuilder = readDynamicJSON<CommandBuilderStore>(STORAGE_KEYS.commandBuilder, defaultCommandBuilderStore());
   state.commandBuilder.config = applyMissingDefaults(state.commandBuilder.config as unknown as Record<string, unknown>, defaultCommandBuilderStore().config as unknown as Record<string, unknown>) as unknown as CommandBuilderStore["config"];
   state.commandBuilder.commands ??= {};

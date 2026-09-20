@@ -1,9 +1,10 @@
-import { world } from "@minecraft/server";
+import { system } from "@minecraft/server";
 import { flushAllDirtyQueues } from "../storage";
 import { registerBackgroundTask } from "../scheduler";
 
 export function registerLifecycleEvents(): void {
-  const shutdownEvent = (world.beforeEvents as unknown as { shutdown?: { subscribe(callback: () => void): void } }).shutdown;
+  // Shutdown lives on system.beforeEvents, not world.beforeEvents.
+  const shutdownEvent = (system.beforeEvents as unknown as { shutdown?: { subscribe(callback: () => void): void } }).shutdown;
   if (shutdownEvent) {
     shutdownEvent.subscribe(() => {
       flushAllDirtyQueues();

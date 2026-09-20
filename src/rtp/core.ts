@@ -122,13 +122,15 @@ export function randomTeleport(player: Player, regionId?: string): { ok: boolean
   const location = findRandomLocation(region);
   if (!location) return { ok: false, message: "Could not find a safe RTP location. Try again." };
   const destination = { x: location.x, y: Math.min(319, location.y + Math.max(1, region.skyHeightOffset)), z: location.z };
-  applyProtection(player, region.protection);
   const teleported = requestPlayerTeleport(
     player,
     { ...destination, dimensionId: region.dimensionId },
     { blockCombat: true },
   );
   if (!teleported.ok) return teleported;
+  // Protection applies only on arrival: granting it before validation let
+  // rejected (e.g. combat-tagged) players keep resistance/slow-falling.
+  applyProtection(player, region.protection);
   cooldownByPlayerId.set(playerId, now + Math.max(0, region.cooldownSeconds ?? state.rtp.config.cooldownSeconds) * 1000);
   return { ok: true, message: `Teleported to ${region.name}.` };
 }
