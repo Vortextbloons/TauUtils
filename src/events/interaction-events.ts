@@ -1,4 +1,4 @@
-import { system, world, type ItemStack, type Player } from "@minecraft/server";
+import { BlockTypes, Direction, system, world, type ItemStack } from "@minecraft/server";
 import { describeGeneratorStack, getPlacedGeneratorAtLocation, handleGeneratorUseOnBlock, isGeneratorBlock } from "../generators";
 import { tryHandleCrateInteract } from "../crates";
 import { tryHandleTauItemTrigger } from "../tau-items";
@@ -21,6 +21,23 @@ import {
   tell,
 } from "../storage";
 import { beginLootChestRefillCountdown } from "../loot-chests/core";
+
+// Item/block aliases in vanilla that cannot be resolved by identical type IDs.
+const PLACEMENT_ALIASES: Record<string, string> = {
+  wheat_seeds: "wheat", beetroot_seeds: "beetroot", pumpkin_seeds: "pumpkin_stem", melon_seeds: "melon_stem",
+  carrot: "carrots", potato: "potatoes", cocoa_beans: "cocoa", sweet_berries: "sweet_berry_bush",
+  glow_berries: "cave_vines", redstone: "redstone_wire", string: "trip_wire", sugar_cane: "reeds",
+  oak_sign: "standing_sign", sign: "standing_sign", bed: "bed", water_bucket: "water", lava_bucket: "lava",
+  powder_snow_bucket: "powder_snow", flint_and_steel: "fire", fire_charge: "fire",
+};
+function getPlacementBlockId(stack: ItemStack): string | undefined {
+  const name = stack.typeId.replace(/^minecraft:/, "");
+  const alias = stack.typeId.startsWith("minecraft:")
+    ? (PLACEMENT_ALIASES[name] ?? (name.endsWith("_bed") ? "bed" : undefined) ??
+      (/^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)_bucket$/.test(name) ? "water" : undefined))
+    : undefined;
+  try { return alias ? "minecraft:" + alias : BlockTypes.get(stack.typeId)?.id; } catch { return undefined; }
+}
 
 const generatorMenuOpenByPlayerId = new Map<string, number>();
 
@@ -164,22 +181,6 @@ export function registerInteractionEvents(): void {
     incrementStat(event.player, "blocksBroken", 1);
   });
 
-  const beforePlaceBlock = (world.beforeEvents as unknown as { playerPlaceBlock?: { subscribe(callback: (event: { player: Player; block: { location: { x: number; y: number; z: number } }; permutationToPlace: { type: { id: string } }; cancel: boolean }) => void): void } }).playerPlaceBlock;
-  if (!beforePlaceBlock) {
-    console.warn("[TauUtils] world.beforeEvents.playerPlaceBlock is unavailable: area/claim place protection runs observe-only (afterEvents cannot cancel).");
-  }
-  beforePlaceBlock?.subscribe((event) => {
-    if (shouldCancelAreaBlockPlace(event.player, event.block.location, event.player.dimension.id, event.permutationToPlace.type.id)) {
-      event.cancel = true;
-      tell(event.player, "§cYou cannot place blocks in this area.");
-      return;
-    }
-    if (shouldCancelClaimBlockPlace(event.player, event.block.location, event.player.dimension.id)) {
-      event.cancel = true;
-      tell(event.player, "§cYou cannot place blocks in this claim.");
-    }
-  });
-
   world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
     if (isFeatureEnabled("moderation") && enforceBannedItemUse(event.player, event.itemStack, event)) return;
 
@@ -221,6 +222,39 @@ export function registerInteractionEvents(): void {
         const placed = getPlacedGeneratorAtLocation(event.block.location, event.player.dimension.id);
         if (placed) openGeneratorMenuOnce(event.player, placed);
         return;
+      }
+    }
+
+    // Stable API has no cancellable place event. Placeable items can change
+    // the clicked cell (replaceable blocks) or its adjacent cell. Check both
+    // before vanilla placement occurs, leaving non-placeable items alone.
+    const placementType = event.itemStack && getPlacementBlockId(event.itemStack);
+    const opensContainer = !event.player.isSneaking && Boolean(event.block.getComponent?.("minecraft:inventory"));
+    if (placementType && !opensContainer) {
+      const adjacent = { ...event.block.location };
+      switch (event.blockFace) {
+        case Direction.Up: adjacent.y++; break;
+        case Direction.Down: adjacent.y--; break;
+        case Direction.North: adjacent.z--; break;
+        case Direction.South: adjacent.z++; break;
+        case Direction.East: adjacent.x++; break;
+        case Direction.West: adjacent.x--; break;
+      }
+      const targets = [{ ...event.block.location }, adjacent];
+      if (/(_door|:double_plant|:sunflower|:lilac|:rose_bush|:peony|:large_fern|:tall_grass|:pitcher_plant)$/.test(placementType)) {
+        targets.push(...targets.map((target) => ({ ...target, y: target.y + 1 })));
+      } else if (placementType === "minecraft:bed") {
+        const facing = ((Math.round(event.player.getRotation().y / 90) % 4) + 4) % 4;
+        const offsets = [{ x: 0, z: 1 }, { x: -1, z: 0 }, { x: 0, z: -1 }, { x: 1, z: 0 }];
+        targets.push(...targets.map((target) => ({ ...target, x: target.x + offsets[facing].x, z: target.z + offsets[facing].z })));
+      }
+      for (const target of targets) {
+        if (shouldCancelAreaBlockPlace(event.player, target, event.block.dimension.id, placementType) ||
+            shouldCancelClaimBlockPlace(event.player, target, event.block.dimension.id)) {
+          event.cancel = true;
+          tell(event.player, "§cYou cannot use a held item to place blocks here.");
+          return;
+        }
       }
     }
 

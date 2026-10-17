@@ -89,7 +89,7 @@ import {
   defaultTpaStore,
   defaultWarpStore,
 } from "./defaults";
-import { loadStatsFromSplitKeys } from "./split-keys/stats";
+import { loadStatsFromSplitKeys, markAllStatsPlayersDirty } from "./split-keys/stats";
 import { loadPlayerShopsFromSplitKeys, rememberPlayerShopSplitKeys } from "./split-keys/player-shops";
 import { loadCustomAreasFromSplitKeys, rememberCustomAreaSplitKeys } from "./split-keys/custom-areas";
 import { loadLootChestsFromSplitKeys, rememberLootChestSplitKeys } from "./split-keys/loot-chests";
@@ -252,7 +252,13 @@ export function loadState() {
   state.ranks = readDynamicJSON<RankStore>(STORAGE_KEYS.ranks, defaultRankStore());
   state.chat = readDynamicJSON<ChatConfig>(STORAGE_KEYS.chat, defaultChatConfig());
   const splitStats = loadStatsFromSplitKeys(dynamicPropertyIds);
-  state.stats = splitStats.hasSplitData ? splitStats.store : readDynamicJSON<StatsStore>("tau:stats", { playerIds: {}, players: {} });
+  const legacyStats = readDynamicJSON<StatsStore>("tau:stats", { playerIds: {}, players: {} });
+  state.stats = {
+    playerIds: { ...legacyStats.playerIds, ...splitStats.store.playerIds },
+    players: { ...legacyStats.players, ...splitStats.store.players },
+  };
+  // A previous migration can have stopped after only some split keys landed.
+  if (world.getDynamicProperty("tau:stats") !== undefined) markAllStatsPlayersDirty();
   state.profiles = readDynamicJSON<PlayerProfilesStore>("tau:profiles", { configs: {} });
   const splitPlots = loadPlotsFromSplitKeys(dynamicPropertyIds);
   state.plots = splitPlots.hasSplitData ? normalizePlotStore(splitPlots.store) : defaultPlotStore();
@@ -284,12 +290,6 @@ export function loadState() {
   state.rtp.regions ??= {};
   for (const region of Object.values(state.rtp.regions)) {
     region.protection = applyMissingDefaults(region.protection as unknown as Record<string, unknown>, state.rtp.config.defaultProtection as unknown as Record<string, unknown>) as unknown as RtpStore["regions"][string]["protection"];
-    region.protection.resistanceEffect = true;
-    region.protection.slowFallingEffect = false;
-    region.fallFromSky = true;
-    region.safeLanding = true;
-    region.min.y = -64;
-    region.max.y = 320;
     region.avoidClaims ??= state.rtp.config.avoidClaims;
     region.avoidCustomAreas ??= state.rtp.config.avoidCustomAreas;
   }

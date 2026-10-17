@@ -247,8 +247,6 @@ export function itemMatchesDefinition(stack: ItemStack, def: ShopItemStackDefini
   if (isProtectedCrateKey(stack)) return false;
   if (normalizeItemId(stack.typeId) !== normalizeItemId(def.itemId)) return false;
 
-  if (!def.exactDurability) return true;
-
   const displayName = def.displayName?.trim();
   if (displayName) {
     const tag = stack.nameTag?.trim() ?? "";
@@ -259,7 +257,7 @@ export function itemMatchesDefinition(stack: ItemStack, def: ShopItemStackDefini
 
   if (!enchantmentListsEqual(def.enchantments, getStackEnchantmentsForMatch(stack))) return false;
 
-  if (def.durability !== undefined) {
+  if (def.exactDurability && def.durability !== undefined) {
     const durComp = getItemDurabilityComponent(stack);
     if (!durComp || durComp.damage !== def.durability) return false;
     if (def.maxDurability !== undefined && durComp.maxDurability !== def.maxDurability) return false;

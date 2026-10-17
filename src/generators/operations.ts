@@ -1,6 +1,8 @@
 import { BlockPermutation, Direction, ItemStack, Player, Vector3, system, world } from "@minecraft/server";
 import { getPlayerId, getScore, isFeatureEnabled, isOperator, saveGenerators, setScore, state } from "../storage";
 import { getPlayerTeam } from "../teams";
+import { shouldCancelClaimBlockBreak, shouldCancelClaimBlockPlace } from "../claims";
+import { shouldCancelAreaBlockBreak, shouldCancelAreaBlockPlace } from "../custom-areas";
 import { getPlotForLocation, getPlotOwnerIdForPlayer, savePlotAtLocation } from "../plots";
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent } from "../shared/item-components";
 import { parseIntIn } from "../shared/numbers";
@@ -207,9 +209,9 @@ function offsetByFace(location: Vector3, dimensionId: string, face?: Direction):
     case Direction.West:
       return { dimensionId, x: x - 1, y, z };
     case Direction.North:
-      return { dimensionId, x, y, z: z + 1 };
-    case Direction.South:
       return { dimensionId, x, y, z: z - 1 };
+    case Direction.South:
+      return { dimensionId, x, y, z: z + 1 };
     default:
       return { dimensionId, x, y, z };
   }
@@ -358,7 +360,7 @@ export function getPlacedGeneratorInfoLines(location: Vector3, dimensionId: stri
 }
 
 export function placeGenerator(player: Player, location: Vector3, dimensionId: string, itemStack?: ItemStack): { ok: boolean; message: string } {
-  if (!state.generators.config.enabled) return { ok: false, message: "Generators are disabled." };
+  if (!isFeatureEnabled("generators") || !state.generators.config.enabled) return { ok: false, message: "Generators are disabled." };
   const loc = blockLocationFromVector(location, dimensionId);
   const existing = getGeneratorAtLocation(loc);
   if (existing) return { ok: false, message: "A generator is already here." };
@@ -383,6 +385,16 @@ export function placeGenerator(player: Player, location: Vector3, dimensionId: s
   const placed = { ...createPlacedGenerator(def, plotOwnerId, dimensionId, loc, stack), ...captureOriginalGeneratorBlocks(loc) };
 
   const initialOutput = pickGeneratorOutput(def, placed.tier) ?? getGeneratorOutputFallback(def, placed.tier);
+  for (const [target, blockId] of [[loc, "minecraft:bedrock"], [outputLoc, normalizeItemId(initialOutput)]] as const) {
+    if (shouldCancelClaimBlockPlace(player, target, dimensionId) || shouldCancelAreaBlockPlace(player, target, dimensionId, blockId)) {
+      return { ok: false, message: "You cannot place generator blocks in this protected location." };
+    }
+    const original = world.getDimension(dimensionId).getBlock(target);
+    if (!original) return { ok: false, message: "Generator location is unavailable." };
+    if (!original.isAir && (shouldCancelClaimBlockBreak(player, target, dimensionId) || shouldCancelAreaBlockBreak(player, target, dimensionId, original.typeId))) {
+      return { ok: false, message: "You cannot replace blocks in this protected location." };
+    }
+  }
   if (!spawnGeneratorOutput(loc, initialOutput)) {
     return { ok: false, message: "Unable to place generator blocks." };
   }
@@ -730,4 +742,12 @@ function* processGeneratorsJob(now: number, indexes: GeneratorIndexes, onlinePla
   }
   if (changedSchedule) markGeneratorIndexesDirty();
   generatorProcessJobId = undefined;
+}
+
+export function resetGeneratorRuntime(): void {
+  if (generatorProcessJobId !== undefined) system.clearJob(generatorProcessJobId);
+  generatorProcessJobId = undefined;
+  generatorProcessCursor = 0;
+  generatorIndexes = undefined;
+  markGeneratorIndexesDirty();
 }

@@ -44,33 +44,20 @@ import {
   defaultCustomAreaStore,
   defaultLootChestStore,
 } from "./defaults";
-import {
-  PLOTS_CONFIG_KEY,
-  PLOTS_MIGRATION_MARKER_KEY,
-  PLOTS_SLOT_PREFIX,
-  PLOTS_PLAYER_SLOT_PREFIX,
-  PLOTS_SNAPSHOT_PREFIX,
-  PLAYER_SHOPS_CONFIG_KEY,
-  PLAYER_SHOPS_SHOP_PREFIX,
-  PLAYER_SHOPS_LISTING_PREFIX,
-  PLAYER_SHOPS_EARNINGS_PREFIX,
-  STATS_PLAYER_IDS_KEY,
-  STATS_PLAYER_PREFIX,
-  clearSplitDynamicJson,
-} from "./dynamic-json";
 import { clearPendingDynamicSaves } from "./save";
-import {
-  CLAIMS_CLAIM_PREFIX,
-  CLAIMS_CONFIG_KEY,
-  CLAIMS_MIGRATION_MARKER_KEY,
-  CUSTOM_AREAS_AREA_PREFIX,
-  CUSTOM_AREAS_CONFIG_KEY,
-  LOOT_CHESTS_CHEST_PREFIX,
-  LOOT_CHESTS_CONFIG_KEY,
-  LOOT_CHESTS_POOL_PREFIX,
-  LOOT_CHESTS_SNAPSHOT_PREFIX,
-} from "./dynamic-json";
-import { TPA_COOLDOWN_PREFIX, TPA_INBOX_PREFIX, TPA_OUTBOX_PREFIX } from "./split-keys/tpa";
+import { resetStatsRuntime } from "./split-keys/stats";
+import { resetCombatRuntime } from "../combat/core";
+import { invalidateClaimRuntimeState } from "../claims";
+import { invalidateCustomAreaRuntimeState } from "../custom-areas";
+import { resetPlotRuntime } from "../plots/build";
+import { resetPlotPlayerRuntime } from "../plots/player-ops";
+import { resetGeneratorRuntime } from "../generators/operations";
+import { resetLootChestRuntime } from "../loot-chests/core";
+import { resetPlotPersistenceCache } from "./split-keys/plots";
+import { resetPlayerShopPersistenceCache } from "./split-keys/player-shops";
+import { resetTpaPersistenceCache } from "./split-keys/tpa";
+import { loadIdentityAliases } from "./identity";
+import { clearSplitDynamicJson } from "./dynamic-json";
 export { normalizeItemId } from "../shared/item-id";
 
 export function tell(player: Player, message: string) {
@@ -257,68 +244,25 @@ export function isFeatureEnabled(feature: keyof ConfigStore["features"]) {
 
 export function clearAllData() {
   clearPendingDynamicSaves();
-  world.setDynamicProperty(STORAGE_KEYS.forms, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.shops, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.binds, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.sidebars, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.config, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.ranks, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.chat, undefined);
-  world.setDynamicProperty("tau:stats", undefined);
-  world.setDynamicProperty("tau:profiles", undefined);
-  world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.tpa, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.homes, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.pay, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.playerSettings, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.teams, undefined);
-  world.setDynamicProperty("tau:prune", undefined);
-  world.setDynamicProperty(STORAGE_KEYS.warps, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.teamHomes, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.rtp, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.generators, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);
-  clearSplitDynamicJson(STORAGE_KEYS.moderation);
-  world.setDynamicProperty(STORAGE_KEYS.crates, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.tauItems, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.combat, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.commandBuilder, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.customRewards, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.referrals, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.playerShops, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.customAreas, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.lootChests, undefined);
-  world.setDynamicProperty(STORAGE_KEYS.claims, undefined);
-  world.setDynamicProperty("tau:meta", undefined);
-  world.setDynamicProperty(PLAYER_SHOPS_CONFIG_KEY, undefined);
-  world.setDynamicProperty(PLOTS_CONFIG_KEY, undefined);
-  world.setDynamicProperty(CUSTOM_AREAS_CONFIG_KEY, undefined);
-  world.setDynamicProperty(LOOT_CHESTS_CONFIG_KEY, undefined);
-  world.setDynamicProperty(CLAIMS_CONFIG_KEY, undefined);
-  world.setDynamicProperty(CLAIMS_MIGRATION_MARKER_KEY, undefined);
-  world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, undefined);
-  for (const key of world.getDynamicPropertyIds()) {
-    if (
-      key.startsWith(STATS_PLAYER_PREFIX) ||
-      key === STATS_PLAYER_IDS_KEY ||
-      key.startsWith(PLOTS_SLOT_PREFIX) ||
-      key.startsWith(PLOTS_PLAYER_SLOT_PREFIX) ||
-      key.startsWith(PLOTS_SNAPSHOT_PREFIX) ||
-      key.startsWith(PLAYER_SHOPS_SHOP_PREFIX) ||
-      key.startsWith(PLAYER_SHOPS_LISTING_PREFIX) ||
-      key.startsWith(PLAYER_SHOPS_EARNINGS_PREFIX) ||
-      key.startsWith(CUSTOM_AREAS_AREA_PREFIX) ||
-      key.startsWith(LOOT_CHESTS_POOL_PREFIX) ||
-      key.startsWith(LOOT_CHESTS_SNAPSHOT_PREFIX) ||
-      key.startsWith(LOOT_CHESTS_CHEST_PREFIX) ||
-      key.startsWith(CLAIMS_CLAIM_PREFIX) ||
-      key.startsWith(TPA_INBOX_PREFIX) ||
-      key.startsWith(TPA_OUTBOX_PREFIX) ||
-      key.startsWith(TPA_COOLDOWN_PREFIX)
-    ) {
-      world.setDynamicProperty(key, undefined);
-    }
+  resetStatsRuntime();
+  resetCombatRuntime();
+  resetPlotRuntime();
+  resetPlotPlayerRuntime();
+  resetGeneratorRuntime();
+  resetLootChestRuntime();
+  resetPlotPersistenceCache();
+  resetPlayerShopPersistenceCache();
+  resetTpaPersistenceCache();
+  // Include every Tau-owned namespace: chunks, journals, penalties and manifests.
+  const propertyIds = world.getDynamicPropertyIds();
+  clearSplitDynamicJson(STORAGE_KEYS.referrals, propertyIds);
+  clearSplitDynamicJson(STORAGE_KEYS.moderation, propertyIds);
+  for (const key of propertyIds) {
+    if (key.startsWith("tau:")) world.setDynamicProperty(key, undefined);
   }
+  loadIdentityAliases();
+  invalidateClaimRuntimeState();
+  invalidateCustomAreaRuntimeState();
   state.forms = {};
   state.shops = {};
   state.binds = { itemBinds: {}, entityTagBinds: {} };

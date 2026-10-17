@@ -35,13 +35,12 @@ function purgeExpiredOutbox(playerId: string, now: number): boolean {
 
 function* processTpaExpiryJob(): Generator<void, void, void> {
   const now = Date.now();
-  const propertyIds = world.getDynamicPropertyIds();
-  const inboxIds = tpaInboxPlayerIds(propertyIds);
+  const inboxIds = tpaInboxPlayerIds();
   for (const playerId of inboxIds) {
     purgeExpiredInbox(playerId, now);
     yield;
   }
-  const outboxIds = tpaOutboxPlayerIds(propertyIds);
+  const outboxIds = tpaOutboxPlayerIds();
   for (const playerId of outboxIds) {
     purgeExpiredOutbox(playerId, now);
     yield;

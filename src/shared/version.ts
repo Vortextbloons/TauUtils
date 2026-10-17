@@ -1,6 +1,6 @@
-export const TAUUTILS_VERSION = "2.9.5-Beta";
+export const TAUUTILS_VERSION = "3.0.0-Beta";
 
-export const IS_DEV = true;
+export const IS_DEV = false;
 
 export function formatTauUtilsLoadedMessage(): string {
   const suffix = IS_DEV ? "-dev" : "";

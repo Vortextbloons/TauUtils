@@ -19,6 +19,12 @@ export function invalidatePlotTitleCache(): void {
   plotTitleCache.clear();
 }
 
+export function resetPlotPlayerRuntime(): void {
+  if (clearFreePlotSlotsJobId !== undefined) system.clearJob(clearFreePlotSlotsJobId);
+  clearFreePlotSlotsJobId = undefined;
+  invalidatePlotTitleCache();
+}
+
 function plotTitleCacheKey(slot: PlotSlot): string {
   const teamVersion = Object.values(state.teams.teams)
     .map((team) => `${team.ownerPlayerId}:${team.teamPlotEnabled ? 1 : 0}:${team.name}`)

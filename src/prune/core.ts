@@ -1,5 +1,5 @@
 import { Player } from "@minecraft/server";
-import { state, savePrune, saveProfiles, saveStats, saveTeams, saveTeamHomes, savePlots, saveClaims, saveHomes, savePlayerSettings, tell, clearAllTpaForPlayer } from "../storage";
+import { isFeatureEnabled, state, savePrune, saveProfiles, saveStats, saveTeams, saveTeamHomes, savePlots, saveClaims, saveHomes, savePlayerSettings, tell, clearAllTpaForPlayer } from "../storage";
 import { parseIntIn, MAX_SAFE_INT } from "../shared/numbers";
 import { invalidateClaimRuntimeState } from "../claims/core";
 import { invalidatePlotSlotCache } from "../plots/grid";
@@ -44,6 +44,7 @@ function isInactive(playerId: string): boolean {
 }
 
 export function pruneData(dryRun = true): PruneResult {
+  if (!isFeatureEnabled("prune")) return { removed: 0, details: ["Prune is disabled."] };
   const details: string[] = [];
   let removed = 0;
   const cutoff = cutoffMs();

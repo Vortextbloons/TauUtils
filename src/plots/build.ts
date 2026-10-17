@@ -68,6 +68,7 @@ type FillJob = {
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
   block: string;
+  attempts?: number;
 };
 
 type SnapshotJob = {
@@ -197,6 +198,7 @@ function shouldSplitFillJob(job: FillJob): boolean {
 }
 
 function enqueueFill(slotId: string, min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }, block: string): void {
+  if (!isFeatureEnabled("plots")) return;
   const job: FillJob = { slotId, min, max, block };
   if (shouldSplitFillJob(job)) {
     const [a, b] = splitFillJob(job);
@@ -231,6 +233,12 @@ function* processQueuedPlotBuildJobsJob(): Generator<void, void, void> {
     try {
       runFillCommand(job.min, job.max, job.block);
     } catch {
+      job.attempts = (job.attempts ?? 0) + 1;
+      if (job.attempts >= 20) {
+        console.warn(`[TauUtils] Plot fill for ${job.slotId} failed 20 times; canceled build.`);
+        resetPlotRuntime();
+        return;
+      }
       fillQueue.push(job);
       for (let tick = 0; tick < 20; tick++) yield;
       continue;
@@ -365,6 +373,7 @@ function enqueueLayoutClear(slots: PlotSlot[]): void {
 }
 
 export function buildPlotGeometry(slotId?: string): { ok: boolean; message: string } {
+  if (!isFeatureEnabled("plots")) return { ok: false, message: "Plots are disabled." };
   if (hasActiveFillWork()) return { ok: false, message: "A plot build is already in progress. Try again after it finishes." };
   const slot = slotId ? state.plots.slots[slotId] : undefined;
   if (slotId && !slot) return { ok: false, message: "Slot not found." };
@@ -493,6 +502,7 @@ export function isGeneratorInSlot(generator: PlacedGenerator, slot: PlotSlot): b
 }
 
 export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: PlotSnapshot["generators"], queueOnFailure = true): boolean {
+  if (!isFeatureEnabled("plots")) return false;
   const dim = getDimension();
   const name = structureNameForPlayer(playerId);
   const snapshotGenerators = generators ?? captureSlotGenerators(slot, playerId);
@@ -515,6 +525,7 @@ export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: 
 }
 
 export function loadSlotSnapshot(slot: PlotSlot, playerId: string, queueOnFailure = true): boolean {
+  if (!isFeatureEnabled("plots")) return false;
   const snap = state.plots.snapshots[playerId];
   if (!snap) return false;
   snap.slotId = slot.id;
@@ -562,6 +573,7 @@ export function processQueuedPlotSnapshots(): void {
 }
 
 export function clearSlot(slot: PlotSlot) {
+  if (!isFeatureEnabled("plots")) return;
   const dim = getDimension();
   try {
     const selector = `@e[type=!player,x=${slot.min.x},y=${slot.min.y},z=${slot.min.z},dx=${slot.max.x - slot.min.x},dy=${slot.max.y - slot.min.y},dz=${slot.max.z - slot.min.z}]`;
@@ -575,6 +587,7 @@ export function clearSlot(slot: PlotSlot) {
 }
 
 export function saveAndClearSlot(slot: PlotSlot, ownerPlayerId: string): boolean {
+  if (!isFeatureEnabled("plots")) return false;
   const capturedGenerators = captureSlotGenerators(slot, ownerPlayerId);
   if (!saveSlotSnapshot(slot, ownerPlayerId, capturedGenerators)) return false;
   clearSlot(slot);
@@ -594,4 +607,16 @@ export function getPlotForLocation(location: Vector3): PlotSlot | undefined {
     }
   }
   return undefined;
+}
+
+export function resetPlotRuntime(): void {
+  if (fillJobId !== undefined) system.clearJob(fillJobId);
+  fillJobId = undefined;
+  fillQueue.length = 0;
+  fillQueueCursor = 0;
+  snapshotQueue.length = 0;
+  for (const key of Object.keys(pendingJobCountsBySlot)) delete pendingJobCountsBySlot[key];
+  completedSlots.clear();
+  buildSessionTotalSlots = 0;
+  invalidatePlotRuntimeCaches();
 }

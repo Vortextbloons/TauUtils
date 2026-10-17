@@ -21,8 +21,8 @@ function enabled(): boolean {
 
 function normalizeBounds(a: Vector3, b: Vector3): { min: Vector3; max: Vector3 } {
   return {
-    min: { x: Math.min(Math.floor(a.x), Math.floor(b.x)), y: -64, z: Math.min(Math.floor(a.z), Math.floor(b.z)) },
-    max: { x: Math.max(Math.floor(a.x), Math.floor(b.x)), y: 320, z: Math.max(Math.floor(a.z), Math.floor(b.z)) },
+    min: { x: Math.min(Math.floor(a.x), Math.floor(b.x)), y: Math.min(Math.floor(a.y), Math.floor(b.y)), z: Math.min(Math.floor(a.z), Math.floor(b.z)) },
+    max: { x: Math.max(Math.floor(a.x), Math.floor(b.x)), y: Math.max(Math.floor(a.y), Math.floor(b.y)), z: Math.max(Math.floor(a.z), Math.floor(b.z)) },
   };
 }
 
@@ -56,7 +56,8 @@ function isUnsafeBelow(typeId: string): boolean {
 
 function safeLocation(region: RtpRegion, x: number, z: number): Vector3 | undefined {
   const dimension = world.getDimension(region.dimensionId);
-  for (let y = 318; y >= -63; y--) {
+  const bounds = normalizeBounds(region.min, region.max);
+  for (let y = Math.min(dimension.heightRange.max - 2, bounds.max.y); y >= Math.max(dimension.heightRange.min + 1, bounds.min.y); y--) {
     const below = dimension.getBlock({ x, y: y - 1, z });
     const feet = dimension.getBlock({ x, y, z });
     const head = dimension.getBlock({ x, y: y + 1, z });
@@ -74,20 +75,14 @@ function safeLocation(region: RtpRegion, x: number, z: number): Vector3 | undefi
 function findRandomLocation(region: RtpRegion): Vector3 | undefined {
   const bounds = normalizeBounds(region.min, region.max);
   const attempts = Math.max(1, region.maxAttempts || state.rtp.config.maxAttempts);
-  let fallbackSkyLocation: Vector3 | undefined;
   for (let i = 0; i < attempts; i++) {
     const x = randomInt(bounds.min.x, bounds.max.x);
     const z = randomInt(bounds.min.z, bounds.max.z);
-    const skyLocation = { x: x + 0.5, y: 319, z: z + 0.5 };
-    if (!fallbackSkyLocation) {
-      const blockedByClaim = region.avoidClaims && getClaimAt(skyLocation, region.dimensionId);
-      const blockedByArea = region.avoidCustomAreas && getCustomAreaAtLocation(skyLocation, region.dimensionId);
-      if (!blockedByClaim && !blockedByArea) fallbackSkyLocation = skyLocation;
-    }
-    const found = safeLocation(region, x, z);
+    let found: Vector3 | undefined;
+    try { found = safeLocation(region, x, z); } catch { continue; }
     if (found) return found;
   }
-  return fallbackSkyLocation;
+  return undefined;
 }
 
 function resolveRegion(player: Player, regionId?: string): RtpRegion | undefined {
@@ -121,7 +116,22 @@ export function randomTeleport(player: Player, regionId?: string): { ok: boolean
   if (!region) return { ok: false, message: "No RTP region is available." };
   const location = findRandomLocation(region);
   if (!location) return { ok: false, message: "Could not find a safe RTP location. Try again." };
-  const destination = { x: location.x, y: Math.min(319, location.y + Math.max(1, region.skyHeightOffset)), z: location.z };
+  let destination = location;
+  if (region.fallFromSky && Number.isFinite(region.skyHeightOffset)) {
+    const dimension = world.getDimension(region.dimensionId);
+    const top = Math.min(dimension.heightRange.max - 2, region.max.y, location.y + Math.max(0, Math.floor(region.skyHeightOffset)));
+    let clear = true;
+    try {
+      for (let y = location.y + 1; y <= top + 1; y++) {
+        const point = { x: Math.floor(location.x), y, z: Math.floor(location.z) };
+        const block = dimension.getBlock(point);
+        if (!block || !isAirLike(block.typeId) ||
+            (region.avoidClaims && getClaimAt(point, region.dimensionId)) ||
+            (region.avoidCustomAreas && getCustomAreaAtLocation(point, region.dimensionId))) { clear = false; break; }
+      }
+    } catch { clear = false; }
+    if (clear) destination = { ...location, y: Math.max(location.y, top) };
+  }
   const teleported = requestPlayerTeleport(
     player,
     { ...destination, dimensionId: region.dimensionId },

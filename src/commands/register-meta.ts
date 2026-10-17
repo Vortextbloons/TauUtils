@@ -44,20 +44,23 @@ export function registerMetaCommands(registry: CustomCommandRegistry): void {
   registerDescribedCommand(
     registry,
     "tau:cleardata",
-    (origin): CustomCommandResult => {
+    (origin, confirmation?: string): CustomCommandResult => {
+      if (confirmation !== "confirm") return { status: 1, message: "This permanently deletes all Tau data. Run /tau:cleardata confirm to proceed." };
       const player = commandOriginToPlayer(origin);
-      clearAllData();
-      if (!state.shops.default) {
-        state.shops.default = {
-          id: "default",
-          currencyObjective: "money",
-          items: [],
-        };
-        saveShops();
-      }
-      const msg = "All Tau UI data cleared.";
-      if (player) tell(player, msg);
-      return { status: 0, message: msg };
+      system.run(() => {
+        clearAllData();
+        if (!state.shops.default) {
+          state.shops.default = {
+            id: "default",
+            currencyObjective: "money",
+            items: [],
+          };
+          saveShops();
+        }
+        const msg = "All Tau UI data cleared.";
+        if (player?.isValid) tell(player, msg);
+      });
+      return { status: 0, message: "Clearing all Tau data." };
     },
     { cheatsRequired: true, permissionLevel: CommandPermissionLevel.Admin }
   );

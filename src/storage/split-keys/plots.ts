@@ -223,3 +223,5 @@ export function migrateLegacyPlotsToSplitOneShot(): { migrated: boolean; failed:
   world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
   return { migrated: true, failed: false };
 }
+
+export function resetPlotPersistenceCache(): void { persistedPlotJsonByKey.clear(); }

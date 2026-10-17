@@ -99,3 +99,5 @@ export function rememberPlayerShopSplitKeys(store: PlayerShopStore): void {
     if (serialized !== undefined) persistedPlayerShopJsonByKey.set(key, serialized);
   }
 }
+
+export function resetPlayerShopPersistenceCache(): void { persistedPlayerShopJsonByKey.clear(); }

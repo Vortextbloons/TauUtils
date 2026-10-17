@@ -75,7 +75,7 @@ function runPlayerCurrencyInit(player: Player): void {
 }
 
 function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
-  if (!player) return;
+  if (!player?.isValid) return;
   const id = getPlayerId(player);
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
 
@@ -90,7 +90,6 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
 
   if (!isFeatureEnabled("plots")) return;
 
-  reconcileAllPlotState("player_join_init");
   const ensured = ensurePlayerPlotAssigned(player);
   if (!ensured.ok) showPlotError(player, ensured.message);
 
@@ -209,7 +208,7 @@ export function registerPlayerLifecycleEvents(): void {
 
   world.afterEvents.playerLeave.subscribe((event) => {
     pendingJoinInitializationByName.delete(event.playerName);
-    const playerId = (event as { playerId?: string }).playerId ?? state.stats.playerIds[event.playerName];
+    const playerId = state.stats.playerIds[event.playerName] ?? (event as { playerId?: string }).playerId;
     if (playerId) {
       clearCrateRuntimeForPlayer(playerId);
       clearCustomAreaRuntimeForPlayer(playerId);
@@ -237,6 +236,5 @@ export function registerPlayerLifecycleEvents(): void {
       }
     }
     if (playerId) releasePlayerPlotById(playerId);
-    reconcileAllPlotState("player_leave");
   });
 }

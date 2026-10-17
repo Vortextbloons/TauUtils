@@ -121,21 +121,14 @@ function removeQuantityFromSlot(player: Player, slotIndex: number, quantity: num
 function addItemToPlayerInventory(player: Player, stack: ItemStack): boolean {
   const container = getInventoryContainer(player);
   if (!container) return false;
-  const leftover = container.addItem(stack);
-  return !leftover;
-}
-
-function removeMatchingSingleStack(player: Player, target: ItemStack): boolean {
-  const container = getInventoryContainer(player);
-  if (!container) return false;
-  for (let slot = 0; slot < container.size; slot++) {
-    const stack = container.getItem(slot);
-    if (!stack) continue;
-    if (!stack.isStackableWith(target)) continue;
-    if (stack.amount !== target.amount) continue;
-    container.setItem(slot, undefined);
-    return true;
+  const snapshot = snapshotBuyerContainer(player);
+  if (!snapshot) return false;
+  try {
+    if (!container.addItem(stack)) return true;
+  } catch {
+    // addItem can mutate slots before failing.
   }
+  restoreBuyerContainer(player, snapshot);
   return false;
 }
 
@@ -263,15 +256,16 @@ function purchaseListing(buyer: Player, listing: PlayerShopListing): TradeResult
     const stack = deserializeItemStack(live.item);
     stack.amount = live.quantity;
 
-    const container = getInventoryContainer(buyer);
     const snapshot = snapshotBuyerContainer(buyer);
+    if (!snapshot) return { ok: false, message: "Inventory unavailable." };
     if (!addItemToPlayerInventory(buyer, stack)) {
       return { ok: false, message: "Not enough inventory space." };
     }
 
-    if (!setScore(buyer, objective, buyerBalance - totalPrice)) {
-      if (container && snapshot) restoreBuyerContainer(buyer, snapshot);
-      else removeMatchingSingleStack(buyer, stack);
+    let charged = false;
+    try { charged = setScore(buyer, objective, buyerBalance - totalPrice); } catch { /* Roll back transfer below. */ }
+    if (!charged) {
+      restoreBuyerContainer(buyer, snapshot);
       return { ok: false, message: "Failed to charge buyer." };
     }
 

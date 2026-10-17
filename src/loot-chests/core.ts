@@ -402,6 +402,7 @@ export function updateLootChestConfig(partial: Partial<Pick<LootChestStore["conf
 }
 
 export function refillLootChest(chest: LootChestLocation, force = false): RefillResult {
+  if (!isFeatureEnabled("lootChests") || !state.lootChests.config.enabled) return { ok: false, message: "Loot chests are disabled." };
   const pool = state.lootChests.pools[chest.poolId];
   if (!pool?.enabled && !force) return { ok: false, message: "Pool is disabled." };
   const snapshots = getRuntimeCache().snapshotsByPoolId.get(chest.poolId) ?? [];
@@ -565,4 +566,10 @@ export function describeLootChest(chest: LootChestLocation): string {
 
 export function sendLootChestResult(player: Player, result: RefillResult): void {
   tell(player, result.ok ? `§a${result.message}` : `§c${result.message}`);
+}
+
+export function resetLootChestRuntime(): void {
+  if (processJobId !== undefined) system.clearJob(processJobId);
+  processJobId = undefined;
+  invalidateLootChestRuntimeCache();
 }

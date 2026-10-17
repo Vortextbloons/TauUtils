@@ -6,13 +6,15 @@
     "bundle": "node ./node_modules/esbuild/bin/esbuild src/main.ts --bundle --format=esm --target=esnext --minify --outfile=behavior_pack/scripts/main.js --external:@minecraft/server --external:@minecraft/server-ui",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
     "dead-exports": "node ./node_modules/ts-prune/lib/index.js -p tsconfig.json -e -i \"index.ts|registry.ts|(used in module)\"",
-    "dead-exports:all": "node ./node_modules/ts-prune/lib/index.js -p tsconfig.json -e -i \"index.ts|(used in module)\"",    "validate": "npm run typecheck && npm run dead-exports",
+    "dead-exports:all": "node ./node_modules/ts-prune/lib/index.js -p tsconfig.json -e -i \"index.ts|(used in module)\"",
+    "validate": "npm run typecheck && npm run dead-exports",
     "validate:help": "node scripts/validate-help.js",
     "package": "node scripts/package-release.js",
     "deploy": "node scripts/deploy.js",
     "build": "npm run version:sync && npm run bundle && npm run deploy",
     "build:production": "npm run version:sync && npm run bundle && npm run package",
-    "ci": "npm run validate && npm run validate:help && npm run bundle"
+    "ci": "npm run validate && npm run test:regressions && npm run validate:help && npm run bundle",
+    "test:regressions": "node scripts/test-regressions.js"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

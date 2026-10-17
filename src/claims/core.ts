@@ -4,8 +4,10 @@ import { getPlayerTeam } from "../teams";
 import { renderTemplate } from "../shared/templates";
 import type { ClaimConfig, ClaimDefinition, ClaimFlags, ClaimMemberRole } from "../types";
 
+import { createSpatialLookup } from "../shared/spatial-lookup";
+
 type RuntimeClaim = { claim: ClaimDefinition };
-type ClaimRuntimeCache = { byDimension: Map<string, RuntimeClaim[]> };
+type ClaimRuntimeCache = { query: (location: Vector3, dimensionId: string) => RuntimeClaim[] };
 
 const playerClaimState = new Map<string, string | undefined>();
 let cache: ClaimRuntimeCache | undefined;
@@ -46,7 +48,7 @@ function buildCache(): ClaimRuntimeCache {
     byDimension.set(claim.dimensionId, list);
   }
   for (const list of byDimension.values()) list.sort((a, b) => b.claim.priority - a.claim.priority || b.claim.createdAt - a.claim.createdAt);
-  return { byDimension };
+  return { query: createSpatialLookup([...byDimension.values()].flat(), (runtime) => runtime.claim) };
 }
 
 function getCache(): ClaimRuntimeCache {
@@ -55,13 +57,15 @@ function getCache(): ClaimRuntimeCache {
 }
 
 export function invalidateClaimRuntimeState(): void {
+  if (claimJobId !== undefined) system.clearJob(claimJobId);
+  claimJobId = undefined;
   cache = undefined;
   playerClaimState.clear();
 }
 
 export function getClaimAt(location: Vector3, dimensionId: string): ClaimDefinition | undefined {
   if (!enabled()) return undefined;
-  return (getCache().byDimension.get(dimensionId) ?? []).find((runtime) => pointInside(runtime.claim, location, dimensionId))?.claim;
+  return getCache().query(location, dimensionId).find((runtime) => pointInside(runtime.claim, location, dimensionId))?.claim;
 }
 
 function roleAllows(role: ClaimMemberRole | undefined, action: "build" | "manage"): boolean {
@@ -217,20 +221,24 @@ export function processClaims(cachedPlayers?: Player[]): void {
 }
 
 function* processClaimsJob(cachedPlayers?: Player[]): Generator<void, void, void> {
-  for (const player of cachedPlayers ?? world.getAllPlayers()) {
-    if (!enabled()) break;
-    const playerId = getPlayerId(player);
-    const previous = playerClaimState.get(playerId);
-    const current = getClaimAt(player.location, player.dimension.id);
-    if (previous !== current?.id) {
-      if (previous) {
-        const old = state.claims.claims[previous];
-        if (old?.announceLeave) sendAnnouncement(player, old, false);
+  try {
+    for (const player of cachedPlayers ?? world.getAllPlayers()) {
+      if (!enabled()) break;
+      if (!player.isValid) { yield; continue; }
+      const playerId = getPlayerId(player);
+      const previous = playerClaimState.get(playerId);
+      const current = getClaimAt(player.location, player.dimension.id);
+      if (previous !== current?.id) {
+        if (previous) {
+          const old = state.claims.claims[previous];
+          if (old?.announceLeave) sendAnnouncement(player, old, false);
+        }
+        if (current?.announceEnter) sendAnnouncement(player, current, true);
+        playerClaimState.set(playerId, current?.id);
       }
-      if (current?.announceEnter) sendAnnouncement(player, current, true);
-      playerClaimState.set(playerId, current?.id);
+      yield;
     }
-    yield;
+  } finally {
+    claimJobId = undefined;
   }
-  claimJobId = undefined;
 }

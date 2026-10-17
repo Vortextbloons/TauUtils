@@ -12,7 +12,7 @@ import {
 import {
   state,
 } from "./state";
-import { safeSetDynamicJson, writeSplitDynamicJson, PLOTS_MIGRATION_MARKER_KEY } from "./dynamic-json";
+import { writeDynamicJSON, writeSplitDynamicJson, PLOTS_MIGRATION_MARKER_KEY } from "./dynamic-json";
 import { requestStatsFlush, markAllStatsPlayersDirty } from "./split-keys/stats";
 import { normalizePlotStore, writePlotsIncrementalToSplitKeys } from "./split-keys/plots";
 import { writePlayerShopsIncrementalToSplitKeys } from "./split-keys/player-shops";
@@ -82,35 +82,37 @@ export function flushPendingDynamicSaves(): void {
 }
 
 export function clearPendingDynamicSaves(): void {
+  if (dynamicSaveFlushJobId !== undefined) system.clearJob(dynamicSaveFlushJobId);
+  dynamicSaveFlushJobId = undefined;
   pendingDynamicSaves.clear();
 }
 
 export function saveForms() {
-  scheduleDynamicSave(STORAGE_KEYS.forms, () => safeSetDynamicJson(STORAGE_KEYS.forms, state.forms));
+  scheduleDynamicSave(STORAGE_KEYS.forms, () => writeDynamicJSON(STORAGE_KEYS.forms, state.forms));
 }
 
 export function saveShops() {
-  scheduleDynamicSave(STORAGE_KEYS.shops, () => safeSetDynamicJson(STORAGE_KEYS.shops, state.shops));
+  scheduleDynamicSave(STORAGE_KEYS.shops, () => writeDynamicJSON(STORAGE_KEYS.shops, state.shops));
 }
 
 export function saveBinds() {
-  safeSetDynamicJson(STORAGE_KEYS.binds, state.binds);
+  writeDynamicJSON(STORAGE_KEYS.binds, state.binds);
 }
 
 export function saveSidebars() {
-  scheduleDynamicSave(STORAGE_KEYS.sidebars, () => safeSetDynamicJson(STORAGE_KEYS.sidebars, state.sidebars));
+  scheduleDynamicSave(STORAGE_KEYS.sidebars, () => writeDynamicJSON(STORAGE_KEYS.sidebars, state.sidebars));
 }
 
 export function saveConfig() {
-  safeSetDynamicJson(STORAGE_KEYS.config, state.config);
+  writeDynamicJSON(STORAGE_KEYS.config, state.config);
 }
 
 export function saveRanks() {
-  scheduleDynamicSave(STORAGE_KEYS.ranks, () => safeSetDynamicJson(STORAGE_KEYS.ranks, state.ranks));
+  scheduleDynamicSave(STORAGE_KEYS.ranks, () => writeDynamicJSON(STORAGE_KEYS.ranks, state.ranks));
 }
 
 export function saveChat() {
-  scheduleDynamicSave(STORAGE_KEYS.chat, () => safeSetDynamicJson(STORAGE_KEYS.chat, state.chat));
+  scheduleDynamicSave(STORAGE_KEYS.chat, () => writeDynamicJSON(STORAGE_KEYS.chat, state.chat));
 }
 
 export function saveStats(fullResync = false): void {
@@ -122,7 +124,7 @@ export function saveStats(fullResync = false): void {
 }
 
 export function saveProfiles() {
-  scheduleDynamicSave("tau:profiles", () => safeSetDynamicJson("tau:profiles", state.profiles));
+  scheduleDynamicSave("tau:profiles", () => writeDynamicJSON("tau:profiles", state.profiles));
 }
 
 export function savePlots(): void {
@@ -136,7 +138,7 @@ export function savePlots(): void {
 }
 
 export function saveTpa() {
-  scheduleDynamicSave(STORAGE_KEYS.tpa, () => safeSetDynamicJson(STORAGE_KEYS.tpa, state.tpa));
+  scheduleDynamicSave(STORAGE_KEYS.tpa, () => writeDynamicJSON(STORAGE_KEYS.tpa, state.tpa));
 }
 
 export function saveTpaInboxFor(playerId: string, requests: TpaRequest[]): boolean {
@@ -152,39 +154,39 @@ export function saveTpaCooldownFor(playerId: string, untilMs: number): boolean {
 }
 
 export function saveHomes() {
-  scheduleDynamicSave(STORAGE_KEYS.homes, () => safeSetDynamicJson(STORAGE_KEYS.homes, state.homes));
+  scheduleDynamicSave(STORAGE_KEYS.homes, () => writeDynamicJSON(STORAGE_KEYS.homes, state.homes));
 }
 
 export function savePay() {
-  scheduleDynamicSave(STORAGE_KEYS.pay, () => safeSetDynamicJson(STORAGE_KEYS.pay, state.pay));
+  scheduleDynamicSave(STORAGE_KEYS.pay, () => writeDynamicJSON(STORAGE_KEYS.pay, state.pay));
 }
 
 export function savePlayerSettings() {
-  scheduleDynamicSave(STORAGE_KEYS.playerSettings, () => safeSetDynamicJson(STORAGE_KEYS.playerSettings, state.playerSettings));
+  scheduleDynamicSave(STORAGE_KEYS.playerSettings, () => writeDynamicJSON(STORAGE_KEYS.playerSettings, state.playerSettings));
 }
 
 export function saveTeams() {
-  scheduleDynamicSave(STORAGE_KEYS.teams, () => safeSetDynamicJson(STORAGE_KEYS.teams, state.teams));
+  scheduleDynamicSave(STORAGE_KEYS.teams, () => writeDynamicJSON(STORAGE_KEYS.teams, state.teams));
 }
 
 export function saveTeamHomes() {
-  scheduleDynamicSave(STORAGE_KEYS.teamHomes, () => safeSetDynamicJson(STORAGE_KEYS.teamHomes, state.teamHomes));
+  scheduleDynamicSave(STORAGE_KEYS.teamHomes, () => writeDynamicJSON(STORAGE_KEYS.teamHomes, state.teamHomes));
 }
 
 export function savePrune() {
-  scheduleDynamicSave("tau:prune", () => safeSetDynamicJson("tau:prune", state.prune));
+  scheduleDynamicSave("tau:prune", () => writeDynamicJSON("tau:prune", state.prune));
 }
 
 export function saveWarps() {
-  scheduleDynamicSave(STORAGE_KEYS.warps, () => safeSetDynamicJson(STORAGE_KEYS.warps, state.warps));
+  scheduleDynamicSave(STORAGE_KEYS.warps, () => writeDynamicJSON(STORAGE_KEYS.warps, state.warps));
 }
 
 export function saveRtp() {
-  scheduleDynamicSave(STORAGE_KEYS.rtp, () => safeSetDynamicJson(STORAGE_KEYS.rtp, state.rtp));
+  scheduleDynamicSave(STORAGE_KEYS.rtp, () => writeDynamicJSON(STORAGE_KEYS.rtp, state.rtp));
 }
 
 export function saveGenerators() {
-  scheduleDynamicSave(STORAGE_KEYS.generators, () => safeSetDynamicJson(STORAGE_KEYS.generators, state.generators));
+  scheduleDynamicSave(STORAGE_KEYS.generators, () => writeDynamicJSON(STORAGE_KEYS.generators, state.generators));
 }
 
 export function saveModeration() {
@@ -197,15 +199,15 @@ export function saveModeration() {
 }
 
 export function saveCrates() {
-  scheduleDynamicSave(STORAGE_KEYS.crates, () => safeSetDynamicJson(STORAGE_KEYS.crates, state.crates));
+  scheduleDynamicSave(STORAGE_KEYS.crates, () => writeDynamicJSON(STORAGE_KEYS.crates, state.crates));
 }
 
 export function saveTauItems() {
-  scheduleDynamicSave(STORAGE_KEYS.tauItems, () => safeSetDynamicJson(STORAGE_KEYS.tauItems, state.tauItems));
+  scheduleDynamicSave(STORAGE_KEYS.tauItems, () => writeDynamicJSON(STORAGE_KEYS.tauItems, state.tauItems));
 }
 
 export function saveCombat() {
-  scheduleDynamicSave(STORAGE_KEYS.combat, () => safeSetDynamicJson(STORAGE_KEYS.combat, state.combat));
+  scheduleDynamicSave(STORAGE_KEYS.combat, () => writeDynamicJSON(STORAGE_KEYS.combat, state.combat));
 }
 
 export function saveCustomAreas(): boolean {
@@ -227,11 +229,11 @@ export function saveLootChests(): boolean {
 }
 
 export function saveCommandBuilder() {
-  scheduleDynamicSave(STORAGE_KEYS.commandBuilder, () => safeSetDynamicJson(STORAGE_KEYS.commandBuilder, state.commandBuilder));
+  scheduleDynamicSave(STORAGE_KEYS.commandBuilder, () => writeDynamicJSON(STORAGE_KEYS.commandBuilder, state.commandBuilder));
 }
 
 export function saveCustomRewards() {
-  scheduleDynamicSave(STORAGE_KEYS.customRewards, () => safeSetDynamicJson(STORAGE_KEYS.customRewards, state.customRewards));
+  scheduleDynamicSave(STORAGE_KEYS.customRewards, () => writeDynamicJSON(STORAGE_KEYS.customRewards, state.customRewards));
 }
 
 export function saveReferrals() {

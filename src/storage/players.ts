@@ -1,10 +1,11 @@
-import { Player, world } from "@minecraft/server";
+import { Player, system, world } from "@minecraft/server";
 import {
   type PlayerStats,
   type RankDefinition,
 } from "../types";
 import { getPlayerTeam } from "../teams";
 import { state } from "./state";
+import { recordPlayerIdentity } from "./identity";
 import { defaultPlayerStats } from "./defaults";
 import { markStatsPlayerDirty, markStatsPlayerIdsDirty } from "./split-keys/stats";
 import { saveRanks } from "./save";
@@ -88,14 +89,37 @@ export function formatChatMessage(player: Player, message: string): string {
 }
 
 export function getPlayerId(player: Player): string {
-  const existing = state.stats.playerIds[player.name];
-  if (existing) return existing;
+  let stableId: string | undefined;
+  try {
+    const stored = player.getDynamicProperty("tau:player_id");
+    if (typeof stored === "string" && state.stats.players[stored]) stableId = stored;
+  } catch { /* Fall back to legacy name mapping. */ }
+  const existing = stableId ?? state.stats.playerIds[player.name];
+  if (existing) {
+    if (state.stats.playerIds[player.name] !== existing) {
+      if (stableId) {
+        for (const [oldName, id] of Object.entries(state.stats.playerIds)) {
+          if (id === stableId) delete state.stats.playerIds[oldName];
+        }
+      }
+      state.stats.playerIds[player.name] = existing;
+      markStatsPlayerIdsDirty();
+      system.run(() => { if (state.stats.players[existing]) recordPlayerIdentity(existing, player.name); });
+    }
+    if (!stableId) system.run(() => {
+      if (player.isValid && state.stats.players[existing]) { player.setDynamicProperty("tau:player_id", existing); recordPlayerIdentity(existing, player.name); }
+    });
+    return existing;
+  }
   const rawId = player.id || player.name;
   const generated = `tau-${normalizeKey(rawId).replace(/[^a-z0-9]+/g, "-")}-${Math.random().toString(36).slice(2, 8)}`;
   state.stats.playerIds[player.name] = generated;
   state.stats.players[generated] ??= defaultPlayerStats();
   markStatsPlayerIdsDirty();
   markStatsPlayerDirty(generated);
+  system.run(() => {
+    if (player.isValid && state.stats.players[generated]) { player.setDynamicProperty("tau:player_id", generated); recordPlayerIdentity(generated, player.name); }
+  });
   return generated;
 }
 

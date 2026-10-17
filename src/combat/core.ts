@@ -75,6 +75,7 @@ type PersistedCombatLogout = {
   inventory: SerializedItemStack[];
   equipment: SerializedItemStack[];
   attempts: number;
+  removalConfirmed?: boolean;
 };
 
 function persistCombatLogout(entry: PendingCombatLogout): void {
@@ -87,6 +88,7 @@ function persistCombatLogout(entry: PendingCombatLogout): void {
       inventory: entry.inventory.map((stack) => serializeItemStack(stack)),
       equipment: entry.equipment.map((stack) => serializeItemStack(stack)),
       attempts: entry.attempts,
+      removalConfirmed: true,
     };
     safeSetDynamicJson(combatLogoutKey(entry.playerId), persisted);
   } catch {
@@ -119,7 +121,7 @@ function restorePersistedCombatLogouts(): void {
     if (!playerId) continue;
     if (pendingCombatLogouts.some((entry) => entry.playerId === playerId)) continue;
     const persisted = readDynamicJSON<PersistedCombatLogout | undefined>(key, undefined);
-    if (!persisted) continue;
+    if (!persisted || persisted.removalConfirmed !== true) continue;
     try {
       const inventory = (persisted.inventory ?? []).map((data) => deserializeItemStack(data));
       const equipment = (persisted.equipment ?? []).map((data) => deserializeItemStack(data));
@@ -244,13 +246,6 @@ function captureCombatLoot(player: Player): CombatLootSnapshot {
   return { inventory, equipment };
 }
 
-function cloneCombatLoot(snapshot: CombatLootSnapshot): CombatLootSnapshot {
-  return {
-    inventory: snapshot.inventory.map((stack) => stack.clone()),
-    equipment: snapshot.equipment.map((stack) => stack.clone()),
-  };
-}
-
 function combatSnapshotItemCount(snapshot: CombatLootSnapshot): number {
   return snapshot.inventory.length + snapshot.equipment.length;
 }
@@ -322,45 +317,29 @@ function combatSnapshotContentHash(snapshot: CombatLootSnapshot): string {
   return `${combatSnapshotItemCount(snapshot)}:${hash}`;
 }
 
-function resolveCombatDropSnapshot(player: Player, playerId: string): CombatLootSnapshot | undefined {
-  // Live inventory wins: the cached snapshot can be up to 3 s stale, so
-  // dropping it while clearing the live inventory loses newly acquired items
-  // and resurrects consumed ones. The cache is only a fallback for a failed
-  // live capture, never a replacement for live contents.
-  const liveSnapshot = captureCombatLoot(player);
-  if (combatSnapshotItemCount(liveSnapshot) > 0) return liveSnapshot;
-  const cached = combatSnapshotsByPlayerId.get(playerId);
-  if (cached && combatSnapshotItemCount(cached) > 0) return cloneCombatLoot(cached);
-  return undefined;
-}
-
-function clearInventoryAndEquipment(player: Player): void {
+// Capture only stacks whose removal succeeded in writable execution.
+function removeCombatLoot(player: Player): CombatLootSnapshot {
+  const removed: CombatLootSnapshot = { inventory: [], equipment: [] };
   try {
     const container = getInventoryContainer(player);
-    if (container) {
-      for (let slot = 0; slot < container.size; slot++) {
-        try {
-          container.setItem(slot, undefined);
-        } catch {
-          continue;
-        }
-      }
-    }
-  } catch {
-  }
-
-  try {
-    const equippable = player.getComponent(EntityComponentTypes.Equippable);
-    if (!equippable) return;
-    for (const slotType of EQUIPMENT_SLOTS) {
+    if (container) for (let slot = 0; slot < container.size; slot++) {
       try {
-        equippable.setEquipment(slotType, undefined);
-      } catch {
-        continue;
-      }
+        const stack = container.getItem(slot);
+        if (!stack) continue;
+        container.setItem(slot, undefined);
+        if (!container.getItem(slot)) removed.inventory.push(stack);
+      } catch { /* Never drop an unconfirmed removal. */ }
     }
-  } catch {
-  }
+    const equippable = player.getComponent(EntityComponentTypes.Equippable);
+    if (equippable) for (const slot of EQUIPMENT_SLOTS) {
+      try {
+        const stack = equippable.getEquipment(slot);
+        if (!stack) continue;
+        if (equippable.setEquipment(slot, undefined) && !equippable.getEquipment(slot)) removed.equipment.push(stack);
+      } catch { /* Never drop an unconfirmed removal. */ }
+    }
+  } catch { /* Invalid players cannot supply loot. */ }
+  return removed;
 }
 
 function spawnDroppedItems(dimensionId: string, location: { x: number; y: number; z: number }, dropped: ItemStack[]): ItemStack[] {
@@ -386,8 +365,8 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
   const playerId = getPlayerId(player);
   if (!hasActiveTag(playerId)) return false;
 
-  const snapshot = resolveCombatDropSnapshot(player, playerId);
-  if (!snapshot) {
+  const snapshot = removeCombatLoot(player);
+  if (combatSnapshotItemCount(snapshot) === 0) {
     combatTagsByPlayerId.delete(playerId);
     combatSnapshotsByPlayerId.delete(playerId);
     lastCombatSnapshotAtByPlayerId.delete(playerId);
@@ -406,7 +385,6 @@ export function dropCombatInventory(player: Player, dropLocation: { x: number; y
   journalAppend("combat", { op: "logout-snapshot", playerId, inventory: snapshot.inventory.length, equipment: snapshot.equipment.length });
   entry.journalSeq = journalHead("combat");
   persistCombatLogout(entry);
-  clearInventoryAndEquipment(player);
   const failedEquipment = spawnDroppedItems(player.dimension.id, dropLocation, snapshot.equipment);
   const failedInventory = spawnDroppedItems(player.dimension.id, dropLocation, snapshot.inventory);
   const failed = [...failedEquipment, ...failedInventory];
@@ -441,109 +419,106 @@ function processPendingCombatLogouts(): void {
 }
 
 function* processPendingCombatLogoutsJob(): Generator<void, void, void> {
-  if (!isCombatSystemEnabled()) {
-    pendingCombatLogouts.length = 0;
-    pendingCombatLogoutsJobId = undefined;
-    return;
-  }
-  const pending = pendingCombatLogouts.splice(0, pendingCombatLogouts.length);
-  for (const logout of pending) {
+  try {
     if (!isCombatSystemEnabled()) {
       pendingCombatLogouts.length = 0;
-      break;
+      pendingCombatLogoutsJobId = undefined;
+      return;
     }
-    const failedEquipment = spawnDroppedItems(logout.dimensionId, logout.location, logout.equipment);
-    const failedInventory = spawnDroppedItems(logout.dimensionId, logout.location, logout.inventory);
-    const failed = [...failedEquipment, ...failedInventory];
-
-    if (failed.length > 0 && logout.attempts < 20) {
-      const retry = { ...logout, inventory: failedInventory, equipment: failedEquipment, attempts: logout.attempts + 1 };
-      pendingCombatLogouts.push(retry);
-      persistCombatLogout(retry);
-      continue;
-    }
-
-    if (failed.length === 0) {
-      clearPersistedCombatLogout(logout.playerId);
-      journalAck("combat", logout.journalSeq ?? journalHead("combat"));
-      // Marker meaning: "combat-log loot was already dropped at logout location".
-      // It is a one-time rejoin notification only; do NOT clear inventory/equipment
-      // when reading it in handleCombatJoin() - the items were dropped on disconnect,
-      // and any current items belong to the player.
-      world.setDynamicProperty(
-        penaltyKey(logout.playerId),
-        JSON.stringify({ droppedAt: nowMs() })
-      );
-      if (state.combat.config.announceLogouts) {
-        world.sendMessage(formatCombatMessage(state.combat.config.logoutBroadcastMessage, logout.playerName));
+    const pending = pendingCombatLogouts.splice(0, pendingCombatLogouts.length);
+    for (const logout of pending) {
+      if (!isCombatSystemEnabled()) {
+        pendingCombatLogouts.length = 0;
+        break;
       }
+      const failedEquipment = spawnDroppedItems(logout.dimensionId, logout.location, logout.equipment);
+      const failedInventory = spawnDroppedItems(logout.dimensionId, logout.location, logout.inventory);
+      const failed = [...failedEquipment, ...failedInventory];
+
+      if (failed.length > 0 && logout.attempts < 20) {
+        const retry = { ...logout, inventory: failedInventory, equipment: failedEquipment, attempts: logout.attempts + 1 };
+        pendingCombatLogouts.push(retry);
+        persistCombatLogout(retry);
+        yield;
+        continue;
+      }
+
+      if (failed.length === 0) {
+        clearPersistedCombatLogout(logout.playerId);
+        journalAck("combat", logout.journalSeq ?? journalHead("combat"));
+        // Marker meaning: "combat-log loot was already dropped at logout location".
+        // It is a one-time rejoin notification only; do NOT clear inventory/equipment
+        // when reading it in handleCombatJoin() - the items were dropped on disconnect,
+        // and any current items belong to the player.
+        world.setDynamicProperty(
+          penaltyKey(logout.playerId),
+          JSON.stringify({ droppedAt: nowMs() })
+        );
+        if (state.combat.config.announceLogouts) {
+          world.sendMessage(formatCombatMessage(state.combat.config.logoutBroadcastMessage, logout.playerName));
+        }
+      }
+      yield;
     }
-    yield;
+  } finally {
+    pendingCombatLogoutsJobId = undefined;
   }
-  pendingCombatLogoutsJobId = undefined;
 }
+
+type PendingSeizure = { dimensionId: string; location: { x: number; y: number; z: number } };
+const pendingSeizures = new Map<string, PendingSeizure>();
 
 export function handleCombatJoin(player: Player): void {
   const playerId = getPlayerId(player);
   const key = penaltyKey(playerId);
-  const penaltyRaw = world.getDynamicProperty(key) as string | undefined;
-  if (!penaltyRaw) return;
-  // Penalty marker was already settled at logout: items were dropped then.
-  // Clear the marker, drop any cached snapshot, and notify the player once.
-  // Do not touch the player's current inventory - it belongs to them on rejoin.
+  const penalty = pendingSeizures.get(playerId) ?? readDynamicJSON<PendingSeizure | undefined>(key, undefined);
+  if (!penalty) return;
+  // Old droppedAt markers are notifications; never seize inventory twice.
+  if (penalty.location && penalty.dimensionId) {
+    const removed = removeCombatLoot(player);
+    if (combatSnapshotItemCount(removed) > 0) {
+      const entry: PendingCombatLogout = {
+        playerId, playerName: player.name, ...penalty,
+        inventory: removed.inventory, equipment: removed.equipment, attempts: 0,
+      };
+      pendingCombatLogouts.push(entry);
+      persistCombatLogout(entry);
+    }
+  }
+  pendingSeizures.delete(playerId);
   world.setDynamicProperty(key, undefined);
   combatSnapshotsByPlayerId.delete(playerId);
   lastCombatSnapshotAtByPlayerId.delete(playerId);
   tell(player, state.combat.config.rejoinPenaltyMessage);
+  processPendingCombatLogouts();
 }
 
 export function handleCombatLeave(player: Player): void {
   const playerId = getPlayerId(player);
-  if (!isCombatSystemEnabled()) {
-    combatTagsByPlayerId.delete(playerId);
-    combatSnapshotsByPlayerId.delete(playerId);
-    lastCombatSnapshotAtByPlayerId.delete(playerId);
-    return;
+  if (isCombatSystemEnabled() && hasActiveTag(playerId)) {
+    // beforeLeave is restricted: retain intent only. No inventory writes or
+    // snapshot drops until a writable rejoin callback can remove live items.
+    const penalty: PendingSeizure = { dimensionId: player.dimension.id, location: { ...player.location } };
+    pendingSeizures.set(playerId, penalty);
+    system.run(() => {
+      if (pendingSeizures.get(playerId) === penalty) safeSetDynamicJson(penaltyKey(playerId), penalty);
+    });
   }
-
-  if (!hasActiveTag(playerId)) return;
-
-  const snapshot = resolveCombatDropSnapshot(player, playerId);
-
-  if (!snapshot) {
-    combatTagsByPlayerId.delete(playerId);
-    combatSnapshotsByPlayerId.delete(playerId);
-    lastCombatSnapshotAtByPlayerId.delete(playerId);
-    return;
-  }
-
-  const location = {
-    x: player.location.x,
-    y: player.location.y,
-    z: player.location.z,
-  };
-  const dimensionId = player.dimension.id;
-  const entry: PendingCombatLogout = {
-    playerId,
-    playerName: player.name,
-    dimensionId,
-    location,
-    inventory: snapshot.inventory,
-    equipment: snapshot.equipment,
-    attempts: 0,
-  };
-  journalAppend("combat", { op: "logout-snapshot", playerId, inventory: snapshot.inventory.length, equipment: snapshot.equipment.length });
-  entry.journalSeq = journalHead("combat");
-  persistCombatLogout(entry);
-  clearInventoryAndEquipment(player);
-  pendingCombatLogouts.push(entry);
-
   combatTagsByPlayerId.delete(playerId);
   combatSnapshotsByPlayerId.delete(playerId);
   lastCombatSnapshotAtByPlayerId.delete(playerId);
-  system.run(() => {
-    processPendingCombatLogouts();
-  });
+}
+
+export function resetCombatRuntime(): void {
+  if (pendingCombatLogoutsJobId !== undefined) system.clearJob(pendingCombatLogoutsJobId);
+  if (combatTagsJobId !== undefined) system.clearJob(combatTagsJobId);
+  pendingCombatLogoutsJobId = undefined;
+  combatTagsJobId = undefined;
+  pendingCombatLogouts.length = 0;
+  pendingSeizures.clear();
+  combatTagsByPlayerId.clear();
+  combatSnapshotsByPlayerId.clear();
+  lastCombatSnapshotAtByPlayerId.clear();
 }
 
 export function handleCombatDeath(player: Player): void {
@@ -724,52 +699,55 @@ export function processCombatTags(cachedPlayers?: Player[]): void {
 }
 
 function* processCombatTagsJob(cachedPlayers?: Player[]): Generator<void, void, void> {
-  if (!isCombatSystemEnabled()) {
-    combatTagsJobId = undefined;
-    return;
-  }
-  const now = nowMs();
-  const onlineById = new Map<string, Player>();
-  for (const player of cachedPlayers ?? world.getAllPlayers()) {
-    onlineById.set(getPlayerId(player), player);
-  }
+  try {
+    if (!isCombatSystemEnabled()) {
+      combatTagsJobId = undefined;
+      return;
+    }
+    const now = nowMs();
+    const onlineById = new Map<string, Player>();
+    for (const player of cachedPlayers ?? world.getAllPlayers()) {
+      if (player.isValid) onlineById.set(getPlayerId(player), player);
+    }
 
-  for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
-    if (!isCombatSystemEnabled()) break;
-    if (entry.expiresAt <= now) continue;
-    if (now - (lastCombatSnapshotAtByPlayerId.get(playerId) ?? 0) < COMBAT_SNAPSHOT_INTERVAL_MS) continue;
-    const player = onlineById.get(playerId);
-    if (player) {
-      const cached = combatSnapshotsByPlayerId.get(playerId);
-      if (cached && combatSnapshotItemCount(cached) > 0) {
-        const live = scanCombatLootFingerprint(player);
-        if (live.count > 0 && live.hash === combatSnapshotContentHash(cached)) {
-          lastCombatSnapshotAtByPlayerId.set(playerId, now);
+    for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
+      if (!isCombatSystemEnabled()) break;
+      if (entry.expiresAt <= now) continue;
+      if (now - (lastCombatSnapshotAtByPlayerId.get(playerId) ?? 0) < COMBAT_SNAPSHOT_INTERVAL_MS) continue;
+      const player = onlineById.get(playerId);
+      if (player?.isValid) {
+        const cached = combatSnapshotsByPlayerId.get(playerId);
+        if (cached && combatSnapshotItemCount(cached) > 0) {
+          const live = scanCombatLootFingerprint(player);
+          if (live.count > 0 && live.hash === combatSnapshotContentHash(cached)) {
+            lastCombatSnapshotAtByPlayerId.set(playerId, now);
+          } else {
+            combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
+            lastCombatSnapshotAtByPlayerId.set(playerId, now);
+          }
         } else {
           combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
           lastCombatSnapshotAtByPlayerId.set(playerId, now);
         }
-      } else {
-        combatSnapshotsByPlayerId.set(playerId, captureCombatLoot(player));
-        lastCombatSnapshotAtByPlayerId.set(playerId, now);
       }
+      yield;
     }
-    yield;
-  }
 
-  for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
-    if (!isCombatSystemEnabled()) break;
-    if (entry.expiresAt > now) continue;
-    const player = onlineById.get(playerId);
-    if (player) clearCombatTag(player, playerId, true);
-    else {
-      combatTagsByPlayerId.delete(playerId);
-      combatSnapshotsByPlayerId.delete(playerId);
-      lastCombatSnapshotAtByPlayerId.delete(playerId);
+    for (const [playerId, entry] of combatTagsByPlayerId.entries()) {
+      if (!isCombatSystemEnabled()) break;
+      if (entry.expiresAt > now) continue;
+      const player = onlineById.get(playerId);
+      if (player?.isValid) clearCombatTag(player, playerId, true);
+      else {
+        combatTagsByPlayerId.delete(playerId);
+        combatSnapshotsByPlayerId.delete(playerId);
+        lastCombatSnapshotAtByPlayerId.delete(playerId);
+      }
+      yield;
     }
-    yield;
+  } finally {
+    combatTagsJobId = undefined;
   }
-  combatTagsJobId = undefined;
 }
 
 // ---------------------------------------------------------------------------

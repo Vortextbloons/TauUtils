@@ -40,7 +40,7 @@ function d(
 export const COMMAND_DESCRIPTORS: readonly CommandDescriptor[] = [
   d("tau:help", "Show help", "commands", "/tau:help [topic]", { requiresPlayer: false, params: [{ name: "topic", required: false }] }),
   d("tau:config", "Open feature config (op)", "commands", "/tau:config", { feature: "creator", requiresOperator: true }),
-  d("tau:cleardata", "Wipe all Tau data (op)", "commands", "/tau:cleardata", { requiresPlayer: false, requiresOperator: true }),
+  d("tau:cleardata", "Wipe all Tau data (op)", "commands", "/tau:cleardata confirm", { requiresPlayer: false, requiresOperator: true, params: [{ name: "confirmation", required: false }] }),
   d("tau:debugscore", "Debug scoreboard score", "commands", "/tau:debugscore <objective>", { requiresPlayer: false, params: [{ name: "objective", required: true }] }),
   d("tau:credits", "Show credits", "commands", "/tau:credits", { requiresPlayer: false }),
   d("tau:richest", "View richest players", "stats", "/tau:richest [objective]", { feature: "stats", requiresPlayer: false, params: [{ name: "objective", required: false }] }),

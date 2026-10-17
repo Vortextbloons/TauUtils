@@ -58,6 +58,12 @@ export async function openFormById(player: Player, menuId: string) {
         handlers.push({ action: element.action, value: element.value, key });
         break;
       case "slider":
+        if (!Number.isFinite(element.min) || !Number.isFinite(element.max) || element.max <= element.min ||
+            (element.step !== undefined && (!Number.isFinite(element.step) || element.step <= 0)) ||
+            (element.defaultValue !== undefined && (!Number.isFinite(element.defaultValue) || element.defaultValue < element.min || element.defaultValue > element.max))) {
+          modalForm.label(`${element.label}: invalid saved slider settings`);
+          break;
+        }
         modalForm.slider(key, element.label, element.min, element.max, {
           step: element.step,
           defaultValue: element.defaultValue,
@@ -65,7 +71,12 @@ export async function openFormById(player: Player, menuId: string) {
         handlers.push({ action: element.action, value: element.value, key });
         break;
       case "dropdown":
-        modalForm.dropdown(key, element.label, element.options, element.defaultValueIndex);
+        if (!Array.isArray(element.options) || element.options.length === 0 || element.options.some((option) => typeof option !== "string")) {
+          modalForm.label(`${element.label}: no valid saved options`);
+          break;
+        }
+        modalForm.dropdown(key, element.label, element.options,
+          Number.isInteger(element.defaultValueIndex) && element.defaultValueIndex! >= 0 && element.defaultValueIndex! < element.options.length ? element.defaultValueIndex : 0);
         handlers.push({ action: element.action, value: element.value, key });
         break;
       case "input":

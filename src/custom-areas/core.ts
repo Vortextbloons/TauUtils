@@ -7,6 +7,8 @@ import { CUSTOM_AREAS_AREA_PREFIX } from "../storage/dynamic-json";
 import { renderCommandTemplate, renderTemplate } from "../shared/templates";
 import type { CustomAreaCommandRule, CustomAreaDefinition, CustomAreaStore } from "../types";
 
+import { createSpatialLookup } from "../shared/spatial-lookup";
+
 type AreaState = {
   areaIds: Set<string>;
 };
@@ -20,7 +22,7 @@ type RuntimeArea = {
 
 type AreaRuntimeCache = {
   all: RuntimeArea[];
-  byDimension: Map<string, RuntimeArea[]>;
+  query: (location: Vector3, dimensionId: string) => RuntimeArea[];
 };
 
 type PendingCombatAreaDrop = {
@@ -73,25 +75,19 @@ function getEnabledAreaCache(): AreaRuntimeCache {
         blockBreakExceptions: normalizedBlockSet(area.permissions?.blockBreakExceptions),
         blockPlaceExceptions: normalizedBlockSet(area.permissions?.blockPlaceExceptions),
       }));
-    const byDimension = new Map<string, RuntimeArea[]>();
-    for (const runtime of all) {
-      const areas = byDimension.get(runtime.area.dimensionId) ?? [];
-      areas.push(runtime);
-      byDimension.set(runtime.area.dimensionId, areas);
-    }
-    enabledAreaCache = { all, byDimension };
+    enabledAreaCache = { all, query: createSpatialLookup(all, (runtime) => runtime.area) };
   }
   return enabledAreaCache;
 }
 
-function getEnabledAreaRuntime(dimensionId?: string): RuntimeArea[] {
+function getEnabledAreaRuntime(dimensionId?: string, location?: Vector3): RuntimeArea[] {
   if (!enabled()) return [];
   const cache = getEnabledAreaCache();
-  return dimensionId ? (cache.byDimension.get(dimensionId) ?? []) : cache.all;
+  return dimensionId && location ? cache.query(location, dimensionId) : cache.all;
 }
 
 function getAreaRuntimeForPlayer(player: Player, location: Vector3 = player.location, dimensionId: string = player.dimension.id): RuntimeArea | undefined {
-  return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId) && playerAllowedByRank(player, runtime));
+  return getEnabledAreaRuntime(dimensionId, location).find((runtime) => pointInside(runtime.area, location, dimensionId) && playerAllowedByRank(player, runtime));
 }
 
 function getAreaForPlayer(player: Player, location: Vector3 = player.location, dimensionId: string = player.dimension.id): CustomAreaDefinition | undefined {
@@ -201,57 +197,61 @@ export function processCustomAreas(cachedPlayers?: Player[]): void {
 }
 
 function* processCustomAreasJob(cachedPlayers?: Player[]): Generator<void, void, void> {
-  if (!enabled()) {
-    customAreaJobId = undefined;
-    return;
-  }
-  const now = Date.now();
-  for (const player of cachedPlayers ?? world.getAllPlayers()) {
-    if (!enabled()) break;
-    const playerId = getPlayerId(player);
-    const location = player.location;
-    const dimensionId = player.dimension.id;
-    const previous = playerAreaState.get(playerId)?.areaIds ?? new Set<string>();
-    const current = new Set<string>();
-    for (const runtime of getEnabledAreaRuntime(dimensionId)) {
-      const area = runtime.area;
-      if (!pointInside(area, location, dimensionId)) continue;
-      if (!playerAllowedByRank(player, runtime)) continue;
-      current.add(area.id);
-      if (!previous.has(area.id)) runEnter(area, player);
-      maybeDropCombatInventory(player, area);
-      for (let index = 0; index < area.effects.length; index++) {
-        const effect = area.effects[index];
-        if (!effect.enabled) continue;
-        const key = `${playerId}:${area.id}:effect:${index}`;
-        const intervalMs = Math.max(1, effect.intervalTicks) * 50;
-        if (now - (lastEffectRunByPlayerArea.get(key) ?? 0) < intervalMs) continue;
-        lastEffectRunByPlayerArea.set(key, now);
-        try {
-          player.runCommand(`effect @s ${effect.effectId} ${Math.max(1, Math.floor(effect.durationSeconds))} ${Math.max(0, Math.floor(effect.amplifier))} ${effect.hideParticles ? "true" : "false"}`);
-        } catch {
+  try {
+    if (!enabled()) {
+      customAreaJobId = undefined;
+      return;
+    }
+    const now = Date.now();
+    for (const player of cachedPlayers ?? world.getAllPlayers()) {
+      if (!enabled()) break;
+      if (!player.isValid) { yield; continue; }
+      const playerId = getPlayerId(player);
+      const location = player.location;
+      const dimensionId = player.dimension.id;
+      const previous = playerAreaState.get(playerId)?.areaIds ?? new Set<string>();
+      const current = new Set<string>();
+      for (const runtime of getEnabledAreaRuntime(dimensionId, location)) {
+        const area = runtime.area;
+        if (!pointInside(area, location, dimensionId)) continue;
+        if (!playerAllowedByRank(player, runtime)) continue;
+        current.add(area.id);
+        if (!previous.has(area.id)) runEnter(area, player);
+        maybeDropCombatInventory(player, area);
+        for (let index = 0; index < area.effects.length; index++) {
+          const effect = area.effects[index];
+          if (!effect.enabled) continue;
+          const key = `${playerId}:${area.id}:effect:${index}`;
+          const intervalMs = Math.max(1, effect.intervalTicks) * 50;
+          if (now - (lastEffectRunByPlayerArea.get(key) ?? 0) < intervalMs) continue;
+          lastEffectRunByPlayerArea.set(key, now);
+          try {
+            player.runCommand(`effect @s ${effect.effectId} ${Math.max(1, Math.floor(effect.durationSeconds))} ${Math.max(0, Math.floor(effect.amplifier))} ${effect.hideParticles ? "true" : "false"}`);
+          } catch {
+          }
+        }
+        for (let index = 0; index < area.commandRules.length; index++) {
+          const rule = area.commandRules[index];
+          if (!rule.enabled || !rule.runWhileInside) continue;
+          const key = `${playerId}:${area.id}:cmd:${index}`;
+          const intervalMs = Math.max(1, rule.intervalTicks) * 50;
+          if (now - (lastRuleRunByPlayerArea.get(key) ?? 0) < intervalMs) continue;
+          lastRuleRunByPlayerArea.set(key, now);
+          runCommandRule(player, area, rule);
         }
       }
-      for (let index = 0; index < area.commandRules.length; index++) {
-        const rule = area.commandRules[index];
-        if (!rule.enabled || !rule.runWhileInside) continue;
-        const key = `${playerId}:${area.id}:cmd:${index}`;
-        const intervalMs = Math.max(1, rule.intervalTicks) * 50;
-        if (now - (lastRuleRunByPlayerArea.get(key) ?? 0) < intervalMs) continue;
-        lastRuleRunByPlayerArea.set(key, now);
-        runCommandRule(player, area, rule);
+      for (const oldId of previous) {
+        if (current.has(oldId)) continue;
+        cancelPendingCombatAreaDrop(player, playerId, oldId);
+        const area = state.customAreas.areas[oldId];
+        if (area) runLeave(area, player);
       }
+      playerAreaState.set(playerId, { areaIds: current });
+      yield;
     }
-    for (const oldId of previous) {
-      if (current.has(oldId)) continue;
-      cancelPendingCombatAreaDrop(player, playerId, oldId);
-      const area = state.customAreas.areas[oldId];
-      if (area) runLeave(area, player);
-    }
-    playerAreaState.set(playerId, { areaIds: current });
-    yield;
+  } finally {
+    customAreaJobId = undefined;
   }
-  customAreaJobId = undefined;
 }
 
 export function shouldCancelAreaBlockBreak(player: Player, location: Vector3, dimensionId: string, blockTypeId?: string): boolean {
@@ -297,7 +297,7 @@ export function shouldCancelAreaPvp(victim: Player, attacker: Player): boolean {
 }
 
 export function getCustomAreaAtLocation(location: Vector3, dimensionId: string): CustomAreaDefinition | undefined {
-  return getEnabledAreaRuntime(dimensionId).find((runtime) => pointInside(runtime.area, location, dimensionId))?.area;
+  return getEnabledAreaRuntime(dimensionId, location).find((runtime) => pointInside(runtime.area, location, dimensionId))?.area;
 }
 
 export function normalizeAreaBounds(a: Vector3, b: Vector3): { min: Vector3; max: Vector3 } {
@@ -343,6 +343,8 @@ function normalizeAreaDefinition(area: CustomAreaDefinition): CustomAreaDefiniti
 }
 
 export function invalidateCustomAreaRuntimeState(areaId?: string): void {
+  if (customAreaJobId !== undefined) system.clearJob(customAreaJobId);
+  customAreaJobId = undefined;
   enabledAreaCache = undefined;
   playerAreaState.clear();
   if (!areaId) {

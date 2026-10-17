@@ -66,6 +66,12 @@ export function writeTpaCooldown(playerId: string, untilMs: number): boolean {
 }
 
 export function loadTpaFromSplitKeys(dynamicPropertyIds: string[]): { inboxIds: string[]; outboxIds: string[]; cooldownIds: string[] } {
+  resetTpaPersistenceCache();
+  for (const key of dynamicPropertyIds) {
+    if (key.startsWith(TPA_INBOX_PREFIX)) persistedInboxKeys.add(key);
+    if (key.startsWith(TPA_OUTBOX_PREFIX)) persistedOutboxKeys.add(key);
+    if (key.startsWith(TPA_COOLDOWN_PREFIX)) persistedCooldownKeys.add(key);
+  }
   const inboxIds: string[] = [];
   const outboxIds: string[] = [];
   const cooldownIds: string[] = [];
@@ -104,14 +110,14 @@ export function clearAllTpaForPlayer(playerId: string): void {
   clearTpaCooldownFor(playerId);
 }
 
-export function tpaInboxPlayerIds(dynamicPropertyIds: string[] = world.getDynamicPropertyIds()): string[] {
+export function tpaInboxPlayerIds(dynamicPropertyIds: string[] = [...persistedInboxKeys]): string[] {
   return dynamicPropertyIds
     .filter((key) => key.startsWith(TPA_INBOX_PREFIX))
     .map((key) => key.slice(TPA_INBOX_PREFIX.length))
     .filter((id) => id.length > 0);
 }
 
-export function tpaOutboxPlayerIds(dynamicPropertyIds: string[] = world.getDynamicPropertyIds()): string[] {
+export function tpaOutboxPlayerIds(dynamicPropertyIds: string[] = [...persistedOutboxKeys]): string[] {
   return dynamicPropertyIds
     .filter((key) => key.startsWith(TPA_OUTBOX_PREFIX))
     .map((key) => key.slice(TPA_OUTBOX_PREFIX.length))
@@ -163,4 +169,11 @@ export function refreshTpaManifest(): boolean {
   } catch {
     return false;
   }
+}
+
+export function resetTpaPersistenceCache(): void {
+  persisted.clear();
+  persistedInboxKeys.clear();
+  persistedOutboxKeys.clear();
+  persistedCooldownKeys.clear();
 }

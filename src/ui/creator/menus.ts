@@ -237,6 +237,7 @@ async function showWorldSystems(player: Player) {
       continue;
     }
     if (response.id === "prune") {
+      if (!isFeatureEnabled("prune")) { tell(player, "Prune is disabled."); continue; }
       const { showPruneDataMenu } = await import("../admin");
       await showPruneDataMenu(player);
       continue;

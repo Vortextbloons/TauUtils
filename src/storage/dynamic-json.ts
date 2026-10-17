@@ -74,49 +74,69 @@ function splitUtf8String(value: string, maxBytes: number): string[] {
   return chunks;
 }
 
+type ChunkGeneration = { id: string; count: number };
+function generationKey(key: string): string { return key + ":generation"; }
+
 export function readSplitDynamicJson<T>(key: string, fallback: T): { value: T; hasSplitData: boolean } {
-  const chunkCountRaw = world.getDynamicProperty(dynamicJsonChunkCountKey(key));
-  const chunkCount = typeof chunkCountRaw === "number" ? chunkCountRaw : Number(chunkCountRaw ?? 0);
-  if (!Number.isInteger(chunkCount) || chunkCount <= 0) return { value: fallback, hasSplitData: false };
-
-  let raw = "";
-  for (let index = 0; index < chunkCount; index++) {
-    const chunk = world.getDynamicProperty(`${dynamicJsonChunkPrefix(key)}${index}`);
-    if (typeof chunk !== "string") return { value: fallback, hasSplitData: false };
-    raw += chunk;
-  }
-
-  return { value: parseJSON<T>(raw, fallback), hasSplitData: true };
+  try {
+    const generation = parseJSON<ChunkGeneration | undefined>(world.getDynamicProperty(generationKey(key)) as string | undefined, undefined);
+    const count = generation?.count ?? Number(world.getDynamicProperty(dynamicJsonChunkCountKey(key)) ?? 0);
+    if (!Number.isInteger(count) || count <= 0 || count > 100000) return { value: fallback, hasSplitData: false };
+    const prefix = dynamicJsonChunkPrefix(key) + (generation ? generation.id + ":" : "");
+    let raw = "";
+    for (let index = 0; index < count; index++) {
+      const chunk = world.getDynamicProperty(prefix + index);
+      if (typeof chunk !== "string") return { value: fallback, hasSplitData: false };
+      raw += chunk;
+    }
+    return { value: JSON.parse(raw) as T, hasSplitData: true };
+  } catch { return { value: fallback, hasSplitData: false }; }
 }
 
 export function clearSplitDynamicJson(key: string, dynamicPropertyIds: string[] = world.getDynamicPropertyIds()): void {
-  const prefix = dynamicJsonChunkPrefix(key);
+  world.setDynamicProperty(generationKey(key), undefined);
   world.setDynamicProperty(dynamicJsonChunkCountKey(key), undefined);
   for (const propertyKey of dynamicPropertyIds) {
-    if (propertyKey.startsWith(prefix)) world.setDynamicProperty(propertyKey, undefined);
+    if (propertyKey.startsWith(dynamicJsonChunkPrefix(key))) world.setDynamicProperty(propertyKey, undefined);
   }
 }
 
 export function writeSplitDynamicJson(key: string, value: unknown): boolean {
-  const serialized = JSON.stringify(value);
-  const chunks = splitUtf8String(serialized, SPLIT_DYNAMIC_JSON_CHUNK_BYTES);
-  const chunkPrefix = dynamicJsonChunkPrefix(key);
-  const wantedKeys = new Set<string>();
-
-  for (let index = 0; index < chunks.length; index++) {
-    const chunkKey = `${chunkPrefix}${index}`;
-    wantedKeys.add(chunkKey);
-    world.setDynamicProperty(chunkKey, chunks[index]);
-  }
-  world.setDynamicProperty(dynamicJsonChunkCountKey(key), chunks.length);
-
-  for (const propertyKey of world.getDynamicPropertyIds()) {
-    if (propertyKey.startsWith(chunkPrefix) && !wantedKeys.has(propertyKey)) {
-      world.setDynamicProperty(propertyKey, undefined);
+  try {
+    const serialized = JSON.stringify(value);
+    const chunks = splitUtf8String(serialized, SPLIT_DYNAMIC_JSON_CHUNK_BYTES);
+    const generation: ChunkGeneration = { id: Date.now().toString(36) + "-" + Math.random().toString(36).slice(2), count: chunks.length };
+    const prefix = dynamicJsonChunkPrefix(key) + generation.id + ":";
+    // Stage and verify a new generation before moving the commit pointer.
+    for (let index = 0; index < chunks.length; index++) {
+      world.setDynamicProperty(prefix + index, chunks[index]);
+      if (world.getDynamicProperty(prefix + index) !== chunks[index]) return false;
     }
+    const pointer = JSON.stringify(generation);
+    world.setDynamicProperty(generationKey(key), pointer);
+    if (world.getDynamicProperty(generationKey(key)) !== pointer) return false;
+    // A cleanup failure must not invalidate a committed generation.
+    try {
+      world.setDynamicProperty(dynamicJsonChunkCountKey(key), undefined);
+      for (const propertyKey of world.getDynamicPropertyIds()) {
+        if (propertyKey.startsWith(dynamicJsonChunkPrefix(key)) && !propertyKey.startsWith(prefix)) world.setDynamicProperty(propertyKey, undefined);
+      }
+    } catch { /* Orphan chunks can be cleaned on the next successful save. */ }
+    return true;
+  } catch {
+    console.warn("[TauUtils] Chunked save failed for " + key + "; previous committed data retained.");
+    return false;
   }
+}
 
-  return true;
+// Single-blob stores can grow beyond one dynamic property without losing edits.
+export function writeDynamicJSON(key: string, value: unknown): boolean {
+  if (world.getDynamicProperty(generationKey(key)) !== undefined ||
+      world.getDynamicProperty(dynamicJsonChunkCountKey(key)) !== undefined ||
+      estimateUtf8Bytes(JSON.stringify(value)) > MAX_DYNAMIC_STRING_BYTES) {
+    return writeSplitDynamicJson(key, value);
+  }
+  return safeSetDynamicJson(key, value);
 }
 
 export function safeSetDynamicJson(key: string, value: unknown): boolean {
@@ -127,8 +147,10 @@ export function safeSetDynamicJson(key: string, value: unknown): boolean {
     );
     return false;
   }
-  world.setDynamicProperty(key, serialized);
-  return true;
+  try {
+    world.setDynamicProperty(key, serialized);
+    return world.getDynamicProperty(key) === serialized;
+  } catch { return false; }
 }
 
 export function serializeDynamicJson(key: string, value: unknown): string | undefined {
@@ -192,5 +214,8 @@ export function parseJSON<T>(raw: string | undefined, fallback: T): T {
 }
 
 export function readDynamicJSON<T>(key: string, fallback: T): T {
-  return safeCall(() => parseJSON<T>(world.getDynamicProperty(key) as string | undefined, fallback), fallback);
+  return safeCall(() => {
+    const split = readSplitDynamicJson<T>(key, fallback);
+    return split.hasSplitData ? split.value : parseJSON<T>(world.getDynamicProperty(key) as string | undefined, fallback);
+  }, fallback);
 }

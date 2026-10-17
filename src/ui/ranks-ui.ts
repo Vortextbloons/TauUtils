@@ -355,7 +355,8 @@ export async function showPlayerProfileEditor(player: Player, targetName: string
   }
 
   const profileId = getPlayerId(target);
-  const existing = state.profiles.configs[profileId] ?? { enabled: true, sections: ["summary", "stats", "rank"], customFields: [] };
+  const source = state.profiles.configs[profileId] ?? { enabled: true, sections: ["summary", "stats", "rank"], customFields: [] };
+  const existing = { ...source, sections: [...source.sections], customFields: [...source.customFields] };
 
   while (true) {
     const form = TauUi.action(`Edit Profile: ${target.name}`)

@@ -51,8 +51,6 @@ function bootstrap() {
   system.runTimeout(() => {
     if (initialized || startupPhase !== 2) return;
     startupPhase = 3;
-    if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_phase_3");
-    if (isFeatureEnabled("plots")) reconcileAllPlotState("startup_finalize");
     startTpaExpiryLoop();
     world.sendMessage(formatTauUtilsLoadedMessage());
     initialized = true;

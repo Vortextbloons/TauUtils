@@ -1,5 +1,5 @@
 import { system, world } from "@minecraft/server";
-import { safeSetDynamicJson, STATS_PLAYER_IDS_KEY, STATS_PLAYER_PREFIX, parseJSON } from "../dynamic-json";
+import { readDynamicJSON, writeDynamicJSON, safeSetDynamicJson, STATS_PLAYER_IDS_KEY, STATS_PLAYER_PREFIX, parseJSON } from "../dynamic-json";
 import { updateManifestAfterSplitWrite } from "../manifests";
 import { type PlayerStats, type StatsStore } from "../../types";
 import { defaultPlayerStats } from "../defaults";
@@ -18,9 +18,9 @@ export function loadStatsFromSplitKeys(dynamicPropertyIds: string[]): { store: S
   const stats: StatsStore = { playerIds: {}, players: {} };
   let hasSplitData = false;
 
-  const playerIdsRaw = world.getDynamicProperty(STATS_PLAYER_IDS_KEY) as string | undefined;
-  if (playerIdsRaw) {
-    stats.playerIds = parseJSON<Record<string, string>>(playerIdsRaw, {});
+  const playerIds = readDynamicJSON<Record<string, string> | undefined>(STATS_PLAYER_IDS_KEY, undefined);
+  if (playerIds) {
+    stats.playerIds = playerIds;
     hasSplitData = true;
   }
 
@@ -49,9 +49,9 @@ function statsManifestKeys(): string[] {
 function* flushStatsJob(): Generator<void, void, void> {
   let ok = true;
   if (dirtyStatsPlayerIds.size > 0) {
-    const wroteIds = safeSetDynamicJson(STATS_PLAYER_IDS_KEY, state.stats.playerIds);
+    const wroteIds = writeDynamicJSON(STATS_PLAYER_IDS_KEY, state.stats.playerIds);
     ok = wroteIds && ok;
-    dirtyStatsPlayerIds.clear();
+    if (wroteIds) dirtyStatsPlayerIds.clear();
     yield;
   }
   if (dirtyStatsPlayers.size > 0) {
@@ -62,13 +62,13 @@ function* flushStatsJob(): Generator<void, void, void> {
       if (!stats) continue;
       const wrotePlayer = safeSetDynamicJson(`${STATS_PLAYER_PREFIX}${playerId}`, stats);
       ok = wrotePlayer && ok;
+      if (!wrotePlayer) dirtyStatsPlayers.add(playerId);
       yield;
     }
   }
   // Only drop the legacy single-blob backup once every split write succeeded.
-  if (ok) {
-    world.setDynamicProperty("tau:stats", undefined);
-    updateManifestAfterSplitWrite("stats", statsManifestKeys());
+  if (ok && dirtyStatsPlayerIds.size === 0 && dirtyStatsPlayers.size === 0) {
+    if (updateManifestAfterSplitWrite("stats", statsManifestKeys())) world.setDynamicProperty("tau:stats", undefined);
   } else console.warn("[TauUtils] Stats split write partially failed; keeping legacy tau:stats key for safety.");
   statsFlushJobId = undefined;
   if (dirtyStatsPlayerIds.size > 0 || dirtyStatsPlayers.size > 0) scheduleStatsFlush();
@@ -117,8 +117,9 @@ export function flushStatsDirtySync(): boolean {
   try {
     if (dirtyStatsPlayerIds.size > 0) {
       didWork = true;
-      ok = safeSetDynamicJson(STATS_PLAYER_IDS_KEY, state.stats.playerIds) && ok;
-      dirtyStatsPlayerIds.clear();
+      const wroteIds = writeDynamicJSON(STATS_PLAYER_IDS_KEY, state.stats.playerIds);
+      ok = wroteIds && ok;
+      if (wroteIds) dirtyStatsPlayerIds.clear();
     }
     if (dirtyStatsPlayers.size > 0) {
       didWork = true;
@@ -127,13 +128,14 @@ export function flushStatsDirtySync(): boolean {
       for (const playerId of playerIds) {
         const stats = state.stats.players[playerId];
         if (!stats) continue;
-        ok = safeSetDynamicJson(`${STATS_PLAYER_PREFIX}${playerId}`, stats) && ok;
+        const wrotePlayer = safeSetDynamicJson(`${STATS_PLAYER_PREFIX}${playerId}`, stats);
+        ok = wrotePlayer && ok;
+        if (!wrotePlayer) dirtyStatsPlayers.add(playerId);
       }
     }
     if (!didWork) return true;
     if (ok) {
-      world.setDynamicProperty("tau:stats", undefined);
-      updateManifestAfterSplitWrite("stats", statsManifestKeys());
+      if (updateManifestAfterSplitWrite("stats", statsManifestKeys())) world.setDynamicProperty("tau:stats", undefined);
     } else {
       console.warn("[TauUtils] Stats sync flush partially failed; keeping legacy tau:stats key for safety.");
     }
@@ -141,4 +143,11 @@ export function flushStatsDirtySync(): boolean {
     return false;
   }
   return ok;
+}
+
+export function resetStatsRuntime(): void {
+  if (statsFlushJobId !== undefined) system.clearJob(statsFlushJobId);
+  statsFlushJobId = undefined;
+  dirtyStatsPlayerIds.clear();
+  dirtyStatsPlayers.clear();
 }
