@@ -2,7 +2,7 @@ import { Player, world } from "@minecraft/server";
 import { TauUi } from "./tau-ui";
 import { ICONS } from "../types";
 import { isFeatureEnabled, isOperator, state, tell } from "../storage";
-import { assignPlayerToSlot, autoBuildPlots, buildManualGridSlots, buildPlotGeometry, clearAllPlotSlots, commitPlotConfig, forceReleasePlot, getAssignedSlotForOwner, getAssignedSlotForPlayer, getPlotStatusLines, repairPlotSystem, setPlotCount, setPlotOriginFromPlayer, setPlotSize, setPlotSpacing, setSlotManualBounds, teleportPlayerToSlot, updatePlotAutoBuildSettings, validatePlotLayout } from "../plots";
+import { assignPlayerToSlot, autoBuildPlots, buildManualGridSlots, buildPlotGeometry, clearAllPlotSlots, commitPlotConfig, forceReleasePlot, ensurePlayerPlotAssigned, getAssignedSlotForOwner, getAssignedSlotForPlayer, getPlotStatusLines, repairPlotSystem, setPlotCount, setPlotOriginFromPlayer, setPlotSize, setPlotSpacing, setSlotManualBounds, teleportPlayerToSlot, updatePlotAutoBuildSettings, validatePlotLayout } from "../plots";
 import { getPlayerTeam } from "../teams";
 
 export async function showPlotManager(player: Player) {
@@ -287,21 +287,30 @@ export async function showPlotPlayerMenu(player: Player) {
     tell(player, "Plot teleport is disabled.");
     return;
   }
-  const team = getPlayerTeam(player);
-  const teamPlot = team && team.teamPlotEnabled ? getAssignedSlotForOwner(team.ownerPlayerId) : undefined;
-  const mySlot = getAssignedSlotForPlayer(player);
+  if (!player.isValid) return;
+  const assignment = ensurePlayerPlotAssigned(player);
+  let team = getPlayerTeam(player);
+  let teamPlot = team && team.teamPlotEnabled ? getAssignedSlotForOwner(team.ownerPlayerId) : undefined;
+  let mySlot = getAssignedSlotForPlayer(player);
 
   const form = TauUi.action("My Plot")
-    .body(teamPlot && team ? `Team plot: ${team.name}` : mySlot ? `Your plot: ${mySlot.id}` : "You do not have a plot assigned.")
+    .body(teamPlot && team ? `Team plot: ${team.name}` : mySlot ? `Your plot: ${mySlot.id}` : assignment.message)
     .button("tp", "Teleport To My Plot", { iconPath: ICONS.sidebar })
     .button("info", "Plot Info", { iconPath: ICONS.menu })
     .button("back", "Back", { iconPath: ICONS.back });
 
   const response = await form.show(player);
   if (TauUi.isCanceledOrBack(response)) return;
+  if (!player.isValid) return;
+
+  // Assignment, ownership and team membership can change while the form is open.
+  const latest = ensurePlayerPlotAssigned(player);
+  team = getPlayerTeam(player);
+  teamPlot = team && team.teamPlotEnabled ? getAssignedSlotForOwner(team.ownerPlayerId) : undefined;
+  mySlot = getAssignedSlotForPlayer(player);
 
   if (!mySlot && !teamPlot) {
-    tell(player, "No plot assigned.");
+    tell(player, latest.message);
     return;
   }
 

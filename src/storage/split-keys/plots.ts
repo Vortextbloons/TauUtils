@@ -176,6 +176,35 @@ export function writePlotsIncrementalToSplitKeys(store: PlotStore): boolean {
   return ok;
 }
 
+// Autosaves only touch one player's mapping, slot and snapshot. Broad admin edits
+// still use the full writer so deletions and bulk replacements are reconciled.
+export function writePlotPlayerToSplitKeys(store: PlotStore, playerId: string): { ok: boolean; keysChanged: boolean } {
+  let keysChanged = false;
+  let ok = true;
+  const slotId = store.playerToSlot[playerId];
+  const entries: Array<[string, unknown]> = [
+    [`${PLOTS_PLAYER_SLOT_PREFIX}${playerId}`, slotId],
+    [`${PLOTS_SNAPSHOT_PREFIX}${playerId}`, store.snapshots[playerId]],
+  ];
+  if (slotId && store.slots[slotId]) entries.push([`${PLOTS_SLOT_PREFIX}${slotId}`, store.slots[slotId]]);
+  for (const [key, value] of entries) {
+    const existed = persistedPlotJsonByKey.has(key);
+    try {
+      if (value === undefined) {
+        if (persistedPlotJsonByKey.has(key)) clearPersistedDynamicKey(key, persistedPlotJsonByKey);
+      } else {
+        ok = setDynamicJsonIfChanged(key, value, persistedPlotJsonByKey) && ok;
+      }
+    } catch { ok = false; }
+    keysChanged ||= existed !== persistedPlotJsonByKey.has(key);
+  }
+  return { ok, keysChanged };
+}
+
+export function getPersistedPlotKeys(): string[] {
+  return [...persistedPlotJsonByKey.keys()];
+}
+
 // LEGACY_PLOTS_MIGRATION_REMOVE_AFTER_STABLE
 export function migrateLegacyPlotsToSplitOneShot(): { migrated: boolean; failed: boolean } {
   const marker = world.getDynamicProperty(PLOTS_MIGRATION_MARKER_KEY);

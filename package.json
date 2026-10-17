@@ -14,7 +14,7 @@
     "build": "npm run version:sync && npm run bundle && npm run deploy",
     "build:production": "npm run version:sync && npm run bundle && npm run package",
     "ci": "npm run validate && npm run test:regressions && npm run validate:help && npm run bundle",
-    "test:regressions": "node scripts/test-regressions.js"
+    "test:regressions": "node scripts/test-regressions.js && node scripts/test-shop-selling.js && node scripts/test-plot-assignment.js"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

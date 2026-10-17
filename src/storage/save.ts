@@ -6,7 +6,6 @@ import {
   type CustomAreaStore,
   type LootChestStore,
   type PlayerShopStore,
-  type PlotStore,
   type TpaRequest,
 } from "../types";
 import {
@@ -14,7 +13,7 @@ import {
 } from "./state";
 import { writeDynamicJSON, writeSplitDynamicJson, PLOTS_MIGRATION_MARKER_KEY } from "./dynamic-json";
 import { requestStatsFlush, markAllStatsPlayersDirty } from "./split-keys/stats";
-import { normalizePlotStore, writePlotsIncrementalToSplitKeys } from "./split-keys/plots";
+import { normalizePlotStore, writePlotsIncrementalToSplitKeys, writePlotPlayerToSplitKeys, getPersistedPlotKeys } from "./split-keys/plots";
 import { writePlayerShopsIncrementalToSplitKeys } from "./split-keys/player-shops";
 import { writeCustomAreasToSplitKeys } from "./split-keys/custom-areas";
 import { writeClaimsToSplitKeys } from "./split-keys/claims";
@@ -35,9 +34,6 @@ import {
   LOOT_CHESTS_CONFIG_KEY,
   LOOT_CHESTS_POOL_PREFIX,
   LOOT_CHESTS_SNAPSHOT_PREFIX,
-  PLOTS_CONFIG_KEY,
-  PLOTS_PLAYER_SLOT_PREFIX,
-  PLOTS_SLOT_PREFIX,
   PLOTS_SNAPSHOT_PREFIX,
   PLAYER_SHOPS_CONFIG_KEY,
   PLAYER_SHOPS_EARNINGS_PREFIX,
@@ -45,46 +41,77 @@ import {
   PLAYER_SHOPS_SHOP_PREFIX,
 } from "./dynamic-json";
 
-const pendingDynamicSaves = new Map<string, () => void>();
-let dynamicSaveFlushScheduled = false;
+type DynamicSave = () => boolean;
+const pendingDynamicSaves = new Map<string, DynamicSave>();
+const failedDynamicSaveKeys = new Set<string>();
+let dynamicSaveFlushTimeoutId: number | undefined;
 let dynamicSaveFlushJobId: number | undefined;
+const DYNAMIC_SAVES_PER_PASS = 8;
+
+function tryFlushDynamicSave(key: string, save: DynamicSave): void {
+  if (pendingDynamicSaves.get(key) !== save) return;
+  try {
+    if (!save()) throw new Error("write returned false");
+    if (pendingDynamicSaves.get(key) === save) pendingDynamicSaves.delete(key);
+    failedDynamicSaveKeys.delete(key);
+  } catch {
+    if (!failedDynamicSaveKeys.has(key)) {
+      console.warn(`[TauUtils] Save for ${key} failed; keeping it queued for retry.`);
+      failedDynamicSaveKeys.add(key);
+    }
+    // Move a failing entry to the back so other stores still make progress.
+    if (pendingDynamicSaves.get(key) === save) {
+      pendingDynamicSaves.delete(key);
+      pendingDynamicSaves.set(key, save);
+    }
+  }
+}
 
 function* flushDynamicSavesJob(): Generator<void, void, void> {
-  const saves = [...pendingDynamicSaves.values()];
-  pendingDynamicSaves.clear();
-  for (const save of saves) {
-    save();
-    yield;
+  try {
+    const saves: Array<[string, DynamicSave]> = [];
+    for (const entry of pendingDynamicSaves) {
+      saves.push(entry);
+      if (saves.length >= DYNAMIC_SAVES_PER_PASS) break;
+    }
+    for (const [key, save] of saves) {
+      tryFlushDynamicSave(key, save);
+      yield;
+    }
+  } finally {
+    dynamicSaveFlushJobId = undefined;
+    if (pendingDynamicSaves.size > 0) scheduleDynamicSaveFlush(failedDynamicSaveKeys.size > 0 ? 100 : 5);
   }
-  dynamicSaveFlushJobId = undefined;
-  if (pendingDynamicSaves.size > 0) scheduleDynamicSaveFlush();
 }
 
-function scheduleDynamicSaveFlush(): void {
-  if (dynamicSaveFlushScheduled) return;
-  dynamicSaveFlushScheduled = true;
-  system.runTimeout(() => {
-    dynamicSaveFlushScheduled = false;
-    if (dynamicSaveFlushJobId !== undefined) return;
+function scheduleDynamicSaveFlush(delayTicks = 5): void {
+  if (dynamicSaveFlushTimeoutId !== undefined || dynamicSaveFlushJobId !== undefined) return;
+  dynamicSaveFlushTimeoutId = system.runTimeout(() => {
+    dynamicSaveFlushTimeoutId = undefined;
+    if (pendingDynamicSaves.size === 0 || dynamicSaveFlushJobId !== undefined) return;
     dynamicSaveFlushJobId = system.runJob(flushDynamicSavesJob());
-  }, 5);
+  }, delayTicks);
 }
 
-function scheduleDynamicSave(key: string, flush: () => void): void {
+function scheduleDynamicSave(key: string, flush: DynamicSave): void {
   pendingDynamicSaves.set(key, flush);
   scheduleDynamicSaveFlush();
 }
 
 export function flushPendingDynamicSaves(): void {
-  const saves = [...pendingDynamicSaves.values()];
-  pendingDynamicSaves.clear();
-  for (const save of saves) save();
+  // Dirty entries remain visible here even while the yielding worker is active.
+  for (const [key, save] of [...pendingDynamicSaves]) tryFlushDynamicSave(key, save);
+  if (pendingDynamicSaves.size > 0) scheduleDynamicSaveFlush(100);
 }
 
 export function clearPendingDynamicSaves(): void {
   if (dynamicSaveFlushJobId !== undefined) system.clearJob(dynamicSaveFlushJobId);
+  if (dynamicSaveFlushTimeoutId !== undefined) system.clearRun(dynamicSaveFlushTimeoutId);
   dynamicSaveFlushJobId = undefined;
+  dynamicSaveFlushTimeoutId = undefined;
   pendingDynamicSaves.clear();
+  failedDynamicSaveKeys.clear();
+  plotManifestDirty = false;
 }
 
 export function saveForms() {
@@ -96,7 +123,7 @@ export function saveShops() {
 }
 
 export function saveBinds() {
-  writeDynamicJSON(STORAGE_KEYS.binds, state.binds);
+  scheduleDynamicSave(STORAGE_KEYS.binds, () => writeDynamicJSON(STORAGE_KEYS.binds, state.binds));
 }
 
 export function saveSidebars() {
@@ -104,7 +131,7 @@ export function saveSidebars() {
 }
 
 export function saveConfig() {
-  writeDynamicJSON(STORAGE_KEYS.config, state.config);
+  scheduleDynamicSave(STORAGE_KEYS.config, () => writeDynamicJSON(STORAGE_KEYS.config, state.config));
 }
 
 export function saveRanks() {
@@ -127,14 +154,28 @@ export function saveProfiles() {
   scheduleDynamicSave("tau:profiles", () => writeDynamicJSON("tau:profiles", state.profiles));
 }
 
-export function savePlots(): void {
-  const normalized = normalizePlotStore(state.plots);
-  const ok = writePlotsIncrementalToSplitKeys(normalized);
-  if (ok) {
-    world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
-    world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
-    updateManifestAfterSplitWrite("plots", plotManifestKeys(normalized));
-  }
+let plotManifestDirty = false;
+
+export function savePlots(playerId?: string): void {
+  const key = playerId === undefined ? STORAGE_KEYS.plots : `${PLOTS_SNAPSHOT_PREFIX}${playerId}`;
+  scheduleDynamicSave(key, () => {
+    if (playerId === undefined) {
+      plotManifestDirty = true;
+      if (!writePlotsIncrementalToSplitKeys(normalizePlotStore(state.plots))) return false;
+      world.setDynamicProperty(STORAGE_KEYS.plots, undefined);
+      world.setDynamicProperty(PLOTS_MIGRATION_MARKER_KEY, true);
+    } else {
+      const result = writePlotPlayerToSplitKeys(state.plots, playerId);
+      plotManifestDirty ||= result.keysChanged;
+      if (!result.ok) return false;
+    }
+    // Existing snapshot updates do not change manifest membership.
+    if (plotManifestDirty) {
+      if (!updateManifestAfterSplitWrite("plots", getPersistedPlotKeys())) return false;
+      plotManifestDirty = false;
+    }
+    return true;
+  });
 }
 
 export function saveTpa() {
@@ -192,9 +233,9 @@ export function saveGenerators() {
 export function saveModeration() {
   invalidateBannedItemCache();
   scheduleDynamicSave(STORAGE_KEYS.moderation, () => {
-    if (writeSplitDynamicJson(STORAGE_KEYS.moderation, state.moderation)) {
-      world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);
-    }
+    if (!writeSplitDynamicJson(STORAGE_KEYS.moderation, state.moderation)) return false;
+    world.setDynamicProperty(STORAGE_KEYS.moderation, undefined);
+    return true;
   });
 }
 
@@ -239,9 +280,9 @@ export function saveCustomRewards() {
 export function saveReferrals() {
   scheduleDynamicSave(STORAGE_KEYS.referrals, () => {
     state.referrals.redemptions = state.referrals.redemptions.slice(0, Math.max(1, state.referrals.config.maxRedemptionHistory));
-    if (writeSplitDynamicJson(STORAGE_KEYS.referrals, state.referrals)) {
-      world.setDynamicProperty(STORAGE_KEYS.referrals, undefined);
-    }
+    if (!writeSplitDynamicJson(STORAGE_KEYS.referrals, state.referrals)) return false;
+    world.setDynamicProperty(STORAGE_KEYS.referrals, undefined);
+    return true;
   });
 }
 
@@ -265,14 +306,6 @@ export function savePlayerShops(): void {
 // ---------------------------------------------------------------------------
 // Manifest key builders (in-memory key names; no world scans)
 // ---------------------------------------------------------------------------
-
-function plotManifestKeys(store: PlotStore): string[] {
-  const keys: string[] = [PLOTS_CONFIG_KEY];
-  for (const slotId of Object.keys(store.slots)) keys.push(`${PLOTS_SLOT_PREFIX}${slotId}`);
-  for (const playerId of Object.keys(store.playerToSlot)) keys.push(`${PLOTS_PLAYER_SLOT_PREFIX}${playerId}`);
-  for (const playerId of Object.keys(store.snapshots)) keys.push(`${PLOTS_SNAPSHOT_PREFIX}${playerId}`);
-  return keys;
-}
 
 function playerShopManifestKeys(store: PlayerShopStore): string[] {
   const keys: string[] = [PLAYER_SHOPS_CONFIG_KEY];
@@ -305,8 +338,8 @@ function claimManifestKeys(store: ClaimStore): string[] {
 }
 
 // Synchronously drain every dirty persistence queue: debounced single-blob
-// saves, the stats dirty sets, and the incremental plot writer. Calls only
-// existing flush fns; performs no player or id scans. Intended for
+// saves (including dirty plot entries) and the stats dirty sets. Calls only
+// existing flush fns; performs no player or world-property id scans. Intended for
 // shutdown/prune paths that must not lose acknowledged mutations.
 export function flushAllDirtyQueues(): void {
   try {
@@ -317,14 +350,6 @@ export function flushAllDirtyQueues(): void {
   try {
     flushStatsDirtySync();
   } catch {
-    // ignore; plot queue still flushes below
-  }
-  try {
-    const normalized = normalizePlotStore(state.plots);
-    if (writePlotsIncrementalToSplitKeys(normalized)) {
-      updateManifestAfterSplitWrite("plots", plotManifestKeys(normalized));
-    }
-  } catch {
-    // ignore sync-flush failures; scheduled jobs retry on next mutation
+    // Failed stats entries remain dirty for the next scheduled attempt.
   }
 }

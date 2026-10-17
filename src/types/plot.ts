@@ -16,6 +16,8 @@ export type PlotSlot = {
   max: PlotVector;
   manual: boolean;
   occupiedByPlayerId?: string;
+  /** Prevent autosaves replacing the last good snapshot while restoration waits for chunks. */
+  restorePending?: boolean;
 };
 
 export type PlotConfig = {

@@ -35,7 +35,26 @@ import { clearGeneratorMenuForPlayer } from "./interaction-events";
 import { clearPlotTitleStateForPlayer } from "./plot-events";
 import { getCachedPlayers } from "./player-cache";
 
-const pendingJoinInitializationByName = new Set<string>();
+const pendingJoinInitializationByName = new Map<string, object>();
+const initializedJoinPlayersByName = new Map<string, Player>();
+const pendingPlotAssignments = new Map<string, { player: Player; jobId: number }>();
+
+function ensureJoinPlot(player: Player): void {
+  const id = getPlayerId(player);
+  const pending = pendingPlotAssignments.get(id);
+  if (pending) system.clearRun(pending.jobId);
+  pendingPlotAssignments.delete(id);
+  if (!player.isValid || !isFeatureEnabled("plots") || !state.plots.config.enabled) return;
+  const result = ensurePlayerPlotAssigned(player);
+  if (result.ok) return;
+  // Keep capacity/unavailable assignments pending without rerunning combat or rewards.
+  if (!pending) showPlotError(player, `${result.message} Assignment will retry automatically.`);
+  const jobId = system.runTimeout(() => {
+    if (pendingPlotAssignments.get(id)?.player !== player) return;
+    ensureJoinPlot(player);
+  }, 100);
+  pendingPlotAssignments.set(id, { player, jobId });
+}
 
 type DistanceSample = {
   x: number;
@@ -80,6 +99,8 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
 
   ensurePlayerCurrencyScoreboards(player);
+  // Plot allocation must not depend on unrelated join handlers succeeding.
+  ensureJoinPlot(player);
 
   if (isFeatureEnabled("moderation")) {
     clearBannedInventory(player);
@@ -89,9 +110,6 @@ function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   if (isFeatureEnabled("referrals")) flushPendingReferralRewards(player);
 
   if (!isFeatureEnabled("plots")) return;
-
-  const ensured = ensurePlayerPlotAssigned(player);
-  if (!ensured.ok) showPlotError(player, ensured.message);
 
   const ownerId = getPlotOwnerIdForPlayer(player);
   const spawnedInSlot = getPlotForLocation(player.location);
@@ -111,28 +129,34 @@ export function initializeOnlinePlayersAfterReload(): void {
 }
 
 function schedulePlayerJoinInitialization(playerName: string): void {
-  schedulePlayerJoinInitializationRetry(playerName, 0);
+  if (initializedJoinPlayersByName.get(playerName)?.isValid) return;
+  if (pendingJoinInitializationByName.has(playerName)) return;
+  const token = {};
+  pendingJoinInitializationByName.set(playerName, token);
+  schedulePlayerJoinInitializationRetry(playerName, 0, token);
 }
 
-function schedulePlayerJoinInitializationRetry(playerName: string, attempt: number): void {
+function schedulePlayerJoinInitializationRetry(playerName: string, attempt: number, token: object): void {
   if (attempt === 0) {
-    if (pendingJoinInitializationByName.has(playerName)) return;
-    pendingJoinInitializationByName.add(playerName);
     const immediate = getCachedPlayers().find((entry) => entry.name === playerName);
     if (immediate) {
       system.run(() => {
+        if (pendingJoinInitializationByName.get(playerName) !== token) return;
         pendingJoinInitializationByName.delete(playerName);
         if (!immediate.isValid) return;
+        initializedJoinPlayersByName.set(playerName, immediate);
         initializePlayerJoinState(immediate);
       });
       return;
     }
   }
   system.runTimeout(() => {
+    if (pendingJoinInitializationByName.get(playerName) !== token) return;
     const player = getCachedPlayers().find((entry) => entry.name === playerName);
     if (player) {
       pendingJoinInitializationByName.delete(playerName);
       if (!player.isValid) return;
+      initializedJoinPlayersByName.set(playerName, player);
       initializePlayerJoinState(player);
       return;
     }
@@ -140,7 +164,7 @@ function schedulePlayerJoinInitializationRetry(playerName: string, attempt: numb
       pendingJoinInitializationByName.delete(playerName);
       return;
     }
-    schedulePlayerJoinInitializationRetry(playerName, attempt + 1);
+    schedulePlayerJoinInitializationRetry(playerName, attempt + 1, token);
   }, 1);
 }
 
@@ -208,8 +232,12 @@ export function registerPlayerLifecycleEvents(): void {
 
   world.afterEvents.playerLeave.subscribe((event) => {
     pendingJoinInitializationByName.delete(event.playerName);
+    initializedJoinPlayersByName.delete(event.playerName);
     const playerId = state.stats.playerIds[event.playerName] ?? (event as { playerId?: string }).playerId;
     if (playerId) {
+      const pendingPlot = pendingPlotAssignments.get(playerId);
+      if (pendingPlot) system.clearRun(pendingPlot.jobId);
+      pendingPlotAssignments.delete(playerId);
       clearCrateRuntimeForPlayer(playerId);
       clearCustomAreaRuntimeForPlayer(playerId);
       clearCustomAreaUiRuntimeForPlayer(playerId);

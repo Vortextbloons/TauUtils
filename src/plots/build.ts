@@ -80,14 +80,17 @@ type SnapshotJob = {
   generators?: PlotSnapshot["generators"];
 };
 
-const fillQueue: FillJob[] = [];
+const fillQueue: string[] = [];
+const fillQueuesByChunk = new Map<string, { jobs: FillJob[]; cursor: number }>();
 let fillQueueCursor = 0;
 let fillJobId: number | undefined;
 const pendingJobCountsBySlot: Record<string, number> = {};
 const completedSlots: Set<string> = new Set();
 let buildSessionTotalSlots = 0;
-export const snapshotQueue: SnapshotJob[] = [];
+const snapshotQueue = new Map<string, SnapshotJob>();
 const SNAPSHOT_JOBS_PER_TICK = 1;
+const SNAPSHOT_SCANS_PER_PASS = 16;
+const pendingSnapshotLoads = new Map<string, string>();
 const PLOT_SPATIAL_CELL_SIZE = 64;
 
 function hasActiveFillWork(): boolean {
@@ -145,15 +148,43 @@ export function invalidatePlotRuntimeCaches(): void {
   invalidatePlotCaches();
 }
 
-function canUsePlotCommandsNow(): boolean {
+function hasPendingSlotFills(slot: PlotSlot): boolean {
+  // Check only this plot's chunk columns, including its border.
+  for (let x = Math.floor((slot.min.x - 1) / 16); x <= Math.floor((slot.max.x + 1) / 16); x++) {
+    for (let z = Math.floor((slot.min.z - 1) / 16); z <= Math.floor((slot.max.z + 1) / 16); z++) {
+      if (fillQueuesByChunk.has(`${x}:${z}`)) return true;
+    }
+  }
+  return false;
+}
+
+function isSlotLoaded(slot: PlotSlot): boolean {
   try {
     const dim = getDimension();
-    const origin = state.plots.config.origin ?? { x: 0, y: 0, z: 0 };
-    const probe = dim.getBlock(origin);
-    return Boolean(probe);
-  } catch {
-    return false;
-  }
+    for (let x = Math.floor(slot.min.x / 16); x <= Math.floor(slot.max.x / 16); x++) {
+      for (let z = Math.floor(slot.min.z / 16); z <= Math.floor(slot.max.z / 16); z++) {
+        const point = { x: Math.max(slot.min.x, x * 16), y: slot.min.y, z: Math.max(slot.min.z, z * 16) };
+        if (!dim.getBlock(point) || !dim.getBlock({ ...point, y: slot.max.y })) return false;
+      }
+    }
+    return true;
+  } catch { return false; }
+}
+
+function snapshotJobKey(job: Pick<SnapshotJob, "mode" | "playerId" | "slotId">): string {
+  return `${job.mode}:${job.playerId}:${job.slotId}`;
+}
+
+export function queuePlotSnapshot(job: SnapshotJob): void {
+  const key = snapshotJobKey(job);
+  if (snapshotQueue.has(key)) return;
+  snapshotQueue.set(key, job);
+  if (job.mode === "load") pendingSnapshotLoads.set(job.slotId, job.playerId);
+}
+
+function finishSnapshotJob(job: Pick<SnapshotJob, "mode" | "playerId" | "slotId">): void {
+  snapshotQueue.delete(snapshotJobKey(job));
+  if (job.mode === "load" && pendingSnapshotLoads.get(job.slotId) === job.playerId) pendingSnapshotLoads.delete(job.slotId);
 }
 
 function runFillCommand(min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }, block: string) {
@@ -199,6 +230,15 @@ function shouldSplitFillJob(job: FillJob): boolean {
 
 function enqueueFill(slotId: string, min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }, block: string): void {
   if (!isFeatureEnabled("plots")) return;
+  // Align horizontal splits with chunk edges, including negative coordinates.
+  for (const axis of ["x", "z"] as const) {
+    const edge = (Math.floor(min[axis] / 16) + 1) * 16;
+    if (max[axis] >= edge) {
+      enqueueFill(slotId, min, { ...max, [axis]: edge - 1 }, block);
+      enqueueFill(slotId, { ...min, [axis]: edge }, max, block);
+      return;
+    }
+  }
   const job: FillJob = { slotId, min, max, block };
   if (shouldSplitFillJob(job)) {
     const [a, b] = splitFillJob(job);
@@ -207,7 +247,14 @@ function enqueueFill(slotId: string, min: { x: number; y: number; z: number }, m
     return;
   }
 
-  fillQueue.push(job);
+  const key = `${Math.floor(min.x / 16)}:${Math.floor(min.z / 16)}`;
+  let queue = fillQueuesByChunk.get(key);
+  if (!queue) {
+    queue = { jobs: [], cursor: 0 };
+    fillQueuesByChunk.set(key, queue);
+    fillQueue.push(key);
+  }
+  queue.jobs.push(job);
   pendingJobCountsBySlot[slotId] = (pendingJobCountsBySlot[slotId] ?? 0) + 1;
 }
 
@@ -225,29 +272,49 @@ export function processQueuedPlotBuildJobs(): void {
 }
 
 function* processQueuedPlotBuildJobsJob(): Generator<void, void, void> {
-  while (fillQueueCursor < fillQueue.length) {
+  // One bounded pass per background wakeup. A blocked chunk never blocks others.
+  const budget = Math.min(64, fillQueue.length);
+  for (let processed = 0; processed < budget && fillQueue.length > 0; processed++) {
     if (!isFeatureEnabled("plots")) break;
-    const job = fillQueue[fillQueueCursor++];
-    if (!job) break;
-
+    fillQueueCursor %= fillQueue.length;
+    const key = fillQueue[fillQueueCursor]!;
+    const queue = fillQueuesByChunk.get(key)!;
+    const job = queue.jobs[queue.cursor]!;
     try {
+      const dim = getDimension();
+      // Each fill stays in one chunk; probe both vertical extremes before editing.
+      if (!dim.getBlock(job.min) || !dim.getBlock(job.max)) {
+        fillQueueCursor++;
+        yield;
+        continue;
+      }
       runFillCommand(job.min, job.max, job.block);
     } catch {
       job.attempts = (job.attempts ?? 0) + 1;
-      if (job.attempts >= 20) {
-        console.warn(`[TauUtils] Plot fill for ${job.slotId} failed 20 times; canceled build.`);
-        resetPlotRuntime();
-        return;
+      if (job.attempts === 20) {
+        console.warn(`[TauUtils] Plot fill for ${job.slotId} is still failing; keeping it queued. Check build blocks and dimension height settings.`);
       }
-      fillQueue.push(job);
-      for (let tick = 0; tick < 20; tick++) yield;
+      fillQueueCursor++;
+      yield;
       continue;
+    }
+    queue.cursor++;
+    if (queue.cursor === queue.jobs.length) {
+      fillQueuesByChunk.delete(key);
+      const lastKey = fillQueue.pop()!;
+      if (fillQueueCursor < fillQueue.length) fillQueue[fillQueueCursor] = lastKey;
+    } else {
+      if (queue.cursor >= 256) {
+        queue.jobs.splice(0, queue.cursor);
+        queue.cursor = 0;
+      }
+      fillQueueCursor++;
     }
 
     const remaining = (pendingJobCountsBySlot[job.slotId] ?? 1) - 1;
     if (remaining <= 0) {
       delete pendingJobCountsBySlot[job.slotId];
-      if (!completedSlots.has(job.slotId)) {
+      if (job.slotId !== "layout_clear" && !completedSlots.has(job.slotId)) {
         completedSlots.add(job.slotId);
         const dim = getDimension();
         for (const player of world.getAllPlayers()) {
@@ -261,18 +328,9 @@ function* processQueuedPlotBuildJobsJob(): Generator<void, void, void> {
       pendingJobCountsBySlot[job.slotId] = remaining;
     }
 
-    if (fillQueueCursor > 0 && (fillQueueCursor >= fillQueue.length || fillQueueCursor > 256)) {
-      fillQueue.splice(0, fillQueueCursor);
-      fillQueueCursor = 0;
-    }
-
     yield;
   }
 
-  if (fillQueueCursor > 0) {
-    fillQueue.splice(0, fillQueueCursor);
-    fillQueueCursor = 0;
-  }
   fillJobId = undefined;
 }
 
@@ -357,15 +415,16 @@ function enqueueLayoutClear(slots: PlotSlot[]): void {
   }
 
   const auto = state.plots.config.autoBuild;
+  const heightRange = getDimension().heightRange;
   const padding = Math.max(8, Math.floor(Math.max(state.plots.config.size.x, state.plots.config.size.z) / 2));
   const clearMin = {
     x: minX - padding,
-    y: Math.max(0, minY - 8),
+    y: Math.max(heightRange.min, minY - 8),
     z: minZ - padding,
   };
   const clearMax = {
     x: maxX + padding,
-    y: maxY + Math.max(8, auto.borderHeight + auto.roofHeight + 8),
+    y: Math.min(heightRange.max - 1, maxY + Math.max(8, auto.borderHeight + auto.roofHeight + 8)),
     z: maxZ + padding,
   };
 
@@ -388,7 +447,7 @@ export function buildPlotGeometry(slotId?: string): { ok: boolean; message: stri
   if (ids.length === 0) return { ok: false, message: "No plot slots configured." };
   buildSessionTotalSlots = ids.length;
   completedSlots.clear();
-  enqueueLayoutClear(getPlotSlots());
+  if (state.plots.config.autoBuild.clearBase) enqueueLayoutClear(getPlotSlots());
   for (const id of ids) {
     const next = state.plots.slots[id];
     if (next) buildSlotGeometry(next);
@@ -397,6 +456,7 @@ export function buildPlotGeometry(slotId?: string): { ok: boolean; message: stri
 }
 
 export function autoBuildPlots(): { ok: boolean; message: string } {
+  if (hasActiveFillWork()) return { ok: false, message: "A plot build is already in progress. Finish it before changing the layout." };
   const built = buildManualGridSlots();
   if (!built.ok) return built;
   const geometry = buildPlotGeometry();
@@ -503,11 +563,20 @@ export function isGeneratorInSlot(generator: PlacedGenerator, slot: PlotSlot): b
 
 export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: PlotSnapshot["generators"], queueOnFailure = true): boolean {
   if (!isFeatureEnabled("plots")) return false;
-  const dim = getDimension();
+  // Never replace the last good snapshot with an empty/partly restored plot.
+  if (slot.restorePending) {
+    if (!pendingSnapshotLoads.has(slot.id)) loadSlotSnapshot(slot, playerId);
+    return false;
+  }
+  if (pendingSnapshotLoads.has(slot.id)) return false;
+  if (hasPendingSlotFills(slot) || !isSlotLoaded(slot)) {
+    if (queueOnFailure) queuePlotSnapshot({ playerId, slotId: slot.id, mode: "save", attempts: 0 });
+    return false;
+  }
   const name = structureNameForPlayer(playerId);
-  const snapshotGenerators = generators ?? captureSlotGenerators(slot, playerId);
   try {
-    dim.runCommand(
+    const snapshotGenerators = generators ?? captureSlotGenerators(slot, playerId);
+    getDimension().runCommand(
       `structure save ${name} ${slot.min.x} ${slot.min.y} ${slot.min.z} ${slot.max.x} ${slot.max.y} ${slot.max.z} true disk true`
     );
     state.plots.snapshots[playerId] = {
@@ -517,9 +586,11 @@ export function saveSlotSnapshot(slot: PlotSlot, playerId: string, generators?: 
       sourceMin: { ...slot.min },
       generators: snapshotGenerators,
     };
+    savePlots(playerId);
+    finishSnapshotJob({ playerId, slotId: slot.id, mode: "save" });
     return true;
   } catch {
-    if (queueOnFailure) snapshotQueue.push({ playerId, slotId: slot.id, mode: "save", attempts: 0, generators: snapshotGenerators });
+    if (queueOnFailure) queuePlotSnapshot({ playerId, slotId: slot.id, mode: "save", attempts: 0 });
     return false;
   }
 }
@@ -528,46 +599,59 @@ export function loadSlotSnapshot(slot: PlotSlot, playerId: string, queueOnFailur
   if (!isFeatureEnabled("plots")) return false;
   const snap = state.plots.snapshots[playerId];
   if (!snap) return false;
-  snap.slotId = slot.id;
-  const dim = getDimension();
+  if (!slot.restorePending) {
+    slot.restorePending = true;
+    savePlots(playerId);
+  }
+  if (hasPendingSlotFills(slot) || !isSlotLoaded(slot)) {
+    if (queueOnFailure) queuePlotSnapshot({ playerId, slotId: slot.id, mode: "load", attempts: 0 });
+    return false;
+  }
   try {
-    dim.runCommand(`structure load ${snap.structureId} ${slot.min.x} ${slot.min.y} ${slot.min.z} 0_degrees none true true false 100`);
+    getDimension().runCommand(`structure load ${snap.structureId} ${slot.min.x} ${slot.min.y} ${slot.min.z} 0_degrees none true true false 100`);
+    snap.slotId = slot.id;
     applyAutoBuildRoof(slot);
     if (restoreSlotGenerators(snap, slot, playerId)) saveGenerators();
+    delete slot.restorePending;
+    savePlots(playerId);
+    finishSnapshotJob({ playerId, slotId: slot.id, mode: "load" });
     return true;
   } catch {
-    if (queueOnFailure) snapshotQueue.push({ playerId, slotId: slot.id, mode: "load", attempts: 0 });
+    if (queueOnFailure) queuePlotSnapshot({ playerId, slotId: slot.id, mode: "load", attempts: 0 });
     return false;
   }
 }
 
 export function processQueuedPlotSnapshots(): void {
-  if (!isFeatureEnabled("plots")) return;
-  if (snapshotQueue.length === 0 || !canUsePlotCommandsNow()) return;
-
-  const retryLimit = 20;
+  if (!isFeatureEnabled("plots") || snapshotQueue.size === 0) return;
   let processed = 0;
   let scanned = 0;
-  const maxScans = snapshotQueue.length;
-  while (snapshotQueue.length > 0 && processed < SNAPSHOT_JOBS_PER_TICK && scanned < maxScans) {
-    const job = snapshotQueue.shift();
+  const maxScans = Math.min(SNAPSHOT_SCANS_PER_PASS, snapshotQueue.size);
+  while (snapshotQueue.size > 0 && processed < SNAPSHOT_JOBS_PER_TICK && scanned < maxScans) {
+    const [key, job] = snapshotQueue.entries().next().value!;
     scanned++;
-    if (!job) break;
-    if ((job.nextAttemptAt ?? 0) > Date.now()) {
-      snapshotQueue.push(job);
+    const slot = state.plots.slots[job.slotId];
+    // Ownership may have changed while an unloaded plot waited. Discard stale work.
+    if (!slot || slot.occupiedByPlayerId !== job.playerId || state.plots.playerToSlot[job.playerId] !== slot.id) {
+      finishSnapshotJob(job);
       continue;
     }
-
-    const slot = state.plots.slots[job.slotId];
-    if (!slot) continue;
-
+    if ((job.nextAttemptAt ?? 0) > Date.now()) {
+      snapshotQueue.delete(key);
+      snapshotQueue.set(key, job);
+      continue;
+    }
     const ok = job.mode === "save"
-      ? saveSlotSnapshot(slot, job.playerId, job.generators, false)
+      ? saveSlotSnapshot(slot, job.playerId, undefined, false)
       : loadSlotSnapshot(slot, job.playerId, false);
     processed++;
-    if (!ok && job.attempts + 1 < retryLimit) {
-      const attempts = job.attempts + 1;
-      snapshotQueue.push({ ...job, attempts, nextAttemptAt: Date.now() + Math.min(5000, attempts * 250) });
+    if (ok) {
+      finishSnapshotJob(job);
+    } else {
+      job.attempts++;
+      job.nextAttemptAt = Date.now() + Math.min(5000, job.attempts * 250);
+      snapshotQueue.delete(key);
+      snapshotQueue.set(key, job);
     }
   }
 }
@@ -579,10 +663,10 @@ export function clearSlot(slot: PlotSlot) {
     const selector = `@e[type=!player,x=${slot.min.x},y=${slot.min.y},z=${slot.min.z},dx=${slot.max.x - slot.min.x},dy=${slot.max.y - slot.min.y},dz=${slot.max.z - slot.min.z}]`;
     dim.runCommand(`kill ${selector}`);
     dim.runCommand(`kill @e[type=item,x=${slot.min.x},y=${slot.min.y},z=${slot.min.z},dx=${slot.max.x - slot.min.x},dy=${slot.max.y - slot.min.y},dz=${slot.max.z - slot.min.z}]`);
-    enqueueFill(slot.id, slot.min, slot.max, "air");
   } catch {
-    // Ignore fill failures for unloaded chunks
+    // Entity cleanup can fail while chunks are unloaded; block cleanup still queues.
   }
+  enqueueFill(slot.id, slot.min, slot.max, "air");
   if (removeSlotGenerators(slot)) saveGenerators();
 }
 
@@ -613,8 +697,10 @@ export function resetPlotRuntime(): void {
   if (fillJobId !== undefined) system.clearJob(fillJobId);
   fillJobId = undefined;
   fillQueue.length = 0;
+  fillQueuesByChunk.clear();
   fillQueueCursor = 0;
-  snapshotQueue.length = 0;
+  snapshotQueue.clear();
+  pendingSnapshotLoads.clear();
   for (const key of Object.keys(pendingJobCountsBySlot)) delete pendingJobCountsBySlot[key];
   completedSlots.clear();
   buildSessionTotalSlots = 0;

@@ -3,7 +3,7 @@ import { TauUi } from "../ui";
 import { type ShopItemDefinition, type ShopItemStackDefinition, type ShopKitDraft, type ShopProfile, type ShopSortMode } from "../types";
 import { getInventoryContainer, normalizeCategory, getProfileCategories, saveShops } from "../storage";
 import { getItemCanDestroyComponent, getItemCanPlaceOnComponent, getItemDurabilityComponent, getItemEnchantableComponent, readStackEnchantments } from "../shared/item-components";
-import { normalizeItemId } from "../shared/item-id";
+import { normalizeBlockId, normalizeItemId } from "../shared/item-id";
 import { parseEnchantments } from "../shared/enchantments";
 
 export function iconForShopItem(item: ShopProfile["items"][number]): string | undefined {
@@ -245,7 +245,8 @@ function getStackEnchantmentsForMatch(stack: ItemStack): { id: string; level: nu
 
 export function itemMatchesDefinition(stack: ItemStack, def: ShopItemStackDefinition): boolean {
   if (isProtectedCrateKey(stack)) return false;
-  if (normalizeItemId(stack.typeId) !== normalizeItemId(def.itemId)) return false;
+  // Inventory IDs include a namespace even when the shop uses a short vanilla ID.
+  if (normalizeBlockId(stack.typeId) !== normalizeBlockId(def.itemId)) return false;
 
   const displayName = def.displayName?.trim();
   if (displayName) {

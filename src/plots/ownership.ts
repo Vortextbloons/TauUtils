@@ -2,7 +2,7 @@ import { Player } from "@minecraft/server";
 import { type PlotSlot, type PlotSnapshot, type TeamDefinition } from "../types";
 import { getPlayerId, state, savePlots, saveGenerators } from "../storage";
 import { getPlotSlots } from "./grid";
-import { clearSlot, saveAndClearSlot, captureSlotGenerators, saveSlotSnapshot, getPlotForLocation, isGeneratorInSlot, snapshotQueue } from "./build";
+import { clearSlot, saveAndClearSlot, captureSlotGenerators, saveSlotSnapshot, getPlotForLocation, isGeneratorInSlot, queuePlotSnapshot } from "./build";
 
 function getTeamForPlayerId(playerId: string): TeamDefinition | undefined {
   const teamId = state.teams.playerTeamIds[playerId];
@@ -70,6 +70,8 @@ export function resolveAuthoritativeOwnedSlotId(ownerPlayerId: string): string |
 }
 
 export function repairOwnedPlotSlots(ownerPlayerId: string, authoritativeSlotId: string): boolean {
+  const target = state.plots.slots[authoritativeSlotId];
+  if (!target || (target.occupiedByPlayerId && target.occupiedByPlayerId !== ownerPlayerId)) return false;
   let changed = false;
   for (const slot of getPlotSlots()) {
     if (slot.id === authoritativeSlotId) continue;
@@ -78,7 +80,7 @@ export function repairOwnedPlotSlots(ownerPlayerId: string, authoritativeSlotId:
       slot.occupiedByPlayerId = undefined;
       changed = true;
     } else {
-      snapshotQueue.push({ playerId: ownerPlayerId, slotId: slot.id, mode: "save", attempts: 0, generators: captureSlotGenerators(slot, ownerPlayerId) });
+      queuePlotSnapshot({ playerId: ownerPlayerId, slotId: slot.id, mode: "save", attempts: 0, generators: captureSlotGenerators(slot, ownerPlayerId) });
     }
   }
 
@@ -152,7 +154,8 @@ export function reconcilePlotOwnershipData(): { ok: boolean; mappingsFixed: numb
     if (!occupant) continue;
     if (shouldSuspendTeamMemberPlot(occupant)) {
       if (!saveAndClearSlot(slot, occupant)) {
-        snapshotQueue.push({ playerId: occupant, slotId: slot.id, mode: "save", attempts: 0, generators: captureSlotGenerators(slot, occupant) });
+        nextPlayerToSlot[occupant] = slot.id;
+        continue;
       }
       slot.occupiedByPlayerId = undefined;
       mappingsFixed += 1;
@@ -179,9 +182,14 @@ export function reconcilePlotOwnershipData(): { ok: boolean; mappingsFixed: numb
       mappingsFixed += 1;
       continue;
     }
+    if (slot.occupiedByPlayerId && slot.occupiedByPlayerId !== getPlotOwnerIdForPlayerId(playerId)) {
+      mappingsFixed += 1;
+      continue;
+    }
     if (shouldSuspendTeamMemberPlot(playerId)) {
       if (!saveAndClearSlot(slot, playerId)) {
-        snapshotQueue.push({ playerId, slotId: slot.id, mode: "save", attempts: 0, generators: captureSlotGenerators(slot, playerId) });
+        nextPlayerToSlot[playerId] = slot.id;
+        continue;
       }
       slot.occupiedByPlayerId = undefined;
       mappingsFixed += 1;
@@ -266,7 +274,7 @@ export function reconcileTeamPlotSlots(): boolean {
       if (mappedSlotId) {
         const mappedSlot = state.plots.slots[mappedSlotId];
         if (mappedSlot && mappedSlot.occupiedByPlayerId === memberId) {
-          if (saveAndClearSlot(mappedSlot, memberId)) changed = true;
+          if (!saveAndClearSlot(mappedSlot, memberId)) continue;
           mappedSlot.occupiedByPlayerId = undefined;
           changed = true;
         }
@@ -276,7 +284,7 @@ export function reconcileTeamPlotSlots(): boolean {
 
       const savedSlot = savedSlotId ? state.plots.slots[savedSlotId] : undefined;
       if (savedSlot && savedSlot.occupiedByPlayerId === memberId) {
-        if (saveAndClearSlot(savedSlot, memberId)) changed = true;
+        if (!saveAndClearSlot(savedSlot, memberId)) continue;
         savedSlot.occupiedByPlayerId = undefined;
         changed = true;
       }

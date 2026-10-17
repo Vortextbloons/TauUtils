@@ -3,9 +3,8 @@ import { type PlotSlot } from "../types";
 import { getPlayerId, isFeatureEnabled, savePlots, saveGenerators, state, tell } from "../storage";
 import { requestPlayerTeleport } from "../shared/teleport-service";
 import { getPlotSlots, getDimension } from "./grid";
-import { clearSlot, saveAndClearSlot, captureSlotGenerators, saveSlotSnapshot, loadSlotSnapshot, applyAutoBuildRoof, getPlotForLocation } from "./build";
+import { clearSlot, saveAndClearSlot, saveSlotSnapshot, loadSlotSnapshot, applyAutoBuildRoof, getPlotForLocation } from "./build";
 import { getPlotOwnerIdForPlayerId, resolveAuthoritativeOwnedSlotId } from "./ownership";
-import { getPlayerTeam } from "../teams";
 
 type PlotTitleCacheEntry = {
   key: string;
@@ -67,9 +66,10 @@ export function assignPlayerToSlot(player: Player, slotId: string): { ok: boolea
   }
   state.plots.playerToSlot[ownerPlayerId] = slotId;
   slot.occupiedByPlayerId = ownerPlayerId;
+  delete slot.restorePending;
   clearSlot(slot);
-  loadSlotSnapshot(slot, ownerPlayerId);
-  saveSlotSnapshot(slot, ownerPlayerId, captureSlotGenerators(slot, ownerPlayerId));
+  if (state.plots.snapshots[ownerPlayerId]) loadSlotSnapshot(slot, ownerPlayerId);
+  else saveSlotSnapshot(slot, ownerPlayerId);
   savePlots();
   return { ok: true, message: `Assigned ${player.name} to ${slotId}.` };
 }
@@ -147,20 +147,17 @@ export function forceReleasePlot(slotId: string): boolean {
 }
 
 export function ensurePlayerPlotAssigned(player: Player): { ok: boolean; assigned: boolean; message: string } {
-  if (!state.plots.config.enabled) {
+  if (!isFeatureEnabled("plots") || !state.plots.config.enabled) {
     return { ok: true, assigned: false, message: "Plots are disabled." };
   }
 
   const playerId = getPlayerId(player);
   const ownerId = getPlotOwnerIdForPlayerId(playerId);
-  const team = getPlayerTeam(player);
-  if (team?.teamPlotEnabled && ownerId !== playerId) {
-    return { ok: true, assigned: false, message: "Team member plot suspended while team plot is enabled." };
-  }
 
   const slotId = resolveAuthoritativeOwnedSlotId(ownerId) ?? state.plots.playerToSlot[ownerId];
   const slot = slotId ? state.plots.slots[slotId] : undefined;
   if (slot && slot.occupiedByPlayerId === ownerId) {
+    if (slot.restorePending) loadSlotSnapshot(slot, ownerId);
     if (state.plots.playerToSlot[ownerId] !== slot.id) {
       state.plots.playerToSlot[ownerId] = slot.id;
       savePlots();
@@ -180,14 +177,27 @@ export function clearPlayerPlot(playerId: string): boolean {
 }
 
 export function deployPlayerPlot(player: Player): { ok: boolean; message: string } {
-  if (!state.plots.config.enabled) return { ok: true, message: "Plots disabled." };
+  if (!isFeatureEnabled("plots") || !state.plots.config.enabled) return { ok: true, message: "Plots disabled." };
   const ownerId = getPlotOwnerIdForPlayer(player) ?? getPlayerId(player);
 
   const assigned = resolveAuthoritativeOwnedSlotId(ownerId) ?? state.plots.playerToSlot[ownerId];
   let slotId: string;
-  if (!assigned || !state.plots.slots[assigned]) {
+  const existing = assigned ? state.plots.slots[assigned] : undefined;
+  if (existing?.occupiedByPlayerId === ownerId) {
+    state.plots.playerToSlot[ownerId] = existing.id;
+    if (existing.restorePending) loadSlotSnapshot(existing, ownerId);
+    savePlots(ownerId);
+    return { ok: true, message: `Plot ${existing.id} already assigned.` };
+  }
+  if (!existing || (existing.occupiedByPlayerId && existing.occupiedByPlayerId !== ownerId)) {
+    if (state.plots.playerToSlot[ownerId]) {
+      delete state.plots.playerToSlot[ownerId];
+      savePlots(ownerId);
+    }
     const free = findFreeSlotId();
-    if (!free) return { ok: false, message: "No available plot slots." };
+    if (!free) return { ok: false, message: getPlotSlots().length === 0
+      ? "No plot slots configured. An operator must build the plot grid in Creator > Plots."
+      : "No available plot slots. Waiting for a player to leave." };
     slotId = free;
     state.plots.playerToSlot[ownerId] = free;
   } else {
@@ -196,16 +206,17 @@ export function deployPlayerPlot(player: Player): { ok: boolean; message: string
 
   const slot = state.plots.slots[slotId];
   if (!slot) return { ok: false, message: "Assigned slot not found." };
-  const dim = getDimension();
   if (slot.occupiedByPlayerId && slot.occupiedByPlayerId !== ownerId) {
     return { ok: false, message: "Assigned plot is occupied." };
   }
 
+  state.plots.playerToSlot[ownerId] = slot.id;
   slot.occupiedByPlayerId = ownerId;
+  delete slot.restorePending;
   clearSlot(slot);
-  loadSlotSnapshot(slot, ownerId);
+  if (state.plots.snapshots[ownerId]) loadSlotSnapshot(slot, ownerId);
+  else saveSlotSnapshot(slot, ownerId);
   applyAutoBuildRoof(slot);
-  saveSlotSnapshot(slot, ownerId, captureSlotGenerators(slot, ownerId));
   savePlots();
   return { ok: true, message: `Plot ${slotId} deployed.` };
 }
@@ -221,16 +232,14 @@ export function saveAssignedPlayerPlot(player: Player): boolean {
   if (!slotId) return false;
   const slot = state.plots.slots[slotId];
   if (!slot) return false;
-  const saved = saveSlotSnapshot(slot, ownerId, captureSlotGenerators(slot, ownerId));
-  if (saved) savePlots();
+  const saved = saveSlotSnapshot(slot, ownerId);
   return saved;
 }
 
 export function savePlotAtLocation(location: Vector3): boolean {
   const slot = getPlotForLocation(location);
   if (!slot || !slot.occupiedByPlayerId) return false;
-  const saved = saveSlotSnapshot(slot, slot.occupiedByPlayerId, captureSlotGenerators(slot, slot.occupiedByPlayerId));
-  if (saved) savePlots();
+  const saved = saveSlotSnapshot(slot, slot.occupiedByPlayerId);
   return saved;
 }
 
