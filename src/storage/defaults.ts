@@ -298,6 +298,7 @@ export function defaultGeneratorStore(): GeneratorStore {
 
 export function defaultModerationStore(): ModerationStore {
   return {
+    pcAccess: { enabled: false, whitelist: [] },
     bannedItems: [],
     inspectionSnapshots: {},
   };

@@ -361,6 +361,8 @@ export function loadState() {
   }
   const splitModeration = readSplitDynamicJson<ModerationStore>(STORAGE_KEYS.moderation, defaultModerationStore());
   state.moderation = splitModeration.hasSplitData ? splitModeration.value : readDynamicJSON<ModerationStore>(STORAGE_KEYS.moderation, defaultModerationStore());
+  state.moderation.pcAccess ??= { enabled: false, whitelist: [] };
+  state.moderation.pcAccess.whitelist ??= [];
   state.moderation.inspectionSnapshots ??= {};
   for (const snapshot of Object.values(state.moderation.inspectionSnapshots)) {
     snapshot.inventory ??= [];

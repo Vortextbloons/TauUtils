@@ -597,6 +597,7 @@ export type ModerationInspectionSnapshot = {
 };
 
 export type ModerationStore = {
+  pcAccess: { enabled: boolean; whitelist: string[] };
   bannedItems: BannedItemDefinition[];
   inspectionSnapshots: Record<string, ModerationInspectionSnapshot>;
 };

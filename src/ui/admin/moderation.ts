@@ -305,6 +305,36 @@ async function showModerationPlayerCleaner(player: Player) {
   tell(player, removed > 0 ? `§aRemoved ${removed} banned items from ${target.name}.§r` : `§7No banned items found in ${target.name}'s inventory.§r`);
 }
 
+async function showPcAccessSettings(player: Player): Promise<void> {
+  const current = state.moderation.pcAccess;
+  const result = await TauUi.modal("PC access")
+    .toggle("enabled", "Kick PC players (operators exempt)", current.enabled)
+    .text("whitelist", "Allowed gamertags, separated by commas (max 200)", {
+      placeholder: "Steve, Alex", defaultValue: current.whitelist.join(", "),
+    })
+    .submitButton("Save")
+    .show(player);
+  if (result.canceled || !player.isValid || !isOperator(player)) return;
+  const names = String(result.values.whitelist ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+  const unique = new Map(names.map((name) => [name.toLowerCase(), name]));
+  if (unique.size > 200 || names.some((name) => name.length > 32 || /[\r\n]/.test(name))) {
+    tell(player, "Use at most 200 gamertags, each at most 32 characters, separated by commas.");
+    return;
+  }
+  const enabled = Boolean(result.values.enabled);
+  if (enabled) {
+    const confirmed = await TauUi.confirm(player, {
+      title: "Apply PC restriction?",
+      body: "PC players outside the whitelist will be kicked, including players already online. Operators are exempt. Console and mobile players can still join.",
+      confirmText: "Apply", cancelText: "Cancel",
+    });
+    if (!confirmed || !player.isValid || !isOperator(player)) return;
+  }
+  state.moderation.pcAccess = { enabled, whitelist: [...unique.values()] };
+  saveModeration();
+  tell(player, "PC access settings saved. Online players are checked automatically.");
+}
+
 export async function showModerationMenu(player: Player) {
   if (!isOperator(player)) {
     tell(player, "You must be an operator to manage moderation settings.");
@@ -315,6 +345,7 @@ export async function showModerationMenu(player: Player) {
     const banned = state.moderation.bannedItems;
     const response = await TauUi.action("§cModeration§r")
       .body(`§7Banned items: §f${banned.length}§r`)
+      .button("pcAccess", `PC access: ${state.moderation.pcAccess.enabled ? "Restricted" : "Open"}`, { iconPath: ICONS.utility })
       .button("addHeldItem", "Add Held Item", { iconPath: ICONS.item })
       .button("listBanned", "List Banned Items", { iconPath: ICONS.menu })
       .button("cleanPlayer", "Clean Player Inventory", { iconPath: ICONS.delete })
@@ -324,6 +355,11 @@ export async function showModerationMenu(player: Player) {
       .show(player);
     if (TauUi.isCanceledOrBack(response)) return;
     if (response.id === "back") return;
+
+    if (response.id === "pcAccess") {
+      await showPcAccessSettings(player);
+      continue;
+    }
 
     if (response.id === "addHeldItem") {
       const held = captureHeldBannedItem(player);

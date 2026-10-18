@@ -29,6 +29,7 @@ import {
   state,
   tell,
 } from "../storage";
+import { enforcePcAccess } from "../moderation/pc-access";
 import { clearBannedInventory } from "../moderation/banned-items";
 import { cacheModerationInspectionSnapshot } from "./moderation-events";
 import { clearGeneratorMenuForPlayer } from "./interaction-events";
@@ -95,6 +96,7 @@ function runPlayerCurrencyInit(player: Player): void {
 
 function initializePlayerJoinState(player: ReturnType<typeof asPlayer>): void {
   if (!player?.isValid) return;
+  if (enforcePcAccess(player)) return;
   const id = getPlayerId(player);
   lastSampleByPlayerId[id] = { x: player.location.x, y: player.location.y, z: player.location.z };
 

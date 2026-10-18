@@ -10,6 +10,7 @@ import {
   enforceBannedItemUse,
   snapshotContainerExcludingBanned,
 } from "../moderation/banned-items";
+import { enforcePcAccess } from "../moderation/pc-access";
 import { getCachedPlayers } from "./player-cache";
 
 function snapshotsEqual(
@@ -98,7 +99,7 @@ function* processModerationSnapshotJob(
   for (let index = 0; index < perTick; index++) {
     if (!isFeatureEnabled("moderation")) break;
     const player = getNextPlayer();
-    if (player && cacheModerationInspectionSnapshot(player)) changed = true;
+    if (player && !enforcePcAccess(player) && cacheModerationInspectionSnapshot(player)) changed = true;
     advanceCursor();
     yield;
   }
